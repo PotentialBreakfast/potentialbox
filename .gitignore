@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.zip
+state.json
+my-sounds.json
+my-kits.json
+log.txt
+.DS_Store
+Thumbs.db
