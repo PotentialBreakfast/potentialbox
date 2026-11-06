@@ -27,6 +27,14 @@ It's pre-wired for the BeatStep Pro's factory settings, so you can plug it in an
 - **Filters and oscillators**: LP 24, LP 12, HP, band-pass and notch with key tracking; Synth 1 adds osc 2 tuning, FM, ring mod, hard sync and noise; both have pitch envelope, analog drift and pan
 - **Chord mode**: turn every step into a chord (13 chord types, 3 voicings), even though the BeatStep sequences one note at a time
 - **30 wavetables** on Synth 2, including 24 from the free AKWF single-cycle collection
+- **Arpeggiator** on each synth: 5 patterns, tempo-synced rate, octaves, gate, swing, hold, chance and accents; arpeggiates chord mode
+- **Live tab**: 8 hold-to-play punch-in effects (beat repeat, roll, tape stop, reverse, filter sweep, gate, echo throw), Scene A/B with a morph knob and hold-for-B drops, a fill button, and the BeatStep's pads switch to these while the tab is open
+- **Step locks**: give any knob its own value on any of the 16 steps, following the BeatStep's clock (like Elektron parameter locks)
+- **Drum groove**: per-pad chance and play conditions (fill only, not in fill, 1st of 4 and more), plus per-pad pan
+- **Mix**: kick-triggered side-chain ducking (or every beat), 3-band EQ on each synth, the drums and the master, a one-knob glue compressor and stereo width
+- **Record to WAV**: the mix plus separate drum, synth and FX stems, 24-bit, into Music > PotentialBox Recordings
+- **Resample to a pad**: record half a bar to 4 bars of a synth or the whole mix, in time with the bar, straight onto a drum pad
+- **My Setups**: 8 slots that save everything at once (sounds, kit, mix, effects, locks and scenes)
 - **Drum sampler**: 9 synthesized kits (808 Boom, 909 Punch, 606 Tight, Trap 808, SP Dust 12-bit, Electro 80s, Minimal Tech, Industrial, Potential), all with the same pad layout so patterns carry over
 - **Drum machine library**: point it at a collection of sampled machines (one folder per machine) and browse brand > machine > kit. Sounds are sorted onto the right pads by their file names, and silence at the start of every hit is trimmed
 - **Build your own kits**: put any one-shot from your whole collection on any pad, with a random pick per pad type, and save 8 of your own kits
@@ -35,6 +43,10 @@ It's pre-wired for the BeatStep Pro's factory settings, so you can plug it in an
 - **Save slots**: 8 sounds per synth, plus Init sounds and Reset All to start fresh
 - **Low lag**: ASIO support (your interface's own driver is chosen first), WASAPI exclusive and WASAPI
 - Follows the BeatStep Pro's tempo, and Stop sends All Notes Off
+
+| Live tab | Step locks | Arpeggiator |
+|---|---|---|
+| ![Live tab](docs/images/live.png) | ![Step locks](docs/images/locks.png) | ![Synth 1 Arp+ page](docs/images/s1arp.png) |
 
 | Macros | Synth modulation | Mod routing |
 |---|---|---|

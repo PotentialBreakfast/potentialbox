@@ -34,6 +34,15 @@ CHORDS = [("Off", (0,)), ("Octave", (0, 12)), ("Fifth", (0, 7)), ("Fifth + octav
 VOICINGS = ["Close", "Open", "Wide"]
 FTYPES = ["LP 24", "LP 12", "HP 12", "Band-pass", "Notch"]
 GLIDE_MODES = ["Slides only", "Always"]
+# ---- v1.6
+ARP_MODES = ["Off", "Up", "Down", "Up-down", "Random", "As played"]
+ARP_RATES = [("1/4", 24), ("1/8", 12), ("1/8T", 8), ("1/16", 6), ("1/16T", 4), ("1/32", 3)]
+ARP_ACCENTS = ["Off", "Every 2nd", "Every 3rd", "Every 4th"]
+DRUM_CONDS = ["Always", "Fill only", "Not in fill", "1st of 2", "2nd of 2", "1st of 4", "2nd of 4", "3rd of 4",
+              "4th of 4", "1st of 8", "8th of 8"]
+DUCK_SOURCES = [f"Pad {i}" for i in range(1, 17)] + ["Every beat"]
+GLUE_SPEEDS = [("Fast", 0.003, 0.06), ("Medium", 0.01, 0.15), ("Slow", 0.03, 0.4)]
+PUNCH_FX = ["Repeat 1/8", "Repeat 1/16", "Roll 1/32", "Tape stop", "Reverse", "Filter sweep", "Gate 1/16", "Echo throw"]
 
 
 def _load_akwf():
@@ -104,6 +113,8 @@ class Param:
             return f"L {abs(v)*100:.0f}%" if v < 0 else f"R {v*100:.0f}%"
         if u == "ct":
             return f"{v:.0f} cents"
+        if u == "dB":
+            return "0 dB" if abs(v) < 0.05 else f"{v:+.1f} dB"
         return f"{v:.2f}"
 
 
@@ -221,10 +232,38 @@ def _build_specs():
             a(Param(f"{pre}.m{j+1}dst", f"Slot {j+1} target", 0, len(MOD_DESTS[pre]) - 1, MOD_DESTS[pre].index(dst),
                     step=1, choices=MOD_DESTS[pre]))
             a(Param(f"{pre}.m{j+1}amt", f"Slot {j+1} amount", -1, 1, 0.0, unit="+-%"))
+        # ---- v1.6: arpeggiator (part of the sound), ducking and EQ (part of the mix)
+        a(Param(pre + ".arp", "Arp", 0, len(ARP_MODES) - 1, 0, step=1, choices=ARP_MODES))
+        a(Param(pre + ".arprate", "Arp rate", 0, len(ARP_RATES) - 1, 3, step=1, choices=[r[0] for r in ARP_RATES]))
+        a(Param(pre + ".arpoct", "Arp octaves", 0, 3, 0, step=1, choices=["1 octave", "2 octaves", "3 octaves", "4 octaves"]))
+        a(Param(pre + ".arpgate", "Arp gate", 0.05, 1, 0.6, unit="%"))
+        a(Param(pre + ".arpswing", "Arp swing", 0, 0.75, 0.0, unit="%"))
+        a(Param(pre + ".arphold", "Arp hold", 0, 1, 0, step=1, choices=["Off", "On"]))
+        a(Param(pre + ".arpchance", "Arp chance", 0, 1, 1.0, unit="%"))
+        a(Param(pre + ".arpacc", "Arp accent", 0, len(ARP_ACCENTS) - 1, 0, step=1, choices=ARP_ACCENTS))
+        a(Param("dk." + pre, "Duck " + name, 0, 1, 0.0, unit="%"))
+        for band, lab in (("lo", "Low"), ("mid", "Mid"), ("hi", "High")):
+            a(Param(f"eq.{pre}.{band}", f"{name} {lab}", -12, 12, 0.0, unit="dB"))
     for i in range(16):
         a(Param(f"dr.p{i+1}.tune", "Tune", -24, 24, 0, step=1, unit="st"))
         a(Param(f"dr.p{i+1}.decay", "Length", 0.02, 1, 1.0, unit="%"))
         a(Param(f"dr.p{i+1}.level", "Level", 0, 1, 0.8, unit="%"))
+        a(Param(f"dr.p{i+1}.pan", "Pan", -1, 1, 0.0, unit="pan"))
+        a(Param(f"dr.p{i+1}.chance", "Chance", 0, 1, 1.0, unit="%"))
+        a(Param(f"dr.p{i+1}.cond", "Plays", 0, len(DRUM_CONDS) - 1, 0, step=1, choices=DRUM_CONDS))
+    for band, lab in (("lo", "Low"), ("mid", "Mid"), ("hi", "High")):
+        a(Param(f"eq.dr.{band}", f"Drums {lab}", -12, 12, 0.0, unit="dB"))
+    for band, lab in (("lo", "Low"), ("mid", "Mid"), ("hi", "High")):
+        a(Param(f"eq.m.{band}", f"Master {lab}", -12, 12, 0.0, unit="dB"))
+    a(Param("eq.lof", "Low EQ freq", 60, 400, 150, "exp", unit="Hz"))
+    a(Param("eq.hif", "High EQ freq", 2000, 12000, 6000, "exp", unit="Hz"))
+    a(Param("dk.fx", "Duck FX returns", 0, 1, 0.0, unit="%"))
+    a(Param("dk.src", "Duck from", 0, len(DUCK_SOURCES) - 1, 0, step=1, choices=DUCK_SOURCES))
+    a(Param("dk.rel", "Duck release", 0.03, 0.8, 0.18, "exp", unit="s"))
+    a(Param("m.glue", "Glue comp", 0, 1, 0.0, unit="%"))
+    a(Param("m.gluespd", "Glue speed", 0, len(GLUE_SPEEDS) - 1, 1, step=1, choices=[g[0] for g in GLUE_SPEEDS]))
+    a(Param("m.width", "Stereo width", 0, 2, 1.0, unit="%"))
+    a(Param("sc.morph", "Scene morph", 0, 1, 0.0, unit="%"))
     a(Param("dr.filter", "Drum filter", 200, 20000, 20000, "exp", unit="Hz"))
     a(Param("dr.drive", "Drum drive", 0, 1, 0.0, unit="%"))
     a(Param("dr.vol", "Drums volume", 0, 1, 0.8, unit="%"))
@@ -254,6 +293,8 @@ SPECS = _build_specs()
 PAGES = collections.OrderedDict([
     ("Perform", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s2.pos", "s2.cutoff", "s2.envamt", "s2.decay",
                  "dr.p1.tune", "dr.p1.decay", "dr.p3.tune", "dr.p5.decay", "dr.filter", "s1.vol", "s2.vol", "dr.vol"]),
+    ("Live", ["sc.morph", "m.filter", "mc.12", "mc.9", "mc.10", "mc.13", "m.glue", "m.master",
+              "s1.cutoff", "s1.reso", "s2.cutoff", "s2.pos", "dk.s1", "dk.s2", "fx.fb", "rv.size"]),
     ("Macros", [f"mc.{i}" for i in range(1, 17)]),
     ("Synth 1", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s1.wave", "s1.pw", "s1.detune", "s1.sub",
                  "s1.attack", "s1.decay", "s1.sustain", "s1.release", "s1.glide", "s1.octave", "s1.drive", "s1.vol"]),
@@ -267,10 +308,20 @@ PAGES = collections.OrderedDict([
                       "s2.ftype", "s2.keytrk", "s2.velamp", "s2.glmode", "s2.table", "s2.pos", "s2.cutoff", "s2.vol"]),
     ("Synth 2 Mod", ["s2.l1shape", "s2.l1rate", "s2.l1sync", "s2.l2shape", "s2.l2rate", "s2.l2sync", "s2.mea", "s2.med"]
                     + [f"s2.m{j}amt" for j in range(1, 9)]),
+    ("Synth 1 Arp", ["s1.arp", "s1.arprate", "s1.arpoct", "s1.arpgate", "s1.arpswing", "s1.arphold", "s1.arpchance",
+                     "s1.arpacc", "dk.s1", "eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "s1.pan", "fx.s1", "rv.s1", "s1.vol"]),
+    ("Synth 2 Arp", ["s2.arp", "s2.arprate", "s2.arpoct", "s2.arpgate", "s2.arpswing", "s2.arphold", "s2.arpchance",
+                     "s2.arpacc", "dk.s2", "eq.s2.lo", "eq.s2.mid", "eq.s2.hi", "s2.pan", "fx.s2", "rv.s2", "s2.vol"]),
     ("Drums 1-8", [f"dr.p{i}.tune" for i in range(1, 9)] + [f"dr.p{i}.decay" for i in range(1, 9)]),
+    ("Drums 1-8 Mix", [f"dr.p{i}.level" for i in range(1, 9)] + [f"dr.p{i}.pan" for i in range(1, 9)]),
+    ("Drums 1-8 Groove", [f"dr.p{i}.chance" for i in range(1, 9)] + [f"dr.p{i}.cond" for i in range(1, 9)]),
     ("Drums 9-16", [f"dr.p{i}.tune" for i in range(9, 17)] + [f"dr.p{i}.decay" for i in range(9, 17)]),
-    ("Mix", ["s1.vol", "s2.vol", "dr.vol", "m.master", "dr.filter", "dr.drive", "m.drive", "m.filter"]
-            + [f"dr.p{i}.level" for i in range(1, 9)]),
+    ("Drums 9-16 Mix", [f"dr.p{i}.level" for i in range(9, 17)] + [f"dr.p{i}.pan" for i in range(9, 17)]),
+    ("Drums 9-16 Groove", [f"dr.p{i}.chance" for i in range(9, 17)] + [f"dr.p{i}.cond" for i in range(9, 17)]),
+    ("Mix", ["s1.vol", "s2.vol", "dr.vol", "m.master", "dr.filter", "dr.drive", "m.drive", "m.filter",
+             "dk.s1", "dk.s2", "dk.fx", "dk.src", "dk.rel", "m.glue", "m.gluespd", "m.width"]),
+    ("Mix EQ", ["eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "eq.s2.lo", "eq.s2.mid", "eq.s2.hi", "eq.lof", "eq.hif",
+                "eq.dr.lo", "eq.dr.mid", "eq.dr.hi", "eq.m.lo", "eq.m.mid", "eq.m.hi", "s1.pan", "s2.pan"]),
     ("FX", ["fx.s1", "fx.s2", "fx.dr", "fx.time", "fx.fb", "fx.tone", "m.filter", "m.crush",
             "rv.s1", "rv.s2", "rv.dr", "rv.size", "rv.tone", "rv.level", "dr.filter", "m.drive"]),
 ])
@@ -328,9 +379,16 @@ PRESETS = {
 }
 
 
-SUBPAGES = {"Synth 1": ["Synth 1", "Synth 1 Osc+", "Synth 1 Mod"], "Synth 2": ["Synth 2", "Synth 2 Osc+", "Synth 2 Mod"]}
-SUBPAGE_NAMES = ["Main", "Osc+", "Mod"]
-HIDDEN_PAGES = {p for subs in SUBPAGES.values() for p in subs[1:]}
+# tab -> [(sub-page button, page)]; tapping a tab again goes to its next sub-page
+SUBPAGES = {
+    "Synth 1": [("Main", "Synth 1"), ("Osc+", "Synth 1 Osc+"), ("Mod", "Synth 1 Mod"), ("Arp+", "Synth 1 Arp")],
+    "Synth 2": [("Main", "Synth 2"), ("Osc+", "Synth 2 Osc+"), ("Mod", "Synth 2 Mod"), ("Arp+", "Synth 2 Arp")],
+    "Drums 1-8": [("Main", "Drums 1-8"), ("Mix", "Drums 1-8 Mix"), ("Groove", "Drums 1-8 Groove")],
+    "Drums 9-16": [("Main", "Drums 9-16"), ("Mix", "Drums 9-16 Mix"), ("Groove", "Drums 9-16 Groove")],
+    "Mix": [("Main", "Mix"), ("EQ", "Mix EQ")],
+}
+HIDDEN_PAGES = {p for subs in SUBPAGES.values() for _, p in subs[1:]}
+NOT_LOCKABLE = ("mc.", "sc.", "m.master")
 
 
 class ParamStore:
@@ -342,8 +400,72 @@ class ParamStore:
         self.norm = {}
         self.val = {}
         self.mod = {}
+        # step locks: {key: {step 0-15: norm}}. While lock_step is set (the GUI's lock mode), knob moves
+        # are stored as locks for that step instead of changing your setting.
+        self.locks = {}
+        self.lock_step = None
+        self._locked_now = set()
+        # scenes: two snapshots of every setting; the Scene morph knob blends the ones that differ
+        self.scenes = {"A": None, "B": None}
+        self.scene_keys = []
         for k, p in SPECS.items():
             self.set_val(k, p.default)
+
+    @staticmethod
+    def lockable(key):
+        return not key.startswith(NOT_LOCKABLE)
+
+    def cur_norm(self, key):
+        """What the knob shows: the lock for the selected step in lock mode, otherwise your setting."""
+        if self.lock_step is not None:
+            d = self.locks.get(key)
+            if d and self.lock_step in d:
+                return d[self.lock_step]
+        return self.norm[key]
+
+    def apply_step(self, step):
+        """Audio thread, at each new 16th step while the BeatStep plays (None = stopped)."""
+        now = set()
+        if step is not None:
+            for key, d in list(self.locks.items()):
+                n = d.get(step)
+                if n is not None:
+                    self.val[key] = SPECS[key].to_val(min(max(n + self.mod.get(key, 0.0), 0.0), 1.0))
+                    now.add(key)
+        for key in self._locked_now - now:
+            if key in self.norm:
+                self._apply(key)
+        self._locked_now = now
+
+    def clear_locks(self, keys=None, step=None):
+        for key in list(self.locks) if keys is None else [k for k in keys if k in self.locks]:
+            if step is None:
+                self.locks.pop(key, None)
+            else:
+                self.locks[key].pop(step, None)
+                if not self.locks[key]:
+                    self.locks.pop(key)
+            if key in self.norm:
+                self._apply(key)
+
+    def save_scene(self, which):
+        self.scenes[which] = {k: n for k, n in self.norm.items() if self.lockable(k)}
+        self._scene_keys()
+        self.norm["sc.morph"] = 0.0 if which == "A" else 1.0
+        self._apply("sc.morph")
+
+    def _scene_keys(self):
+        A, B = self.scenes.get("A"), self.scenes.get("B")
+        self.scene_keys = [k for k in A if k in B and k in self.norm and abs(A[k] - B[k]) > 1e-6] if A and B else []
+
+    def apply_morph(self):
+        A, B = self.scenes.get("A"), self.scenes.get("B")
+        if not (A and B):
+            return
+        x = self.norm["sc.morph"]
+        for k in self.scene_keys:
+            self.norm[k] = A[k] + (B[k] - A[k]) * x
+            self._apply(k)
 
     def shown(self, key):
         return min(max(self.norm[key] + self.mod.get(key, 0.0), 0.0), 1.0)
@@ -356,10 +478,16 @@ class ParamStore:
 
     def set_norm(self, key, n):
         n = min(max(float(n), 0.0), 1.0)
+        if self.lock_step is not None and self.lockable(key):
+            self.locks.setdefault(key, {})[self.lock_step] = n
+            self.val[key] = SPECS[key].to_val(min(max(n + self.mod.get(key, 0.0), 0.0), 1.0))  # hear it
+            return
         self.norm[key] = n
         self._apply(key)
         if key.startswith("mc."):
             self.recompute_macros()
+        elif key == "sc.morph":
+            self.apply_morph()
 
     def recompute_macros(self):
         mod = {}
@@ -380,12 +508,20 @@ class ParamStore:
 
     def nudge(self, key, direction):
         p = SPECS[key]
+        base = self.cur_norm(key)
         if p.step:
-            self.set_val(key, self.val[key] + direction * p.step)
+            self.set_val(key, p.to_val(base) + direction * p.step)
         else:
-            self.set_norm(key, self.norm[key] + direction / 20.0)
+            self.set_norm(key, base + direction / 20.0)
 
     def apply_preset(self, pre, values):
+        ls, self.lock_step = self.lock_step, None  # loading a sound never writes step locks
+        try:
+            self._apply_preset(pre, values)
+        finally:
+            self.lock_step = ls
+
+    def _apply_preset(self, pre, values):
         for k, p in SPECS.items():
             if k.startswith(pre + ".") and not k.endswith(".vol"):
                 self.set_val(k, p.default)
@@ -393,6 +529,13 @@ class ParamStore:
             self.set_val(f"{pre}.{k}", v)
 
     def randomize(self, pre, rng=None):
+        ls, self.lock_step = self.lock_step, None
+        try:
+            self._randomize(pre, rng)
+        finally:
+            self.lock_step = ls
+
+    def _randomize(self, pre, rng=None):
         rng = rng or np.random.default_rng()
         for k in PAGES["Synth 1" if pre == "s1" else "Synth 2"]:
             if not k.endswith(".vol") and not k.endswith(".octave"):
@@ -587,9 +730,163 @@ class MonoSynth:
         self.drift_val = np.zeros(self.MAXV)
         self.drift_tgt = self.rng.uniform(-1, 1, self.MAXV)
         self.active = 0.0
+        # arpeggiator state (times in samples since the arp started)
+        self.arp_phys = []      # notes held on the BeatStep right now
+        self.arp_notes = []     # notes the arp plays from (stays after release when Arp hold is on)
+        self.arp_running = False
+        self.arp_t = 0
+        self.arp_next = 0
+        self.arp_off = None
+        self.arp_k = 0
+        self.arp_cur = None
+        self.arp_vel = 100
+        self.arp_seq = []
+        self.arp_last_stop = -10 ** 12
+        self.arp_rng = np.random.default_rng(51 if pre == "s1" else 61)
 
-    # ---- notes
+    # ---- notes (the arpeggiator sits in front of the voice)
     def note_on(self, note, vel):
+        if self.eng.p.val[self.pre + ".arp"] >= 0.5:
+            self._arp_on(note, vel)
+        else:
+            if self.arp_running:
+                self.arp_stop()
+            self._play_on(note, vel)
+
+    def note_off(self, note):
+        if self.arp_running or note in self.arp_phys:
+            self._arp_off(note)
+        else:
+            self._play_off(note)
+
+    def _arp_on(self, note, vel):
+        hold = self.eng.p.val[self.pre + ".arphold"] >= 0.5
+        if not self.arp_phys:  # first key of a new phrase
+            if hold or not self.arp_running:
+                self.arp_notes = []
+        if note not in self.arp_phys:
+            self.arp_phys.append(note)
+        if note not in self.arp_notes:
+            self.arp_notes.append(note)
+        if not self.arp_running:
+            self.arp_running = True
+            self.arp_t = 0
+            self.arp_next = 0
+            self.arp_off = None
+            # short BeatStep steps restart the arp on every step: carry on through the pattern instead
+            if self.eng.samples - self.arp_last_stop > 2 * self.step_len():
+                self.arp_k = 0
+            self.arp_vel = vel
+
+    def _arp_off(self, note):
+        if note in self.arp_phys:
+            self.arp_phys.remove(note)
+        hold = self.eng.p.val[self.pre + ".arphold"] >= 0.5
+        if not hold and note in self.arp_notes:
+            self.arp_notes.remove(note)
+        if not self.arp_notes:
+            self.arp_stop()
+
+    def arp_stop(self):
+        if self.arp_running:
+            self.arp_last_stop = self.eng.samples
+        if self.arp_cur is not None:
+            self._play_off(self.arp_cur)
+        self.arp_cur = None
+        self.arp_running = False
+        self.arp_notes = []
+        self.arp_phys = []
+
+    def arp_pool(self):
+        v = self.eng.p.val
+        pre = self.pre
+        ints = CHORDS[int(v[pre + ".chord"])][1]
+        base = []
+        for nt in self.arp_notes:
+            for iv in ints:
+                if nt + iv not in base:
+                    base.append(nt + iv)
+        octs = int(v[pre + ".arpoct"]) + 1
+        mode = ARP_MODES[int(v[pre + ".arp"])]
+        if mode != "As played":
+            base = sorted(base)
+        pool = [nt + 12 * o for o in range(octs) for nt in base]
+        if mode == "Down":
+            pool = pool[::-1]
+        elif mode == "Up-down" and len(pool) > 2:
+            pool = pool + pool[-2:0:-1]
+        return pool, mode
+
+    def step_len(self):
+        ticks = ARP_RATES[int(self.eng.p.val[self.pre + ".arprate"])][1]
+        return ticks / 24.0 * 60.0 / max(self.eng.bpm, 30.0) * self.sr
+
+    def arp_events(self):
+        """Run every arp event due at the current arp time."""
+        v = self.eng.p.val
+        pre = self.pre
+        if v[pre + ".arp"] < 0.5:
+            self.arp_stop()
+            return
+        if self.arp_off is not None and self.arp_t >= self.arp_off:
+            if self.arp_cur is not None:
+                self._play_off(self.arp_cur)
+                self.arp_cur = None
+            self.arp_off = None
+        if self.arp_t >= self.arp_next:
+            L = self.step_len()
+            pool, mode = self.arp_pool()
+            k = self.arp_k
+            if pool and self.arp_rng.random() <= v[pre + ".arpchance"] + 1e-9:
+                nt = pool[int(self.arp_rng.integers(len(pool)))] if mode == "Random" else pool[k % len(pool)]
+                acc = int(v[pre + ".arpacc"])
+                vel = self.arp_vel
+                if acc:
+                    vel = min(127, vel + 30) if k % (acc + 1) == 0 else max(1, int(vel * 0.7))
+                gate = v[pre + ".arpgate"]
+                if gate >= 0.98 and self.arp_cur is not None:  # full gate: slide into the next note
+                    old = self.arp_cur
+                    self._play_on(nt, vel)
+                    if old != nt:
+                        self._play_off(old)
+                else:
+                    if self.arp_cur is not None:
+                        self._play_off(self.arp_cur)
+                    self._play_on(nt, vel)
+                self.arp_cur = nt
+                self.arp_off = None if gate >= 0.98 else self.arp_t + max(int(gate * L), 32)
+            self.arp_k = k + 1
+            swing = v[pre + ".arpswing"]
+            nxt = (self.arp_k + (0.5 * swing if self.arp_k % 2 else 0.0)) * L
+            # keep timing steady if the tempo changes: schedule from this step, not from zero
+            here = (k + (0.5 * swing if k % 2 else 0.0)) * L
+            self.arp_next = self.arp_t + max(int(round(nxt - here)), 1)
+
+    def render_block(self, n):
+        """render() with arp events placed at their exact sample."""
+        if not self.arp_running:
+            return self.render(n)
+        parts = []
+        done = 0
+        any_sound = False
+        while done < n:
+            self.arp_events()
+            if not self.arp_running:
+                y = self.render(n - done)
+                parts.append(y if y is not None else np.zeros((n - done, 2)))
+                any_sound = any_sound or y is not None
+                break
+            due = [t for t in (self.arp_next, self.arp_off) if t is not None]
+            m = int(min(n - done, max(1, min(due) - self.arp_t)))
+            y = self.render(m)
+            if y is not None:
+                any_sound = True
+            parts.append(y if y is not None else np.zeros((m, 2)))
+            self.arp_t += m
+            done += m
+        return np.concatenate(parts) if any_sound else None
+
+    def _play_on(self, note, vel):
         v = self.eng.p.val
         legato = bool(self.held) and self.amp.stage in (1, 2)
         if note in self.held:
@@ -611,7 +908,7 @@ class MonoSynth:
             self.menv.gate_on()
         self.active = 1.0
 
-    def note_off(self, note):
+    def _play_off(self, note):
         if note in self.held:
             self.held.remove(note)
         if self.held:
@@ -623,6 +920,10 @@ class MonoSynth:
             self.menv.gate_off()
 
     def all_off(self):
+        self.arp_running = False
+        self.arp_cur = None
+        self.arp_notes = []
+        self.arp_phys = []
         self.held = []
         self.amp.gate_off()
         self.fenv.gate_off()
@@ -649,6 +950,8 @@ class MonoSynth:
         return sem
 
     def chord(self):
+        if self.arp_running:  # the arp plays the chord one note at a time
+            return [0]
         v = self.eng.p.val
         ints = list(CHORDS[int(v[self.pre + ".chord"])][1])
         voicing = int(v[self.pre + ".voicing"])
@@ -1159,8 +1462,9 @@ class Drums:
             tau = max(dec * dec * M / 2.0 / rate, 0.004 * self.sr)
             k = math.exp(-1.0 / tau)
         gain = val[f"dr.p{pad+1}.level"] * (vel / 127.0) ** 1.2
-        # [pad, pos, rate, gain, env, choking, k]
-        self.voices.append([pad, 0.0, rate, gain, 1.0, False, k])
+        th = (val[f"dr.p{pad+1}.pan"] + 1.0) * (math.pi / 4.0)
+        # [pad, pos, rate, gain, env, choking, k, left, right]
+        self.voices.append([pad, 0.0, rate, gain, 1.0, False, k, math.cos(th) * math.sqrt(2.0), math.sin(th) * math.sqrt(2.0)])
         if len(self.voices) > 32:
             self.voices.pop(0)
         self.active[pad] = 1.0
@@ -1172,7 +1476,7 @@ class Drums:
         ar = np.arange(n)
         alive = []
         for v in self.voices:
-            pad, pos, rate, gain, e, choking, k = v
+            pad, pos, rate, gain, e, choking, k, gl, gr = v
             s = self.samples[pad]
             M = len(s) - 1
             m = min(n, int(math.ceil((M - pos) / rate)))
@@ -1189,8 +1493,8 @@ class Drums:
                 y = y * ev
                 e = float(ev[-1])
             y *= gain
-            out[:m, 0] += y
-            out[:m, 1] += y
+            out[:m, 0] += y * gl
+            out[:m, 1] += y * gr
             v[1] = pos + rate * n
             v[4] = e
             if m == n and e > 1e-4:
@@ -1315,6 +1619,209 @@ class MasterFX:
         return out
 
 
+def shelf_peak_sos(lo, mid, hi, lof, hif, sr):
+    """Low shelf, mid peak (1 kHz) and high shelf, gains in dB (RBJ cookbook)."""
+    out = []
+    for kind, f, g in (("ls", lof, lo), ("pk", 1000.0, mid), ("hs", hif, hi)):
+        A = 10 ** (g / 40.0)
+        w0 = TWO_PI * min(f, 0.45 * sr) / sr
+        c, sn = math.cos(w0), math.sin(w0)
+        if kind == "pk":
+            al = sn / (2 * 0.8)
+            b0, b1, b2, a0, a1, a2 = 1 + al * A, -2 * c, 1 - al * A, 1 + al / A, -2 * c, 1 - al / A
+        else:
+            al = sn / 2 * math.sqrt(2.0)
+            r = 2 * math.sqrt(A) * al
+            if kind == "ls":
+                b0, b1, b2 = A * ((A + 1) - (A - 1) * c + r), 2 * A * ((A - 1) - (A + 1) * c), A * ((A + 1) - (A - 1) * c - r)
+                a0, a1, a2 = (A + 1) + (A - 1) * c + r, -2 * ((A - 1) + (A + 1) * c), (A + 1) + (A - 1) * c - r
+            else:
+                b0, b1, b2 = A * ((A + 1) + (A - 1) * c + r), -2 * A * ((A - 1) + (A + 1) * c), A * ((A + 1) + (A - 1) * c - r)
+                a0, a1, a2 = (A + 1) - (A - 1) * c + r, 2 * ((A - 1) - (A + 1) * c), (A + 1) - (A - 1) * c - r
+        out.append([b0 / a0, b1 / a0, b2 / a0, 1.0, a1 / a0, a2 / a0])
+    return np.array(out)
+
+
+class EQ3:
+    def __init__(self, sr):
+        self.sr = sr
+        self.zi = np.zeros((3, 2, 2))
+        self.key = None
+        self.sos = None
+
+    def process(self, x, lo, mid, hi, lof, hif):
+        if abs(lo) < 0.05 and abs(mid) < 0.05 and abs(hi) < 0.05:
+            if self.key is not None:
+                self.zi[:] = 0.0
+                self.key = None
+            return x
+        key = (round(lo, 2), round(mid, 2), round(hi, 2), round(lof), round(hif))
+        if key != self.key:
+            self.sos = shelf_peak_sos(lo, mid, hi, lof, hif, self.sr)
+            self.key = key
+        y, self.zi = sosfilt(self.sos, x, axis=0, zi=self.zi)
+        return y
+
+
+class Glue:
+    """Bus compressor on the master. One knob: more = lower threshold, higher ratio, auto make-up."""
+    S = 32
+
+    def __init__(self, sr):
+        self.sr = sr
+        self.env = 0.0
+        self.gr = 1.0
+
+    def process(self, x, amt, speed):
+        if amt < 0.01:
+            self.env, self.gr = 0.0, 1.0
+            return x
+        n = len(x)
+        S = self.S
+        k = -(-n // S)
+        lv = np.abs(x).max(axis=1)
+        if k * S != n:
+            lv = np.concatenate([lv, np.zeros(k * S - n)])
+        peaks = lv.reshape(k, S).max(axis=1)
+        _, att, rel = GLUE_SPEEDS[int(speed)]
+        ca, cr = math.exp(-S / (att * self.sr)), math.exp(-S / (rel * self.sr))
+        thr = 10 ** ((-2.0 - 22.0 * amt) / 20.0)
+        ratio = 2.0 + 4.0 * amt
+        g = np.empty(k)
+        e = self.env
+        for i in range(k):
+            pk = peaks[i]
+            e = pk + (e - pk) * (ca if pk > e else cr)
+            g[i] = (e / thr) ** (1.0 / ratio - 1.0) if e > thr else 1.0
+        self.env = e
+        makeup = (1.0 / thr) ** ((1.0 - 1.0 / ratio) * 0.5)
+        gs = np.interp(np.arange(n), np.arange(k) * S + S / 2, g)
+        self.gr = float(g.min())
+        return x * (gs * makeup)[:, None]
+
+
+class PunchFX:
+    """Hold-to-play performance effects on the whole mix (EP-133 style).
+    One buffer effect at a time (repeat, roll, tape stop, reverse: the last one pressed wins),
+    plus filter sweep, gate and echo throw, which can be stacked on top."""
+    BUF = ("Repeat 1/8", "Repeat 1/16", "Roll 1/32", "Tape stop", "Reverse")
+
+    def __init__(self, sr):
+        self.sr = sr
+        self.L = int(sr * 8)
+        self.buf = np.zeros((self.L, 2))
+        self.abs = 0
+        self.held = set()
+        self.bfx = None      # [name, start abs, wet, releasing]
+        self.sweep = None    # [start abs, fc now, releasing]
+        self.gate = None     # start abs
+        self.gate_g = 1.0
+        self.fzi = np.zeros((1, 2, 2))
+        self.echo = Delay(sr)
+        self.echo_on = False
+        self.echo_live = 0.0
+
+    def press(self, i, on):
+        name = PUNCH_FX[i % len(PUNCH_FX)]
+        if on:
+            self.held.add(name)
+            if name in self.BUF:
+                self.bfx = [name, self.abs, 0.0, False]
+            elif name == "Filter sweep":
+                self.sweep = [self.abs, 18000.0, False]
+                self.fzi = np.zeros((1, 2, 2))
+            elif name == "Gate 1/16":
+                self.gate = self.abs
+            else:
+                self.echo_on = True
+        else:
+            self.held.discard(name)
+            if self.bfx and self.bfx[0] == name:
+                self.bfx[3] = True
+            elif name == "Filter sweep" and self.sweep:
+                self.sweep[2] = True
+            elif name == "Gate 1/16":
+                self.gate = None
+            elif name == "Echo throw":
+                self.echo_on = False
+
+    def busy(self):
+        return bool(self.bfx or self.sweep or self.gate is not None or self.echo_on or self.echo_live > 1e-5
+                    or self.gate_g < 0.999)
+
+    def process(self, x, bpm):
+        n = len(x)
+        base = self.abs
+        idx = (base + np.arange(n)) % self.L
+        self.buf[idx] = x
+        self.abs += n
+        if not self.busy():
+            return x
+        beat = 60.0 / max(bpm, 30.0) * self.sr
+        y = x
+        if self.bfx:
+            name, start, wet, rel = self.bfx
+            t = base - start + np.arange(n)
+            if name in ("Repeat 1/8", "Repeat 1/16", "Roll 1/32"):
+                Ls = max(int(beat * {"Repeat 1/8": 0.5, "Repeat 1/16": 0.25}.get(name, 0.125)), 64)
+                ph = t % Ls
+                src = np.where(t < Ls, base + np.arange(n), start + ph)
+                g = np.minimum(1.0, (Ls - ph) / 48.0)
+                g = np.where(t >= Ls, np.minimum(g, ph / 48.0 + 0.0), g)
+                sig = self.buf[src % self.L] * np.clip(g, 0.0, 1.0)[:, None]
+            elif name == "Tape stop":
+                T = beat
+                tt = np.minimum(t, T).astype(float)
+                pos = tt - tt * tt / (2.0 * T)
+                fpos = start + pos
+                i0 = np.floor(fpos).astype(np.int64)
+                fr = (fpos - i0)[:, None]
+                sig = self.buf[i0 % self.L] * (1 - fr) + self.buf[(i0 + 1) % self.L] * fr
+                sig = sig * np.clip((T - t) / (0.15 * T), 0.0, 1.0)[:, None]
+            else:  # Reverse
+                src = start - 1 - np.minimum(t, self.L - n - 2)
+                sig = self.buf[src % self.L]
+            ramp = np.clip(wet + (np.arange(1, n + 1) / 96.0) * (-1.0 if rel else 1.0), 0.0, 1.0)
+            y = x * (1.0 - ramp)[:, None] + sig * ramp[:, None]
+            self.bfx[2] = float(ramp[-1])
+            if rel and ramp[-1] <= 0.0:
+                self.bfx = None
+        if self.sweep:
+            start, fc, rel = self.sweep
+            out = np.empty_like(y)
+            for j in range(0, n, 32):
+                e = min(j + 32, n)
+                if rel:
+                    fc = min(fc * 2.0 ** (32.0 / (0.12 * self.sr) * 7.0), 20000.0)
+                else:
+                    tt = (base - start + j) / (2.0 * beat)
+                    fc = 18000.0 * (250.0 / 18000.0) ** min(tt, 1.0)
+                sos = np.array([lp_coeffs(fc, 3.0, self.sr)])
+                out[j:e], self.fzi = sosfilt(sos, y[j:e], axis=0, zi=self.fzi)
+            y = out
+            self.sweep[1] = fc
+            if rel and fc >= 19999.0:
+                self.sweep = None
+        if self.gate is not None or self.gate_g < 0.999:
+            if self.gate is not None:
+                S = beat / 4.0
+                t = base - self.gate + np.arange(n)
+                ph = (t % S) / S
+                tgt = np.where(ph < 0.5, 1.0, 0.0)
+            else:
+                tgt = np.ones(n)
+            a = math.exp(-1.0 / (0.002 * self.sr))
+            g, _ = lfilter([1 - a], [1, -a], tgt, zi=[self.gate_g * a])
+            self.gate_g = float(g[-1])
+            y = y * g[:, None]
+        if self.echo_on or self.echo_live > 1e-5:
+            inp = y if self.echo_on else np.zeros_like(y)
+            d = self.echo.process(inp, beat * 0.75 / self.sr, 0.62, 4000.0)
+            self.echo_live = float(np.abs(d).max())
+            y = y + d * 0.8
+        return y
+
+
 class Engine:
     def __init__(self, sr, params=None):
         self.sr = int(sr)
@@ -1325,9 +1832,24 @@ class Engine:
         self.delay = Delay(self.sr)
         self.reverb = Reverb(self.sr)
         self.master = MasterFX(self.sr)
+        self.eqs = {k: EQ3(self.sr) for k in ("s1", "s2", "dr", "m")}
+        self.glue = Glue(self.sr)
+        self.punch = PunchFX(self.sr)
         self.events = collections.deque()
         self.bpm = 120.0
         self.peak = 0.0
+        self.samples = 0
+        # transport from the BeatStep's clock: 24 ticks per beat, 16th step = 6 ticks
+        self.tick = -1
+        self.playing = False
+        self.step = None
+        self.fill = False
+        self.cond_rng = np.random.default_rng(71)
+        self.duck_e = 0.0
+        self.duck_hit = None
+        self.beat_ph = 0.0
+        self.recorder = None
+        self.capture = None
 
     # thread-safe entry points (MIDI / GUI threads)
     def note_on(self, target, note, vel=100):
@@ -1339,6 +1861,62 @@ class Engine:
     def panic(self):
         self.events.append(("all", "panic", 0, 0))
 
+    def clock(self, kind):  # "tick", "start", "stop", "cont"
+        self.events.append(("clk", kind, 0, 0))
+
+    def punch_fx(self, i, on):
+        self.events.append(("pf", "on" if on else "off", i, 0))
+
+    def set_fill(self, on):
+        self.events.append(("fill", "on" if on else "off", 0, 0))
+
+    def bar(self):
+        return max(self.tick + 2, 0) // 96 if self.playing else 0
+
+    def cond_ok(self, pad):
+        v = self.p.val
+        ch = v[f"dr.p{pad+1}.chance"]
+        if ch < 0.999 and self.cond_rng.random() > ch:
+            return False
+        c = DRUM_CONDS[int(v[f"dr.p{pad+1}.cond"])]
+        if c == "Always":
+            return True
+        if c == "Fill only":
+            return self.fill
+        if c == "Not in fill":
+            return not self.fill
+        k, of = c.split(" of ")
+        return self.bar() % int(of) == int(k[:-2]) - 1
+
+    def _clock(self, kind):
+        p = self.p
+        if kind == "start":
+            self.tick = -1
+            self.playing = True
+            self.step = 0
+            p.apply_step(0)
+        elif kind == "cont":
+            self.playing = True
+        elif kind == "stop":
+            self.playing = False
+            self.step = None
+            p.apply_step(None)
+        elif kind == "tick":
+            self.tick += 1
+            if not self.playing:
+                return
+            t = self.tick
+            if t % 6 == 5:  # one tick early: the BeatStep may send the step's note before its clock
+                self.step = ((t + 1) // 6) % 16
+                p.apply_step(self.step)
+            if t % 24 == 0 and int(p.val["dk.src"]) == 16:
+                self.duck_hit = 0
+            cap = self.capture
+            if cap and cap["state"] == "wait" and t % 96 == 94:
+                cap["state"] = "rec"
+            if cap and cap["state"] == "rec" and cap.get("bar_at") is None and t % 96 == 0:
+                cap["bar_at"] = cap["got"]
+
     def _dispatch(self):
         ev = self.events
         while ev:
@@ -1348,9 +1926,20 @@ class Engine:
                 self.s2.all_off()
                 self.drums.voices = []
                 continue
+            if target == "clk":
+                self._clock(kind)
+                continue
+            if target == "pf":
+                self.punch.press(note, kind == "on")
+                continue
+            if target == "fill":
+                self.fill = kind == "on"
+                continue
             if target == "dr":
-                if kind == "on" and vel > 0:
+                if kind == "on" and vel > 0 and self.cond_ok(note % 16):
                     self.drums.trigger(note, vel)
+                    if note % 16 == int(self.p.val["dk.src"]):
+                        self.duck_hit = 0
                 continue
             syn = self.s1 if target == "s1" else self.s2
             if kind == "on" and vel > 0:
@@ -1358,37 +1947,104 @@ class Engine:
             else:
                 syn.note_off(note)
 
+    def duck_env(self, n):
+        """Side-chain envelope (0..1): jumps up when the chosen pad plays (or on every beat), then falls."""
+        v = self.p.val
+        hit, self.duck_hit = self.duck_hit, None
+        if max(v["dk.s1"], v["dk.s2"], v["dk.fx"]) < 0.005:
+            self.duck_e = 0.0
+            return None
+        if int(v["dk.src"]) == 16 and not self.playing:  # every beat from the tempo when the BeatStep is stopped
+            spb = 60.0 / max(self.bpm, 30.0) * self.sr
+            first = spb - self.beat_ph
+            if first < n:
+                hit = int(first)
+            self.beat_ph = (self.beat_ph + n) % spb
+        tau = max(v["dk.rel"] * self.sr / 3.0, 1.0)
+        t = np.arange(n, dtype=float)
+        e0 = self.duck_e
+        if hit is None:
+            env = e0 * np.exp(-(t + 1.0) / tau)
+        else:
+            A = 0.003 * self.sr
+            env = np.empty(n)
+            env[:hit] = e0 * np.exp(-(t[:hit] + 1.0) / tau)
+            eh = env[hit - 1] if hit > 0 else e0
+            u = t[hit:] - hit
+            env[hit:] = np.where(u < A, eh + (1.0 - eh) * (u / A), np.exp(-(u - A) / tau))
+        self.duck_e = float(env[-1])
+        return env
+
     def render(self, n):
         self._dispatch()
         v = self.p.val
         out = np.zeros((n, 2))
         send = np.zeros((n, 2))
         rsend = np.zeros((n, 2))
-        a = self.s1.render(n)
-        if a is not None:
+        duck = self.duck_env(n)
+        lof, hif = v["eq.lof"], v["eq.hif"]
+        stems = {} if (self.recorder or self.capture) else None
+        for key, syn in (("s1", self.s1), ("s2", self.s2)):
+            a = syn.render_block(n)
+            if a is None:
+                continue
+            a = self.eqs[key].process(a, v[f"eq.{key}.lo"], v[f"eq.{key}.mid"], v[f"eq.{key}.hi"], lof, hif)
+            if duck is not None and v["dk." + key] > 0.005:
+                a = a * (1.0 - v["dk." + key] * duck)[:, None]
             out += a
-            send += a * v["fx.s1"]
-            rsend += a * v["rv.s1"]
-        b = self.s2.render(n)
-        if b is not None:
-            out += b
-            send += b * v["fx.s2"]
-            rsend += b * v["rv.s2"]
+            send += a * v["fx." + key]
+            rsend += a * v["rv." + key]
+            if stems is not None:
+                stems[key] = a
         c = self.drums.render(n)
         if c is not None:
+            c = self.eqs["dr"].process(c, v["eq.dr.lo"], v["eq.dr.mid"], v["eq.dr.hi"], lof, hif)
             out += c
             send += c * v["fx.dr"]
             rsend += c * v["rv.dr"]
+            if stems is not None:
+                stems["dr"] = c
         secs = DIVISIONS[int(v["fx.time"])][1] * 60.0 / max(self.bpm, 30.0)
         d = self.delay.process(send, secs, v["fx.fb"], v["fx.tone"])
-        out += d
         rsend += d * 0.3
         r = self.reverb.process(rsend, v["rv.size"], v["rv.tone"], v["rv.level"])
-        if r is not None:
-            out += r
+        fx = d if r is None else d + r
+        if duck is not None and v["dk.fx"] > 0.005:
+            fx = fx * (1.0 - v["dk.fx"] * duck)[:, None]
+        out += fx
+        if stems is not None:
+            stems["fx"] = fx
         out = self.master.process(out, v["m.filter"], v["m.crush"])
+        out = self.eqs["m"].process(out, v["eq.m.lo"], v["eq.m.mid"], v["eq.m.hi"], lof, hif)
+        out = self.glue.process(out, v["m.glue"], v["m.gluespd"])
+        w = v["m.width"]
+        if abs(w - 1.0) > 0.01:
+            mid = (out[:, 0] + out[:, 1]) * 0.5
+            side = (out[:, 0] - out[:, 1]) * 0.5 * w
+            out = np.stack([mid + side, mid - side], axis=1)
+        out = self.punch.process(out, self.bpm)
         g = 1.0 + 4.0 * v["m.drive"]
         out = np.tanh(out * (v["m.master"] * g)) if g > 1.01 else np.tanh(out * v["m.master"])
         pk = float(np.max(np.abs(out))) if n else 0.0
         self.peak = max(pk, self.peak * 0.9)
+        self.samples += n
+        if self.recorder is not None:
+            try:
+                self.recorder.push(out, stems)
+            except Exception:
+                pass
+        cap = self.capture
+        if cap and cap["state"] == "rec":
+            src = cap["src"]
+            if src == "all":
+                x = out
+            else:
+                x = np.zeros((n, 2))
+                for k in (("s1", "s2") if src == "synths" else (src,)):
+                    if k in stems:
+                        x = x + stems[k]
+            cap["buf"].append(x.copy())
+            cap["got"] += n
+            if cap.get("bar_at") is not None and cap["got"] >= cap["bar_at"] + cap["need"]:
+                cap["state"] = "done"
         return out.astype(np.float32)

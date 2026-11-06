@@ -43,13 +43,14 @@ except Exception:
 import tkinter as tk  # noqa: E402
 from tkinter import font as tkfont, filedialog  # noqa: E402
 
-from potentialbox.engine import (Engine, ParamStore, SPECS, PAGES, PRESETS, MACROS, SUBPAGES, SUBPAGE_NAMES,  # noqa: E402
-                                 HIDDEN_PAGES, MOD_SOURCES, MOD_DESTS)
+from potentialbox.engine import (Engine, ParamStore, SPECS, PAGES, PRESETS, MACROS, SUBPAGES,  # noqa: E402
+                                 HIDDEN_PAGES, MOD_SOURCES, MOD_DESTS, PUNCH_FX)
+from potentialbox.recorder import Recorder, write_wav, recordings_dir  # noqa: E402
 from potentialbox import kits  # noqa: E402
 from potentialbox.library import Library, map_kit, brand_of, build_index, filter_index, GROUPS, PAD_GROUP  # noqa: E402
 
 APP = "PotentialBox"
-VERSION = "1.5.1"
+VERSION = "1.6.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
@@ -61,18 +62,30 @@ LOG_FILE = os.path.join(CFG_DIR, "log.txt")
 SOUNDS_FILE = os.path.join(CFG_DIR, "my-sounds.json")
 SLOTS = 8
 KITS_FILE = os.path.join(CFG_DIR, "my-kits.json")
+SETUPS_FILE = os.path.join(CFG_DIR, "my-setups.json")
+RESAMPLE_DIR = os.path.join(CFG_DIR, "Resampled")
+NO_LOCK_PAGES = ("Macros", "Live", "Setup")
 ACTIONS = [("rand_s1", "Random Synth 1"), ("rand_s2", "Random Synth 2"), ("rand_kit", "Random Drum Kit"),
            ("next_kit", "Next Kit"), ("prev_tab", "Previous Tab"), ("next_tab", "Next Tab"),
            ("tab:Perform", "Perform Tab"), ("tab:Synth 1", "Synth 1 Tab"), ("tab:Synth 2", "Synth 2 Tab"),
            ("tab:Drums 1-8", "Drums 1-8 Tab"), ("tab:Drums 9-16", "Drums 9-16 Tab"), ("tab:Mix", "Mix Tab"),
            ("next_s1", "Synth 1 Next Sound"), ("next_s2", "Synth 2 Next Sound"), ("tab:Macros", "Macros Tab"),
-           ("panic", "All Notes Off")]
+           ("panic", "All Notes Off"),
+           # v1.6: no default pad, tap the card and press a pad or step to use them
+           ("tab:Live", "Live Tab"), ("tab:FX", "FX Tab"), ("rec", "Record On/Off"), ("fill", "Fill (hold)")]
 ACTION_NAMES = dict(ACTIONS)
+PAD_ACTIONS = [aid for aid, _ in ACTIONS[:16]]
+HOLD_ACTIONS = {"fill"}
+# On the Live tab the 16 BeatStep pads (the ones set to pad actions 1-16) play these instead
+LIVE_PADS = [f"Hold: {n}" for n in PUNCH_FX] + ["Hold: Fill", "Hold: Scene B", "Record on/off", "Random Synth 1",
+                                                 "Random Synth 2", "Random Drum Kit", "Next Kit", "Back to last tab"]
 
 
 def default_actions():
-    """BeatStep Pro pads in CNTRL mode, MIDI channel 16, notes 36-51 -> the 16 actions in order."""
-    return {aid: {"t": "note", "ch": 16, "n": 36 + i} for i, (aid, _) in enumerate(ACTIONS)}
+    """BeatStep Pro pads in CNTRL mode, MIDI channel 16, notes 36-51 -> the first 16 actions in order."""
+    d = {aid: {"t": "note", "ch": 16, "n": 36 + i} for i, aid in enumerate(PAD_ACTIONS)}
+    d.update({aid: None for aid, _ in ACTIONS[16:]})
+    return d
 
 
 KNOB_GROUPS = {
@@ -88,7 +101,15 @@ KNOB_GROUPS = {
     "Synth 2 Osc+": [(0, 2, "Chord"), (2, 4, "Sub & noise"), (4, 6, "Pan & drift"), (6, 8, "Pitch env"),
                      (8, 10, "Filter"), (10, 12, "Feel"), (12, 16, "Quick access")],
     "Synth 2 Mod": [(0, 3, "LFO 1"), (3, 6, "LFO 2"), (6, 8, "Mod env"), (8, 16, "Mod slots · tap a name to change it")],
-    "Mix": [(0, 4, "Levels"), (4, 8, "Bus & DJ filter"), (8, 16, "Drum levels · pads 1-8")],
+    "Mix": [(0, 4, "Levels"), (4, 8, "Bus & DJ filter"), (8, 13, "Side-chain duck"), (13, 16, "Glue & width")],
+    "Mix EQ": [(0, 3, "Synth 1 EQ"), (3, 6, "Synth 2 EQ"), (6, 8, "EQ frequencies"), (8, 11, "Drums EQ"),
+               (11, 14, "Master EQ"), (14, 16, "Synth pan")],
+    "Synth 1 Arp": [(0, 4, "Arpeggiator"), (4, 8, "Feel"), (8, 9, "Duck"), (9, 12, "EQ"), (12, 16, "Pan, sends & level")],
+    "Synth 2 Arp": [(0, 4, "Arpeggiator"), (4, 8, "Feel"), (8, 9, "Duck"), (9, 12, "EQ"), (12, 16, "Pan, sends & level")],
+    "Drums 1-8 Mix": [(0, 8, "Level · pads 1-8"), (8, 16, "Pan · pads 1-8")],
+    "Drums 9-16 Mix": [(0, 8, "Level · pads 9-16"), (8, 16, "Pan · pads 9-16")],
+    "Drums 1-8 Groove": [(0, 8, "Chance · pads 1-8"), (8, 16, "Plays when · pads 1-8")],
+    "Drums 9-16 Groove": [(0, 8, "Chance · pads 9-16"), (8, 16, "Plays when · pads 9-16")],
     "FX": [(0, 3, "Delay sends"), (3, 6, "Delay"), (6, 8, "DJ filter & lo-fi"), (8, 11, "Reverb sends"),
            (11, 14, "Reverb"), (14, 16, "Bus")],
 }
@@ -149,7 +170,10 @@ class State:
         self.preset = {"s1": 0, "s2": 0}
         self.preset_name = {"s1": PRESETS["s1"][0][0], "s2": PRESETS["s2"][0][0]}
         self.page = "Perform"
-        self.subpage = {"Synth 1": 0, "Synth 2": 0}
+        self.subpage = {t: 0 for t in SUBPAGES}
+        self.last_tab = "Perform"
+        self.setups = [None] * SLOTS
+        self.rec_stems = True
         self.midi_off = []  # port names the user switched off
         self.bad_audio = []  # labels of outputs that froze or crashed on open
         self.audio_pending = None  # label being opened right now (set before open, cleared after)
@@ -164,6 +188,45 @@ class State:
                 self.sounds[pre] = lst + [None] * (SLOTS - len(lst))
         except Exception:
             pass
+
+    def load_setups(self):
+        try:
+            with open(SETUPS_FILE, encoding="utf-8") as f:
+                lst = list(json.load(f))[:SLOTS]
+            self.setups = lst + [None] * (SLOTS - len(lst))
+        except Exception:
+            pass
+
+    def save_setups(self):
+        try:
+            os.makedirs(CFG_DIR, exist_ok=True)
+            tmp = SETUPS_FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.setups, f, indent=1)
+            os.replace(tmp, SETUPS_FILE)
+            return True
+        except Exception as e:
+            log("setups save failed", e)
+            return False
+
+    def locks_json(self):
+        return {k: {str(st): n for st, n in d.items()} for k, d in self.params.locks.items()}
+
+    def load_locks(self, d):
+        p = self.params
+        p.locks = {}
+        for k, steps in (d or {}).items():
+            if k in SPECS and isinstance(steps, dict):
+                p.locks[k] = {int(st) % 16: float(n) for st, n in steps.items()}
+
+    def load_scenes(self, d):
+        p = self.params
+        p.scenes = {"A": None, "B": None}
+        for w in ("A", "B"):
+            sc = (d or {}).get(w)
+            if isinstance(sc, dict):
+                p.scenes[w] = {k: float(n) for k, n in sc.items() if k in SPECS}
+        p._scene_keys()
 
     def load_kits(self):
         try:
@@ -200,6 +263,7 @@ class State:
     def load(self):
         self.load_sounds()
         self.load_kits()
+        self.load_setups()
         try:
             with open(CFG_FILE, encoding="utf-8") as f:
                 d = json.load(f)
@@ -244,7 +308,11 @@ class State:
         sp = d.get("subpage", {})
         if isinstance(sp, dict):
             for t in self.subpage:
-                self.subpage[t] = int(sp.get(t, 0)) % 3
+                self.subpage[t] = int(sp.get(t, 0)) % len(SUBPAGES[t])
+        self.load_locks(d.get("locks"))
+        self.load_scenes(d.get("scenes"))
+        self.rec_stems = bool(d.get("rec_stems", True))
+        self.last_tab = d.get("last_tab", "Perform") if d.get("last_tab") in TABS else "Perform"
         self.midi_off = d.get("midi_off", [])
         self.bad_audio = [x for x in d.get("bad_audio", []) if isinstance(x, str)]
         self.audio_pending = d.get("audio_pending")
@@ -255,7 +323,8 @@ class State:
             d = dict(params=self.params.norm, cc_map=self.cc_map, knob_mode=self.knob_mode, ch=self.ch,
                      device=self.device, blocksize=self.blocksize, kit=self.kit, recent=self.recent, library_root=self.library_root,
                      preset=self.preset, preset_name=self.preset_name, page=self.page, subpage=self.subpage, midi_off=self.midi_off,
-                     bad_audio=self.bad_audio, audio_pending=self.audio_pending, actions=self.actions)
+                     bad_audio=self.bad_audio, audio_pending=self.audio_pending, actions=self.actions,
+                     locks=self.locks_json(), scenes=self.params.scenes, rec_stems=self.rec_stems, last_tab=self.last_tab)
             tmp = CFG_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(d, f, indent=1)
@@ -467,6 +536,9 @@ class Midi:
         self.flash = [0.0] * 16
         self.activity = 0.0
         self.error = ""
+        self.clock_port = None
+        self.clock_seen = 0.0
+        self.scene_hold = None
 
     def names(self):
         if mido is None:
@@ -491,7 +563,7 @@ class Midi:
 
     def open(self, name):
         try:
-            self.ports[name] = mido.open_input(name, callback=self.on_msg)
+            self.ports[name] = mido.open_input(name, callback=lambda m, n=name: self.on_msg(m, n))
             log("midi open", name)
         except Exception as e:
             self.error = f"{name}: {e}"
@@ -518,16 +590,30 @@ class Midi:
         label = "BEATSTEP PRO" if "beatstep" in n.lower() else n[:20].upper()
         return label + (f" +{len(self.ports)-1}" if len(self.ports) > 1 else "")
 
-    def on_msg(self, msg):
+    def on_msg(self, msg, port=None):
         try:
-            self._handle(msg)
+            self._handle(msg, port)
         except Exception:
             log("midi error", traceback.format_exc())
 
-    def _handle(self, msg):
+    def _handle(self, msg, port=None):
         app = self.app
         eng = app.audio.engine
         t = msg.type
+        if t in ("clock", "start", "stop", "continue"):
+            # the BeatStep shows up as two ports: only follow the clock from one of them
+            now = time.time()
+            if self.clock_port is None or now - self.clock_seen > 2.0:
+                self.clock_port = port
+            if port != self.clock_port:
+                return
+            self.clock_seen = now
+            if t != "clock":
+                eng.clock({"start": "start", "stop": "stop", "continue": "cont"}[t])
+                if t == "stop":
+                    eng.panic()
+                return
+            eng.clock("tick")
         if t == "clock":
             now = time.perf_counter()
             if self.last_clock and now - self.last_clock < 0.25:
@@ -538,9 +624,6 @@ class Midi:
                     if 30 < bpm < 300:
                         eng.bpm = round(bpm * 10) / 10
             self.last_clock = now
-            return
-        if t == "stop":
-            eng.panic()
             return
         self.activity = time.time()
         ch = getattr(msg, "channel", -1) + 1
@@ -561,7 +644,12 @@ class Midi:
                 return
             aid = app.action_lookup.get((kind, ch, num))
             if aid:
-                if val > 0:
+                if app.state.page == "Live" and aid in PAD_ACTIONS and app.overlay is None:
+                    app.live_pad(PAD_ACTIONS.index(aid), val > 0)  # straight from this thread: no GUI delay
+                elif aid in HOLD_ACTIONS:
+                    eng.set_fill(val > 0)
+                    app.action_flash[aid] = time.time()
+                elif val > 0:
                     app.action_q.append(aid)
                 return  # pad/step releases for actions are swallowed too
         if t in ("note_on", "note_off"):
@@ -677,6 +765,11 @@ class App:
         self.action_flash = {}
         self.rebuild_actions()
         self.test_notes = {}
+        self.lock_mode = False
+        self.lock_sel = None
+        self.rs = {"src": "Synth 1", "len": "1 bar"}
+        self.last_rec_folder = None
+        self.live_held = set()
 
         if self.state.audio_pending:  # last launch froze or crashed while opening this output
             bad = self.state.audio_pending
@@ -704,7 +797,8 @@ class App:
         """The knob page shown: a tab, or the selected sub-page of a synth tab."""
         page = self.state.page if self.state.page in PAGES else "Perform"
         if page in SUBPAGES:
-            return SUBPAGES[page][self.state.subpage.get(page, 0) % 3]
+            subs = SUBPAGES[page]
+            return subs[self.state.subpage.get(page, 0) % len(subs)][1]
         return page
 
     def page_keys(self):
@@ -789,8 +883,9 @@ class App:
     def knob(self, idx, cx, cy, r, key):
         spec = SPECS[key]
         p = self.state.params
-        n = p.shown(key)
-        moved = abs(n - p.norm[key]) > 0.004
+        locked_here = p.lock_step is not None and p.lock_step in p.locks.get(key, {})
+        n = p.cur_norm(key) if p.lock_step is not None else p.shown(key)
+        moved = p.lock_step is None and abs(n - p.norm[key]) > 0.004
         hot = time.time() - self.midi.flash[idx] < 0.35
         X, Y, s = self.X, self.Y, self.scale
         # dotted ring
@@ -812,11 +907,16 @@ class App:
         dx, dy = cx + (r - 12) * math.cos(a), cy - (r - 12) * math.sin(a)
         self.cv.create_oval(X(dx - 7), Y(dy - 7), X(dx + 7), Y(dy + 7), fill=T["knob_dot"], outline="")
         self.text(cx, cy + r + 24, self.knob_label(key), 13, T["ink"], True)
-        shown = spec.fmt(p.val[key])
+        shown = spec.fmt(spec.to_val(n) if p.lock_step is not None else p.val[key])
         if key[2:5] in (".l1", ".l2") and key.endswith("rate") and p.val[key[:5] + "sync"] >= 0.5:
             shown = "Synced"
-        self.text(cx, cy + r + 46, shown, 15, T["accent"] if (hot or moved) else T["ink_dim"])
+        if p.lock_step is not None:
+            shown = ("LOCK " if locked_here else "") + shown
+        self.text(cx, cy + r + 46, shown, 15, T["accent"] if (hot or moved or locked_here) else T["ink_dim"])
         self.text(cx - r - 4, cy - r - 2, str(idx + 1), 10, T["ink_faint"], False, "e")
+        if key in p.locks:
+            self.rrect(cx + r - 6, cy - r - 12, 18, 16, 4, T["btn_on"])
+            self.text(cx + r + 3, cy - r - 4, "L", 10, T["btn_text"], True)
         self.hit(cx - 70, cy - r - 16, 140, 2 * r + 70, lambda k=key: k, "knob")
         slot = self.mod_slot(key)
         if slot:
@@ -845,7 +945,7 @@ class App:
             name = self.audio.engine.drums.names[pad]
             return f"{name} {SPECS[key].label}"[:18]
         lab = SPECS[key].label
-        if self.page_name() in ("Perform", "Mix", "FX") and key[:2] in ("s1", "s2") and "Synth" not in lab:
+        if self.page_name() in ("Perform", "Mix", "Mix EQ", "FX") and key[:2] in ("s1", "s2") and "Synth" not in lab:
             lab = key[:2].upper() + " " + lab
         return lab
 
@@ -861,9 +961,14 @@ class App:
         self.draw_header()
         if self.state.page == "Setup":
             self.draw_setup()
+        elif self.state.page == "Live":
+            self.draw_live()
         else:
             self.draw_knobs()
-            self.draw_instruments()
+            if self.lock_mode:
+                self.draw_locks()
+            else:
+                self.draw_instruments()
         self.draw_tabs()
         if self.overlay and self.overlay[0] == "sounds":
             self.draw_sounds(self.overlay[1])
@@ -879,6 +984,10 @@ class App:
             self.draw_actions()
         elif self.overlay and self.overlay[0] == "route":
             self.draw_route(self.overlay[1], self.overlay[2])
+        elif self.overlay and self.overlay[0] == "resample":
+            self.draw_resample()
+        elif self.overlay and self.overlay[0] == "setups":
+            self.draw_setups()
         msg, until = self.toast
         if msg and time.time() < until:
             self.rrect(300, 30, 430, 48, 12, T["btn_on"])
@@ -887,7 +996,13 @@ class App:
     def draw_header(self):
         self.rect(0, 0, W, 90, fill=T["bg"])
         self.text(24, 34, "POTENTIALBOX", 30, T["accent"], True, "w")
-        self.text(24, 64, "BEATSTEP PRO GROOVEBOX", 11, T["ink_dim"], False, "w")
+        rec = self.audio.engine.recorder
+        if rec is not None:
+            sec = int(rec.seconds())
+            self.cv.create_oval(self.X(24), self.Y(58), self.X(36), self.Y(70), fill="#d9534f", outline="")
+            self.text(44, 64, f"RECORDING {sec // 60:02d}:{sec % 60:02d}", 12, "#d9534f", True, "w")
+        else:
+            self.text(24, 64, "BEATSTEP PRO GROOVEBOX", 11, T["ink_dim"], False, "w")
         eng = self.audio.engine
         lat = f" · {self.audio.latency_ms:.0f} MS" if self.audio.stream else ""
         self.readout(510, 54, 400, 38, (self.audio.label + lat) if not self.audio.error else "AUDIO ERROR - TAP SETUP", "audio", True)
@@ -912,20 +1027,26 @@ class App:
             sub = (f"{i + 1} {MACROS[i][0].upper()}: {MACROS[i][1].upper()}" if i is not None
                    else "EACH KNOB MOVES SEVERAL SETTINGS  ·  BACK TO ZERO = BACK TO YOUR SOUND")[:96]
             self.button(560, 121, 220, 32, "ZERO ALL MACROS", self.zero_macros, px=13)
-        if self.state.page in SUBPAGES:
-            sub = "TAP THE TAB AGAIN FOR THE NEXT PAGE  ·  TAP LEFT / RIGHT OF A KNOB TO NUDGE"
-            cur = SUBPAGE_NAMES[self.state.subpage.get(self.state.page, 0) % 3]
-            self.seg(300, 105, 110, 32, SUBPAGE_NAMES, cur, self.pick_subpage, vertical=False)
-            if self.midi.learn is None:
+        tab = self.state.page
+        if tab in SUBPAGES:
+            names = [lab for lab, _ in SUBPAGES[tab]]
+            cur = names[self.state.subpage.get(tab, 0) % len(names)]
+            self.seg(270, 105, 96, 32, names, cur, self.pick_subpage, vertical=False)
+            if self.midi.learn is None and tab in ("Synth 1", "Synth 2"):
                 undo = getattr(self, "init_undo", None)
                 if undo and undo[0] == self.page_name() and time.time() < undo[2]:
-                    self.button(750, 121, 200, 32, "UNDO INIT", self.undo_init, px=14)
+                    self.button(760, 121, 190, 32, "UNDO INIT", self.undo_init, px=14)
                 else:
-                    self.button(750, 121, 200, 32, self.init_label(), self.init_page, accent=True, px=14)
-        self.frame(14, 100, 1252, 372, self.state.page, sub)
-        if mix and self.midi.learn is None:
+                    self.button(760, 121, 190, 32, self.init_label(), self.init_page, accent=True, px=14)
+        if tab not in NO_LOCK_PAGES:
+            sub = ""
+        self.frame(14, 100, 1252, 372, tab, sub)
+        if tab not in NO_LOCK_PAGES and self.midi.learn is None:
+            self.button(1160, 121, 180, 32, "LOCKS ON" if self.lock_mode else "STEP LOCKS", self.toggle_locks,
+                        on=self.lock_mode, px=14)
+        if mix and self.midi.learn is None and self.page_name() == "Mix":
             armed = time.time() - getattr(self, "reset_armed", 0) < 3
-            self.button(680, 121, 320, 32, "TAP AGAIN TO RESET EVERYTHING" if armed else "RESET ALL TO INIT",
+            self.button(800, 121, 300, 32, "TAP AGAIN TO RESET EVERYTHING" if armed else "RESET ALL TO INIT",
                         self.reset_all, accent=True, px=14)
         if self.midi.learn is not None:
             i = self.midi.learn
@@ -1362,17 +1483,19 @@ class App:
                   13, T["ink_dim"], False, "w")
         now = time.time()
         for i, (aid, name) in enumerate(ACTIONS):
-            r, c = divmod(i, 4)
-            x0, y0 = 34 + c * 305, 212 + r * 116
+            r, c = divmod(i, 5)
+            x0, y0 = 34 + c * 244, 205 + r * 116
             learning = self.midi.action_learn == aid
             hot = now - self.action_flash.get(aid, 0) < 0.4
             fill = T["btn_on"] if learning else (T["seg_active"] if hot else T["btn_bg"])
-            self.rrect(x0, y0, 290, 104, 12, fill)
-            self.text(x0 + 16, y0 + 24, str(i + 1), 12, T["ink_dim"], True, "w")
-            self.text(x0 + 145, y0 + 44, name.upper(), 16, T["accent"] if hot else T["btn_text"], True)
+            self.rrect(x0, y0, 232, 104, 12, fill)
+            self.text(x0 + 14, y0 + 22, str(i + 1), 12, T["ink_dim"], True, "w")
+            self.text(x0 + 116, y0 + 46, name.upper(), 15, T["accent"] if hot else T["btn_text"], True)
             sub = "PRESS A PAD OR STEP NOW" if learning else self.trig_text(self.state.actions.get(aid))
-            self.text(x0 + 145, y0 + 76, sub, 12, T["btn_text"] if learning else T["ink_dim"])
-            self.hit(x0, y0, 290, 104, lambda a=aid: self.learn_action(a))
+            self.text(x0 + 116, y0 + 78, sub, 12, T["btn_text"] if learning else T["ink_dim"])
+            self.hit(x0, y0, 232, 104, lambda a=aid: self.learn_action(a))
+        self.text(700, 700, "On the LIVE tab, pads 1-16 play the Live pads instead (effects, fill, scene B, record).",
+                  12, T["ink_dim"], False, "w")
         self.button(250, 700, 420, 48, "RESET TO CHANNEL 16 DEFAULTS", self.reset_actions, px=14)
 
     def learn_action(self, aid):
@@ -1412,7 +1535,374 @@ class App:
             self.set_page(aid[4:])
         elif aid == "panic":
             self.panic()
+        elif aid == "rec":
+            self.toggle_rec()
         self.request_redraw()
+
+    # ---------------------------------------------------------------- live tab
+    def live_pad(self, i, on):
+        """A BeatStep pad on the Live tab (MIDI thread or screen). Holds act at once, taps go to the GUI."""
+        eng = self.audio.engine
+        (self.live_held.add if on else self.live_held.discard)(i)
+        if i < 8:
+            eng.punch_fx(i, on)
+        elif i == 8:
+            eng.set_fill(on)
+        elif i == 9:
+            self.scene_hold(on)
+        elif on:
+            self.action_q.append({10: "rec", 11: "rand_s1", 12: "rand_s2", 13: "rand_kit", 14: "next_kit",
+                                  15: "tab:" + self.state.last_tab}[i])
+        self.request_redraw()
+
+    def scene_hold(self, on):
+        p = self.state.params
+        if on:
+            if not (p.scenes.get("A") and p.scenes.get("B")):
+                self.show_toast("SAVE SCENE A AND B FIRST")
+                return
+            if self.midi.scene_hold is None:
+                self.midi.scene_hold = p.norm["sc.morph"]
+            p.set_norm("sc.morph", 1.0)
+        elif self.midi.scene_hold is not None:
+            p.set_norm("sc.morph", self.midi.scene_hold)
+            self.midi.scene_hold = None
+        self.state.dirty = True
+
+    def save_scene(self, which):
+        self.state.params.save_scene(which)
+        p = self.state.params
+        self.state.dirty = True
+        n = len(p.scene_keys)
+        self.show_toast(f"SCENE {which} SAVED" + (f" · {n} SETTINGS DIFFER" if p.scenes.get("A") and p.scenes.get("B") else ""))
+
+    def set_morph(self, x):
+        self.state.params.set_norm("sc.morph", x)
+        self.state.dirty = True
+
+    def mini_knob(self, idx, cx, cy, key):
+        p = self.state.params
+        n = p.shown(key)
+        r = 19
+        hot = time.time() - self.midi.flash[idx] < 0.35
+        X, Y = self.X, self.Y
+        self.cv.create_oval(X(cx - r), Y(cy - r), X(cx + r), Y(cy + r), fill=T["knob_face"],
+                            outline=T["accent"] if hot else T["knob_ring"], width=max(1, int(2 * self.scale)))
+        a = math.radians(225 - 270 * n)
+        dx, dy = cx + (r - 7) * math.cos(a), cy - (r - 7) * math.sin(a)
+        self.cv.create_oval(X(dx - 4), Y(dy - 4), X(dx + 4), Y(dy + 4), fill=T["knob_dot"], outline="")
+        lab = SPECS[key].label
+        lab = {"Build-Up": "Build-up", "Dub Throw": "Dub throw"}.get(lab, lab)
+        if key[:2] in ("s1", "s2") and "Synth" not in lab:
+            lab = key[:2].upper() + " " + lab
+        self.text(cx, cy + r + 15, lab[:13], 11, T["ink"], True)
+        self.text(cx, cy + r + 31, SPECS[key].fmt(p.val[key])[:12], 12, T["accent"] if hot else T["ink_dim"])
+        self.text(cx - r - 2, cy - r, str(idx + 1), 9, T["ink_faint"], False, "e")
+        self.hit(cx - 38, cy - r - 8, 76, 2 * r + 46, lambda k=key: k, "knob")
+
+    def draw_live(self):
+        eng = self.audio.engine
+        p = self.state.params
+        self.frame(14, 100, 1252, 372, "Live",
+                   "BEATSTEP PADS HERE: 1-8 EFFECTS · 9 FILL · 10 SCENE B · 11 REC · 12-15 RANDOM / KITS · 16 BACK")
+        for i, key in enumerate(PAGES["Live"]):
+            self.mini_knob(i, 14 + 39 + i * 77.5, 172, key)
+        self.text(34, 262, "PUNCH-IN EFFECTS · HOLD", 11, T["accent"], True, "w")
+        held = eng.punch.held
+        for i, name in enumerate(PUNCH_FX):
+            x0 = 30 + i * 153
+            on = name in held or i in self.live_held
+            self.rrect(x0, 276, 143, 180, 14, T["btn_on"] if on else T["btn_bg"])
+            self.text(x0 + 72, 330, name.split(" ")[0].upper(), 22, T["btn_text"], True)
+            rest = " ".join(name.split(" ")[1:])
+            if rest:
+                self.text(x0 + 72, 362, rest.upper(), 18, T["btn_text"], True)
+            self.text(x0 + 72, 430, f"PAD {i + 1}", 11, T["btn_text"] if on else T["ink_dim"], True)
+            self.hit(x0, 276, 143, 180, lambda on, j=i: self.live_pad(j, on), "hold")
+        # scenes
+        y = 482
+        self.frame(14, y, 626, 250, "Scenes", "SAVE A · CHANGE THINGS · SAVE B · THEN MORPH")
+        A, B = p.scenes.get("A"), p.scenes.get("B")
+        self.button(92, y + 82, 130, 56, "SAVE A", lambda: self.save_scene("A"), accent=not A, px=17)
+        self.button(562, y + 82, 130, 56, "SAVE B", lambda: self.save_scene("B"), accent=not B, px=17)
+        x0, x1 = 172, 482
+        self.rect(x0, y + 72, x1 - x0, 20, fill=T["well"], outline=T["line"])
+        m = p.norm["sc.morph"]
+        self.rect(x0, y + 72, (x1 - x0) * m, 20, fill=T["accent"])
+        hx = x0 + (x1 - x0) * m
+        self.rrect(hx - 9, y + 62, 18, 40, 5, T["knob_dot"])
+        self.text((x0 + x1) / 2, y + 120, f"MORPH {m * 100:.0f}%  ·  BEATSTEP KNOB 1", 12, T["ink_dim"], True)
+        self.hit(x0 - 10, y + 52, x1 - x0 + 20, 60, self.set_morph, "slider")
+        if A and B:
+            k = len(p.scene_keys)
+            info = f"{k} setting{'' if k == 1 else 's'} differ{'s' if k == 1 else ''} between A and B"
+        else:
+            info = "A: " + ("saved" if A else "empty") + "   ·   B: " + ("saved" if B else "empty")
+        self.text(327, y + 152, info, 13, T["ink_dim"])
+        on = self.midi.scene_hold is not None
+        self.rrect(40, y + 176, 560, 60, 12, T["btn_on"] if on else T["btn_bg"])
+        self.text(320, y + 206, "HOLD FOR SCENE B  ·  PAD 10", 17, T["btn_text"], True)
+        self.hit(40, y + 176, 560, 60, self.scene_hold, "hold")
+        # record
+        rec = eng.recorder
+        self.frame(650, y, 300, 250, "Record", "")
+        self.button(800, y + 92, 260, 76, "STOP RECORDING" if rec else "● RECORD", self.toggle_rec, accent=True, px=19)
+        self.seg(670, y + 146, 130, 34, ["MIX ONLY", "MIX + STEMS"], "MIX + STEMS" if self.state.rec_stems else "MIX ONLY",
+                 self.pick_stems, vertical=False)
+        if rec:
+            sec = int(rec.seconds())
+            self.text(800, y + 206, f"{sec // 60:02d}:{sec % 60:02d}  ·  PAD 11 STOPS", 14, "#d9534f", True)
+        else:
+            self.button(800, y + 212, 260, 40, "OPEN RECORDINGS FOLDER", self.open_recordings, px=12)
+        # more
+        self.frame(960, y, 306, 250, "More", "")
+        on = eng.fill or 8 in self.live_held
+        self.rrect(976, y + 50, 274, 70, 12, T["btn_on"] if on else T["btn_bg"])
+        self.text(1113, y + 85, "HOLD FOR FILL  ·  PAD 9", 16, T["btn_text"], True)
+        self.hit(976, y + 50, 274, 70, lambda on: self.live_pad(8, on), "hold")
+        self.button(1113, y + 158, 274, 54, "RESAMPLE TO A PAD", lambda: self.open_overlay(("resample",)), px=15)
+        self.button(1113, y + 218, 274, 44, "MY SETUPS", lambda: self.open_overlay(("setups",)), accent=True, px=15)
+
+    def pick_stems(self, label):
+        self.state.rec_stems = label == "MIX + STEMS"
+        self.state.dirty = True
+
+    def toggle_rec(self):
+        eng = self.audio.engine
+        if eng.recorder is not None:
+            r, eng.recorder = eng.recorder, None
+            self.last_rec_folder = r.close()
+            self.show_toast("SAVED IN MUSIC > POTENTIALBOX RECORDINGS", 2.5)
+            return
+        try:
+            eng.recorder = Recorder(eng.sr, self.state.rec_stems)
+            self.show_toast("RECORDING" + (" MIX + STEMS" if self.state.rec_stems else ""), 1.2)
+        except Exception as e:
+            log("record failed", e)
+            self.show_toast("COULDN'T START RECORDING")
+
+    def open_recordings(self):
+        path = self.last_rec_folder or recordings_dir()
+        try:
+            os.makedirs(path, exist_ok=True)
+            if sys.platform == "win32":
+                os.startfile(path)
+            else:
+                self.show_toast(path[-38:])
+        except Exception as e:
+            log("open folder failed", e)
+
+    # ---------------------------------------------------------------- resample
+    RS_SOURCES = {"Synth 1": "s1", "Synth 2": "s2", "Both synths": "synths", "Everything": "all"}
+    RS_LENGTHS = {"1/2 bar": 0.5, "1 bar": 1, "2 bars": 2, "4 bars": 4}
+
+    def draw_resample(self):
+        eng = self.audio.engine
+        self.overlay_base("Resample to a pad", "RECORDS WHAT YOU HEAR, THEN PUTS IT ON A DRUM PAD")
+        self.button(1150, 172, 160, 56, "CLOSE", self.close_overlay, px=17)
+        self.text(40, 215, "RECORD", 12, T["accent"], True, "w")
+        self.seg(40, 232, 200, 52, list(self.RS_SOURCES), self.rs["src"], lambda o: self.rs.update(src=o), vertical=False)
+        self.text(40, 318, "LENGTH", 12, T["accent"], True, "w")
+        self.seg(40, 335, 200, 52, list(self.RS_LENGTHS), self.rs["len"], lambda o: self.rs.update(len=o), vertical=False)
+        self.text(40, 421, "ONTO PAD", 12, T["accent"], True, "w")
+        self.button(80, 470, 80, 56, "<", lambda: self.rs_pad(-1), px=22)
+        self.readout(300, 470, 330, 56, f"PAD {self.sel_pad + 1} · {eng.drums.names[self.sel_pad][:16]}")
+        self.button(520, 470, 80, 56, ">", lambda: self.rs_pad(1), px=22)
+        cap = eng.capture
+        if cap:
+            msg = {"wait": "WAITING FOR THE NEXT BAR...", "rec": "RECORDING...", "done": "SAVING..."}[cap["state"]]
+            self.rrect(40, 560, 600, 90, 14, T["btn_on"])
+            self.text(340, 605, msg, 22, T["btn_text"], True)
+            self.button(820, 605, 240, 70, "CANCEL", self.rs_cancel, px=17)
+        else:
+            self.button(340, 605, 600, 90, "START", self.rs_start, accent=True, px=26)
+        self.text(40, 690, "If the BeatStep is playing, recording starts on the next bar so the loop lines up. "
+                  "Stopped: it starts straight away.", 13, T["ink_dim"], False, "w")
+
+    def rs_pad(self, d):
+        self.sel_pad = (self.sel_pad + d) % 16
+
+    def rs_cancel(self):
+        self.audio.engine.capture = None
+
+    def rs_start(self):
+        eng = self.audio.engine
+        bars = self.RS_LENGTHS[self.rs["len"]]
+        need = int(bars * 4 * 60.0 / max(eng.bpm, 30.0) * eng.sr)
+        sync = eng.playing
+        eng.capture = dict(src=self.RS_SOURCES[self.rs["src"]], need=need, buf=[], got=0,
+                           state="wait" if sync else "rec", bar_at=None if sync else 0, sync=sync, t0=time.time())
+
+    def resample_tick(self):
+        eng = self.audio.engine
+        cap = eng.capture
+        if not cap:
+            return
+        if cap["state"] == "wait" and (not eng.playing or time.time() - cap["t0"] > 12):
+            cap["bar_at"] = 0
+            cap["state"] = "rec"
+        if cap["state"] != "done":
+            return
+        eng.capture = None
+        x = np.concatenate(cap["buf"])[cap["bar_at"]: cap["bar_at"] + cap["need"]]
+        mono = x.mean(axis=1)
+        pk = float(np.abs(mono).max()) if len(mono) else 0.0
+        if pk < 1e-4:
+            self.show_toast("NOTHING HEARD - IS IT PLAYING?")
+            return
+        mono = mono * (0.9 / pk)
+        fade = min(len(mono), int(0.004 * eng.sr))
+        mono[-fade:] *= np.linspace(1.0, 0.0, fade)
+        try:
+            os.makedirs(RESAMPLE_DIR, exist_ok=True)
+            label = f"Resample {time.strftime('%H%M%S')}"
+            path = os.path.join(RESAMPLE_DIR, f"{label} {time.strftime('%Y-%m-%d')}.wav")
+            write_wav(path, mono, eng.sr)
+        except Exception as e:
+            log("resample save failed", e)
+            self.show_toast("COULDN'T SAVE THE RESAMPLE")
+            return
+        self.pe_assign(path, label)
+        self.show_toast(f"PAD {self.sel_pad + 1}: {label.upper()}", 2.0)
+        self.close_overlay()
+
+    # ---------------------------------------------------------------- my setups
+    def draw_setups(self):
+        self.overlay_base("My setups", "A SETUP IS EVERYTHING: BOTH SYNTHS, THE KIT, MIX, FX, STEP LOCKS AND SCENES")
+        self.button(1150, 172, 160, 56, "CLOSE", self.close_overlay, px=17)
+        now = time.time()
+        cur = getattr(self, "setup_loaded", None)
+        for i in range(SLOTS):
+            r, c = divmod(i, 4)
+            x0, y0 = 34 + c * 305, 215 + r * 260
+            slot = self.state.setups[i]
+            on = cur == i and bool(slot)
+            self.rect(x0, y0, 290, 245, fill=T["seg_active"] if on else T["seg_inactive"], outline=T["line"])
+            self.text(x0 + 16, y0 + 24, f"SETUP {i+1}", 13, T["accent"] if on else T["ink_dim"], True, "w")
+            self.readout(x0 + 145, y0 + 66, 258, 40, slot["name"] if slot else "EMPTY")
+            if slot:
+                self.text(x0 + 145, y0 + 104, f"saved {slot.get('saved', '')}"[:34], 12, T["ink_dim"])
+                self.button(x0 + 145, y0 + 150, 258, 52, "LOAD", lambda j=i: self.load_setup(j), px=18)
+            else:
+                self.rrect(x0 + 16, y0 + 124, 258, 52, 12, T["well"])
+                self.text(x0 + 145, y0 + 150, "NOTHING SAVED YET", 13, T["ink_faint"], True)
+            armed = self.armed and self.armed[:2] == ("setup", i) and now - self.armed[2] < 3
+            self.button(x0 + 145, y0 + 210, 258, 52, "TAP AGAIN TO REPLACE" if armed else "SAVE HERE",
+                        lambda j=i: self.save_setup(j), accent=True, px=15 if armed else 18)
+
+    def save_setup(self, i):
+        now = time.time()
+        st = self.state
+        if st.setups[i] and not (self.armed and self.armed[:2] == ("setup", i) and now - self.armed[2] < 3):
+            self.armed = ("setup", i, now)
+            self.root.after(3100, self.request_redraw)
+            return
+        self.armed = None
+        p = st.params
+        st.setups[i] = {"name": f"Setup {i + 1}", "saved": time.strftime("%Y-%m-%d %H:%M"), "params": dict(p.norm),
+                        "kit": json.loads(json.dumps(st.kit)), "preset_name": dict(st.preset_name),
+                        "locks": st.locks_json(), "scenes": json.loads(json.dumps(p.scenes))}
+        self.setup_loaded = i
+        self.show_toast(f"SAVED SETUP {i + 1}" if st.save_setups() else "COULD NOT SAVE - SEE LOG")
+
+    def load_setup(self, i):
+        st = self.state
+        su = st.setups[i]
+        if not su:
+            return
+        self.lock_off()
+        p = st.params
+        st.load_scenes(su.get("scenes"))
+        for k, n in su.get("params", {}).items():
+            if k in SPECS and k != "sc.morph":
+                p.norm[k] = float(n)
+        for k in SPECS:
+            p._apply(k)
+        p.recompute_macros()
+        p.norm["sc.morph"] = float(su.get("params", {}).get("sc.morph", 0.0))
+        p._apply("sc.morph")
+        st.load_locks(su.get("locks"))
+        st.preset_name.update(su.get("preset_name", {}))
+        if isinstance(su.get("kit"), dict):
+            st.kit = su["kit"]
+            self.audio.apply_kit()
+        self.audio.engine.panic()
+        self.setup_loaded = i
+        st.dirty = True
+        self.show_toast(f"SETUP {i + 1} LOADED")
+
+    # ---------------------------------------------------------------- step locks
+    def toggle_locks(self):
+        if self.lock_mode:
+            self.lock_off()
+        else:
+            self.lock_mode = True
+            self.lock_sel = None
+        self.request_redraw()
+
+    def lock_off(self):
+        self.lock_mode = False
+        self.lock_sel = None
+        p = self.state.params
+        p.lock_step = None
+        for k in list(p.locks):  # back from hearing the lock to your own setting
+            if k in p.norm:
+                p._apply(k)
+        self.request_redraw()
+
+    def lock_pick_clear(self):
+        """Buttons that change many knobs at once work on your settings, not on a step."""
+        if self.lock_sel is not None:
+            self.lock_sel = None
+            self.state.params.lock_step = None
+
+    def lock_pick(self, i):
+        self.lock_sel = None if self.lock_sel == i else i
+        self.state.params.lock_step = self.lock_sel
+        if self.lock_sel is None:
+            for k in self.page_keys():
+                self.state.params._apply(k)
+
+    def lock_clear(self, scope):
+        p = self.state.params
+        if scope == "step" and self.lock_sel is not None:
+            p.clear_locks(None, self.lock_sel)
+            self.show_toast(f"STEP {self.lock_sel + 1} CLEARED")
+        elif scope == "page":
+            p.clear_locks(self.page_keys())
+            self.show_toast("LOCKS ON THIS PAGE CLEARED")
+        elif scope == "all":
+            p.clear_locks()
+            self.show_toast("ALL STEP LOCKS CLEARED")
+        self.state.dirty = True
+
+    def draw_locks(self):
+        eng = self.audio.engine
+        p = self.state.params
+        y = 482
+        self.frame(14, y, 1252, 250, "Step locks",
+                   "TAP A STEP, THEN TURN KNOBS: ONLY THAT STEP CHANGES · LOCKS REPEAT EVERY 16 STEPS WHILE THE BEATSTEP PLAYS")
+        keys = self.page_keys()
+        for i in range(16):
+            x0 = 30 + i * 76
+            sel = self.lock_sel == i
+            n_all = sum(1 for d in p.locks.values() if i in d)
+            n_page = sum(1 for k in keys if i in p.locks.get(k, {}))
+            fill = T["btn_on"] if sel else (T["seg_active"] if n_all else T["btn_bg"])
+            playing = eng.playing and eng.step == i
+            self.rrect(x0, y + 56, 70, 104, 10, fill, outline=T["accent"] if playing else "")
+            self.text(x0 + 35, y + 84, str(i + 1), 22, T["btn_text"], True)
+            if n_all:
+                self.text(x0 + 35, y + 120, f"{n_page} HERE" if n_page else "", 10, T["btn_text"], True)
+                self.text(x0 + 35, y + 140, f"{n_all} LOCK{'S' if n_all > 1 else ''}", 10, T["btn_text"] if sel else T["ink_dim"])
+            self.hit(x0, y + 56, 70, 104, lambda j=i: self.lock_pick(j))
+        tip = (f"STEP {self.lock_sel + 1}: KNOBS NOW SET THIS STEP ONLY" if self.lock_sel is not None
+               else "PICK A STEP · TAP IT AGAIN TO GO BACK TO NORMAL KNOBS")
+        self.text(30, y + 196, tip, 14, T["accent"], True, "w")
+        self.button(700, y + 200, 150, 50, "CLEAR STEP", lambda: self.lock_clear("step"), px=14)
+        self.button(862, y + 200, 150, 50, "CLEAR PAGE", lambda: self.lock_clear("page"), px=14)
+        self.button(1024, y + 200, 150, 50, "CLEAR ALL", lambda: self.lock_clear("all"), px=14)
+        self.button(1186, y + 200, 120, 50, "DONE", self.lock_off, accent=True, px=15)
 
     def draw_tabs(self):
         self.rect(0, 742, W, 58, fill=T["well"])
@@ -1423,7 +1913,7 @@ class App:
             if on:
                 self.rect(x + 4, 746, tw - 8, 50, fill=T["tab_on"])
                 self.rect(x + 4, 742, tw - 8, 4, fill=T["accent"])
-            self.text(x + tw / 2, 771, name.upper(), 17, T["tab_on_tx"] if on else T["chrome_ink"], on)
+            self.text(x + tw / 2, 771, name.upper(), 16, T["tab_on_tx"] if on else T["chrome_ink"], on)
             self.hit(x, 742, tw, 58, lambda n=name: self.set_page(n))
 
     def draw_setup(self):
@@ -1500,7 +1990,15 @@ class App:
         self.drag = None
         if h and h[5] == "knob":
             self.drag = dict(key=h[4](), y=e.y, x=x, cx=(h[0] + h[2]) / 2, moved=False,
-                             start=self.state.params.norm[h[4]()])
+                             start=self.state.params.cur_norm(h[4]()))
+        elif h and h[5] == "hold":
+            h[4](True)
+            self.drag = dict(kind="hold", fn=h[4])
+            self.request_redraw()
+        elif h and h[5] == "slider":
+            self.drag = dict(kind="slider", h=h)
+            h[4](min(max((x - h[0]) / (h[2] - h[0]), 0.0), 1.0))
+            self.request_redraw()
         elif h:
             h[4]()
             self.request_redraw()
@@ -1508,6 +2006,14 @@ class App:
     def on_motion(self, e):
         d = self.drag
         if not d:
+            return
+        if d.get("kind") == "slider":
+            x, _ = self.to_design(e)
+            h = d["h"]
+            h[4](min(max((x - h[0]) / (h[2] - h[0]), 0.0), 1.0))
+            self.request_redraw()
+            return
+        if d.get("kind"):
             return
         dy = (d["y"] - e.y) / self.scale
         if abs(dy) > 6:
@@ -1522,6 +2028,12 @@ class App:
     def on_release(self, e):
         d = self.drag
         self.drag = None
+        if d and d.get("kind") == "hold":
+            d["fn"](False)
+            self.request_redraw()
+            return
+        if d and d.get("kind"):
+            return
         if d and not d["moved"]:
             self.state.params.nudge(d["key"], -1 if d["x"] < d["cx"] else 1)
             self.state.dirty = True
@@ -1552,12 +2064,18 @@ class App:
     def set_page(self, name):
         self.overlay = None
         if name == self.state.page and name in SUBPAGES:
-            self.state.subpage[name] = (self.state.subpage.get(name, 0) + 1) % 3
+            self.state.subpage[name] = (self.state.subpage.get(name, 0) + 1) % len(SUBPAGES[name])
+        if name != self.state.page:
+            if self.state.page != "Live":
+                self.state.last_tab = self.state.page
+            if name in NO_LOCK_PAGES:
+                self.lock_off()
         self.state.page = name
         self.state.dirty = True
 
     def pick_subpage(self, label):
-        self.state.subpage[self.state.page] = SUBPAGE_NAMES.index(label)
+        names = [lab for lab, _ in SUBPAGES[self.state.page]]
+        self.state.subpage[self.state.page] = names.index(label)
         self.state.dirty = True
 
     # ---------------------------------------------------------------- mod routing menu
@@ -1649,6 +2167,7 @@ class App:
 
     # synth sound slots
     def zero_macros(self):
+        self.lock_pick_clear()
         p = self.state.params
         for i in range(len(MACROS)):
             k = f"mc.{i + 1}"
@@ -1669,6 +2188,8 @@ class App:
             return keys
         if page.endswith("Osc+"):
             return [k for k in PAGES[page] if k not in main]
+        if page.endswith("Arp"):
+            return [k for k in SPECS if k.startswith(pre + ".arp")]
         return [k for k in SPECS if k.startswith(pre + ".")]
 
     def init_label(self):
@@ -1677,16 +2198,20 @@ class App:
             return "INIT MODULATION"
         if page.endswith("Osc+"):
             return "INIT OSC+ PAGE"
+        if page.endswith("Arp"):
+            return "INIT ARP"
         return "INIT " + page.upper()
 
     def init_page(self):
+        self.lock_pick_clear()
         page = self.page_name()
         p = self.state.params
         keys = self.init_keys(page)
         before = {k: p.norm[k] for k in keys}
         for k in keys:
             p.set_val(k, SPECS[k].default)
-        if not (page.endswith("Mod") or page.endswith("Osc+")):
+        p.clear_locks(keys)
+        if not (page.endswith("Mod") or page.endswith("Osc+") or page.endswith("Arp")):
             pre = "s1" if page.startswith("Synth 1") else "s2"
             self.state.preset_name[pre] = "Init"
             self.state.preset[pre] = 0
@@ -1696,6 +2221,7 @@ class App:
         self.show_toast(self.init_label().replace("INIT ", "") + " BACK TO INIT")
 
     def undo_init(self):
+        self.lock_pick_clear()
         undo = getattr(self, "init_undo", None)
         if not undo:
             return
@@ -1716,6 +2242,10 @@ class App:
             return
         self.reset_armed = 0
         p = self.state.params
+        self.lock_off()
+        p.clear_locks()
+        p.scenes = {"A": None, "B": None}
+        p._scene_keys()
         for k, spec in SPECS.items():
             p.set_val(k, spec.default)
         for pre in ("s1", "s2"):
@@ -2007,6 +2537,7 @@ class App:
             eng.drums.active = [a * 0.75 for a in eng.drums.active]
             while self.action_q:
                 self.run_action(self.action_q.popleft())
+            self.resample_tick()
             now = time.time()
             if self.redraw_wanted or now - self.last_draw > 0.1:
                 self.draw()

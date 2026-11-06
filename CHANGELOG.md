@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.6.0
+- **Live tab**: hold-to-play punch-in effects (Repeat 1/8, Repeat 1/16, Roll 1/32, Tape stop, Reverse, Filter sweep, Gate 1/16, Echo throw), Scene A/B snapshots with a morph bar (BeatStep knob 1) and HOLD FOR SCENE B, HOLD FOR FILL, Record, Resample and My Setups. While the Live tab is open, BeatStep pads 1-16 play the Live pads.
+- **Arpeggiator** on both synths (new ARP+ page): Up, Down, Up-down, Random, As played; 1/4 to 1/32 synced; 1-4 octaves; gate, swing, hold, chance, accents. Arpeggiates the chord from chord mode.
+- **Step locks** on every knob page: tap STEP LOCKS, pick one of 16 steps, turn knobs. Follows the BeatStep's clock.
+- **Drums**: new MIX page (level and pan per pad) and GROOVE page (chance and play conditions per pad: Fill only, Not in fill, 1st/2nd of 2, 1st-4th of 4, 1st/8th of 8).
+- **Mix**: side-chain duck for each synth and the FX returns (from any pad or every beat), glue compressor, stereo width; new EQ page with 3-band EQ on Synth 1, Synth 2, drums and master. Drum levels moved to the Drums tabs.
+- **Record to WAV** (24-bit): master plus Drums, Synth 1, Synth 2 and FX stems, in Music > PotentialBox Recordings.
+- **Resample to a pad**, synced to the bar while the BeatStep plays.
+- **My Setups**: 8 slots for complete setups.
+- Pad actions: 4 new ones (Live tab, FX tab, Record on/off, Fill hold) with no default pad.
+- MIDI clock is followed from one BeatStep port only, so ticks aren't counted twice.
+
 ## 1.5.1
 - One-tap **INIT** buttons on the synth pages: INIT MODULATION (LFOs, mod envelope, all 8 mod slots incl. routing), INIT OSC+ PAGE, and INIT SYNTH 1 / 2 on the Main page (the whole synth). Each one can be undone with UNDO INIT for a few seconds.
 

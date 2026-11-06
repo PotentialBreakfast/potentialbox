@@ -72,6 +72,17 @@ SYNTH PAGES: MAIN, OSC+, MOD (new in 1.5)
     OSC+ page: INIT OSC+ PAGE.  MAIN page: INIT SYNTH 1 / 2 = the whole synth.
   UNDO INIT shows for a few seconds afterwards if you change your mind.
 
+NEW IN 1.6
+  LIVE TAB: hold the 8 effect pads (repeat, roll, tape stop, reverse, filter sweep, gate,
+  echo). SAVE A, change things, SAVE B, then morph with the bar or BeatStep knob 1.
+  HOLD FOR SCENE B / HOLD FOR FILL. RECORD saves WAVs in Music > PotentialBox Recordings.
+  RESAMPLE TO A PAD records a synth or the mix onto a drum pad. MY SETUPS saves everything.
+  While the Live tab is open, BeatStep pads 1-16 play: 1-8 effects, 9 fill, 10 scene B,
+  11 record, 12-13 random synths, 14 random kit, 15 next kit, 16 back.
+  ARP+ PAGE on each synth: arpeggiator. STEP LOCKS button: tap a step, turn knobs.
+  DRUMS tabs: MAIN / MIX (level, pan) / GROOVE (chance, plays when).
+  MIX tab: ducking, glue, width; EQ page.
+
 FX AND MIX TABS
   FX: delay sends and settings, reverb sends and settings, DJ filter, lo-fi crush.
   MIX: synth and drum levels, drum bus, master drive, DJ filter, levels for pads 1-8.
