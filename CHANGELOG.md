@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.5.1
+- One-tap **INIT** buttons on the synth pages: INIT MODULATION (LFOs, mod envelope, all 8 mod slots incl. routing), INIT OSC+ PAGE, and INIT SYNTH 1 / 2 on the Main page (the whole synth). Each one can be undone with UNDO INIT for a few seconds.
+
 ## 1.5.0
 - Synth 1 and Synth 2 now have three pages each: **Main**, **Osc+** and **Mod**. Tap the tab again (or press its pad action) to flip pages.
 - **Modulation**: 2 LFOs per synth (Sine, Triangle, Saw up/down, Square, Random, Smooth random; free or synced from 4 bars to 1/32 with triplets), a mod envelope and **8 mod slots**. Tap a slot's name to route any source (LFO 1/2, mod env, amp env, velocity, note, random) to any target.

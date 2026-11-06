@@ -49,7 +49,7 @@ from potentialbox import kits  # noqa: E402
 from potentialbox.library import Library, map_kit, brand_of, build_index, filter_index, GROUPS, PAD_GROUP  # noqa: E402
 
 APP = "PotentialBox"
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
@@ -913,9 +913,15 @@ class App:
                    else "EACH KNOB MOVES SEVERAL SETTINGS  ·  BACK TO ZERO = BACK TO YOUR SOUND")[:96]
             self.button(560, 121, 220, 32, "ZERO ALL MACROS", self.zero_macros, px=13)
         if self.state.page in SUBPAGES:
-            sub = "TAP THE TAB AGAIN (OR ITS PAD) FOR THE NEXT PAGE  ·  TAP LEFT / RIGHT OF A KNOB TO NUDGE"
+            sub = "TAP THE TAB AGAIN FOR THE NEXT PAGE  ·  TAP LEFT / RIGHT OF A KNOB TO NUDGE"
             cur = SUBPAGE_NAMES[self.state.subpage.get(self.state.page, 0) % 3]
             self.seg(300, 105, 110, 32, SUBPAGE_NAMES, cur, self.pick_subpage, vertical=False)
+            if self.midi.learn is None:
+                undo = getattr(self, "init_undo", None)
+                if undo and undo[0] == self.page_name() and time.time() < undo[2]:
+                    self.button(750, 121, 200, 32, "UNDO INIT", self.undo_init, px=14)
+                else:
+                    self.button(750, 121, 200, 32, self.init_label(), self.init_page, accent=True, px=14)
         self.frame(14, 100, 1252, 372, self.state.page, sub)
         if mix and self.midi.learn is None:
             armed = time.time() - getattr(self, "reset_armed", 0) < 3
@@ -1649,6 +1655,56 @@ class App:
             p.set_val(k, SPECS[k].default)
         self.state.dirty = True
         self.show_toast("MACROS BACK TO ZERO")
+
+    def init_keys(self, page):
+        """Keys reset by the INIT button on a synth page: Main = the whole synth (all 3 pages),
+        Osc+ = that page's own controls, Mod = LFOs, mod envelope and all 8 slots (routing + amount)."""
+        pre = "s1" if page.startswith("Synth 1") else "s2"
+        main = PAGES["Synth 1" if pre == "s1" else "Synth 2"]
+        if page.endswith("Mod"):
+            tail = ("l1shape", "l1rate", "l1sync", "l2shape", "l2rate", "l2sync", "mea", "med")
+            keys = [f"{pre}.{t}" for t in tail]
+            for j in range(1, 9):
+                keys += [f"{pre}.m{j}src", f"{pre}.m{j}dst", f"{pre}.m{j}amt"]
+            return keys
+        if page.endswith("Osc+"):
+            return [k for k in PAGES[page] if k not in main]
+        return [k for k in SPECS if k.startswith(pre + ".")]
+
+    def init_label(self):
+        page = self.page_name()
+        if page.endswith("Mod"):
+            return "INIT MODULATION"
+        if page.endswith("Osc+"):
+            return "INIT OSC+ PAGE"
+        return "INIT " + page.upper()
+
+    def init_page(self):
+        page = self.page_name()
+        p = self.state.params
+        keys = self.init_keys(page)
+        before = {k: p.norm[k] for k in keys}
+        for k in keys:
+            p.set_val(k, SPECS[k].default)
+        if not (page.endswith("Mod") or page.endswith("Osc+")):
+            pre = "s1" if page.startswith("Synth 1") else "s2"
+            self.state.preset_name[pre] = "Init"
+            self.state.preset[pre] = 0
+        self.init_undo = (page, before, time.time() + 8)
+        self.root.after(8100, self.request_redraw)
+        self.state.dirty = True
+        self.show_toast(self.init_label().replace("INIT ", "") + " BACK TO INIT")
+
+    def undo_init(self):
+        undo = getattr(self, "init_undo", None)
+        if not undo:
+            return
+        p = self.state.params
+        for k, n in undo[1].items():
+            p.set_norm(k, n)
+        self.init_undo = None
+        self.state.dirty = True
+        self.show_toast("UNDONE")
 
     def reset_all(self):
         """Two taps: every knob (both synths, all drum pads, mix and delay) back to its starting value.

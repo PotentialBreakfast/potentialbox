@@ -67,6 +67,10 @@ SYNTH PAGES: MAIN, OSC+, MOD (new in 1.5)
   Every slot starts at 0. Turn one up to hear it; tap its name to choose another source
   or target. Chords on both synths use more PC: if it crackles, pick BUFFER 256 in SETUP.
   Synth 2 has 30 wavetables, 24 of them from the free AKWF collection (CC0).
+  INIT buttons (amber, top of each synth page) start again in one tap:
+    MOD page: INIT MODULATION = both LFOs, mod envelope and all 8 slots (routing + amount).
+    OSC+ page: INIT OSC+ PAGE.  MAIN page: INIT SYNTH 1 / 2 = the whole synth.
+  UNDO INIT shows for a few seconds afterwards if you change your mind.
 
 FX AND MIX TABS
   FX: delay sends and settings, reverb sends and settings, DJ filter, lo-fi crush.
