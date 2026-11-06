@@ -15,7 +15,39 @@ from scipy.signal import sosfilt, lfilter
 
 TWO_PI = 2.0 * math.pi
 DIVISIONS = [("1/16", 0.25), ("1/8T", 1 / 3), ("1/8", 0.5), ("3/16", 0.75), ("1/4", 1.0), ("3/8", 1.5)]
-TABLE_NAMES = ["Analog", "Vowel", "Harmonic", "PWM", "FM Bell", "Digital"]
+BASE_TABLES = ["Analog", "Vowel", "Harmonic", "PWM", "FM Bell", "Digital"]
+LFO_SHAPES = ["Sine", "Triangle", "Saw up", "Saw down", "Square", "Random", "Smooth random"]
+LFO_SYNC = [("Free", None), ("4 bars", 16), ("2 bars", 8), ("1 bar", 4), ("1/2", 2), ("1/4", 1), ("1/8", 0.5),
+            ("1/16", 0.25), ("1/32", 0.125), ("1/4T", 2 / 3), ("1/8T", 1 / 3), ("1/16T", 1 / 6)]
+MOD_SOURCES = ["Off", "LFO 1", "LFO 2", "Mod env", "Amp env", "Velocity", "Note", "Random"]
+MOD_DESTS = {"s1": ["Pitch", "Osc 2 pitch", "Cutoff", "Resonance", "Saw > Square", "Pulse width", "FM", "Ring mod",
+                    "Noise", "Volume", "Pan", "Drive"],
+             "s2": ["Pitch", "Cutoff", "Resonance", "Wave position", "Unison", "Sub osc", "Noise", "Volume", "Pan"]}
+DEFAULT_ROUTES = {
+    "s1": [("LFO 1", "Pitch"), ("LFO 1", "Cutoff"), ("LFO 2", "Pulse width"), ("Mod env", "Cutoff"),
+           ("Velocity", "Cutoff"), ("LFO 2", "Pan"), ("Mod env", "Pitch"), ("LFO 2", "Volume")],
+    "s2": [("LFO 1", "Pitch"), ("LFO 1", "Cutoff"), ("LFO 2", "Wave position"), ("Mod env", "Wave position"),
+           ("Velocity", "Cutoff"), ("LFO 2", "Pan"), ("Mod env", "Pitch"), ("LFO 2", "Volume")]}
+CHORDS = [("Off", (0,)), ("Octave", (0, 12)), ("Fifth", (0, 7)), ("Fifth + octave", (0, 7, 12)), ("Major", (0, 4, 7)),
+          ("Minor", (0, 3, 7)), ("Sus2", (0, 2, 7)), ("Sus4", (0, 5, 7)), ("Major 7", (0, 4, 7, 11)),
+          ("Minor 7", (0, 3, 7, 10)), ("Dominant 7", (0, 4, 7, 10)), ("Minor 9", (0, 3, 10, 14)), ("Stack", (0, 7, 12, 19))]
+VOICINGS = ["Close", "Open", "Wide"]
+FTYPES = ["LP 24", "LP 12", "HP 12", "Band-pass", "Notch"]
+GLIDE_MODES = ["Slides only", "Always"]
+
+
+def _load_akwf():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "akwf_tables.npz")
+    try:
+        d = np.load(path)
+        return [str(x) for x in d["names"]], d["spectra"]
+    except Exception:
+        return [], None
+
+
+AKWF_NAMES, AKWF_SPECTRA = _load_akwf()
+TABLE_NAMES = BASE_TABLES + AKWF_NAMES  # 6 built-in + 24 AKWF (CC0) tables
+
 KIT_NAMES = ["Kick", "808", "Snare", "Clap", "Closed Hat", "Open Hat", "Low Tom", "Mid Tom",
              "High Tom", "Rim", "Cowbell", "Clave", "Shaker", "Crash", "Zap", "Conga"]
 
@@ -66,6 +98,10 @@ class Param:
             if abs(v - 0.5) < 0.02:
                 return "Centre"
             return f"LP {(0.5 - v) * 200:.0f}%" if v < 0.5 else f"HP {(v - 0.5) * 200:.0f}%"
+        if u == "pan":
+            if abs(v) < 0.02:
+                return "Centre"
+            return f"L {abs(v)*100:.0f}%" if v < 0 else f"R {v*100:.0f}%"
         if u == "ct":
             return f"{v:.0f} cents"
         return f"{v:.2f}"
@@ -154,6 +190,37 @@ def _build_specs():
         a(Param(pre + ".release", "Release", 0.005, 3, 0.15 if pre == "s1" else 0.4, "exp", unit="s"))
         a(Param(pre + ".glide", "Glide (slides)", 0.005, 1, 0.06, "exp", unit="s"))
         a(Param(pre + ".vol", name + " volume", 0, 1, 0.7, unit="%"))
+        # ---- v1.5: oscillator extras, chords, filter types, modulation (all neutral by default)
+        if pre == "s1":
+            a(Param("s1.osc2", "Osc 2 pitch", -24, 24, 0, step=1, unit="st"))
+            a(Param("s1.fm", "FM (osc 2 > 1)", 0, 1, 0.0, unit="%"))
+            a(Param("s1.ring", "Ring mod", 0, 1, 0.0, unit="%"))
+            a(Param("s1.sync", "Hard sync", 0, 1, 0, step=1, choices=["Off", "On"]))
+        else:
+            a(Param("s2.sub", "Sub osc", 0, 1, 0.0, unit="%"))
+        a(Param(pre + ".noise", "Noise", 0, 1, 0.0, unit="%"))
+        a(Param(pre + ".chord", "Chord", 0, len(CHORDS) - 1, 0, step=1, choices=[c[0] for c in CHORDS]))
+        a(Param(pre + ".voicing", "Chord voicing", 0, len(VOICINGS) - 1, 0, step=1, choices=VOICINGS))
+        a(Param(pre + ".pan", "Pan", -1, 1, 0.0, unit="pan"))
+        a(Param(pre + ".drift", "Analog drift", 0, 1, 0.0, unit="%"))
+        a(Param(pre + ".penv", "Pitch env", -24, 24, 0.0, unit="st"))
+        a(Param(pre + ".pdec", "Pitch env time", 0.005, 2, 0.08, "exp", unit="s"))
+        a(Param(pre + ".ftype", "Filter type", 0, len(FTYPES) - 1, 0, step=1, choices=FTYPES))
+        a(Param(pre + ".keytrk", "Key tracking", 0, 1, 0.0, unit="%"))
+        a(Param(pre + ".velamp", "Velocity > volume", 0, 1, 0.65, unit="%"))
+        a(Param(pre + ".glmode", "Glide mode", 0, 1, 0, step=1, choices=GLIDE_MODES))
+        for L, (shape, rate) in ((1, (0, 2.0)), (2, (1, 0.5))):
+            a(Param(f"{pre}.l{L}shape", f"LFO {L} shape", 0, len(LFO_SHAPES) - 1, shape, step=1, choices=LFO_SHAPES))
+            a(Param(f"{pre}.l{L}rate", f"LFO {L} speed", 0.05, 20, rate, "exp", unit="Hz"))
+            a(Param(f"{pre}.l{L}sync", f"LFO {L} sync", 0, len(LFO_SYNC) - 1, 0, step=1, choices=[x[0] for x in LFO_SYNC]))
+        a(Param(pre + ".mea", "Mod env attack", 0.001, 2, 0.005, "exp", unit="s"))
+        a(Param(pre + ".med", "Mod env decay", 0.01, 4, 0.3, "exp", unit="s"))
+        for j, (src, dst) in enumerate(DEFAULT_ROUTES[pre]):
+            a(Param(f"{pre}.m{j+1}src", f"Slot {j+1} source", 0, len(MOD_SOURCES) - 1, MOD_SOURCES.index(src),
+                    step=1, choices=MOD_SOURCES))
+            a(Param(f"{pre}.m{j+1}dst", f"Slot {j+1} target", 0, len(MOD_DESTS[pre]) - 1, MOD_DESTS[pre].index(dst),
+                    step=1, choices=MOD_DESTS[pre]))
+            a(Param(f"{pre}.m{j+1}amt", f"Slot {j+1} amount", -1, 1, 0.0, unit="+-%"))
     for i in range(16):
         a(Param(f"dr.p{i+1}.tune", "Tune", -24, 24, 0, step=1, unit="st"))
         a(Param(f"dr.p{i+1}.decay", "Length", 0.02, 1, 1.0, unit="%"))
@@ -190,8 +257,16 @@ PAGES = collections.OrderedDict([
     ("Macros", [f"mc.{i}" for i in range(1, 17)]),
     ("Synth 1", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s1.wave", "s1.pw", "s1.detune", "s1.sub",
                  "s1.attack", "s1.decay", "s1.sustain", "s1.release", "s1.glide", "s1.octave", "s1.drive", "s1.vol"]),
+    ("Synth 1 Osc+", ["s1.osc2", "s1.fm", "s1.ring", "s1.sync", "s1.noise", "s1.chord", "s1.voicing", "s1.pan",
+                      "s1.ftype", "s1.keytrk", "s1.velamp", "s1.drift", "s1.penv", "s1.pdec", "s1.glmode", "s1.vol"]),
+    ("Synth 1 Mod", ["s1.l1shape", "s1.l1rate", "s1.l1sync", "s1.l2shape", "s1.l2rate", "s1.l2sync", "s1.mea", "s1.med"]
+                    + [f"s1.m{j}amt" for j in range(1, 9)]),
     ("Synth 2", ["s2.pos", "s2.posenv", "s2.lforate", "s2.lfoamt", "s2.cutoff", "s2.reso", "s2.envamt", "s2.table",
                  "s2.attack", "s2.decay", "s2.sustain", "s2.release", "s2.glide", "s2.octave", "s2.detune", "s2.vol"]),
+    ("Synth 2 Osc+", ["s2.chord", "s2.voicing", "s2.sub", "s2.noise", "s2.pan", "s2.drift", "s2.penv", "s2.pdec",
+                      "s2.ftype", "s2.keytrk", "s2.velamp", "s2.glmode", "s2.table", "s2.pos", "s2.cutoff", "s2.vol"]),
+    ("Synth 2 Mod", ["s2.l1shape", "s2.l1rate", "s2.l1sync", "s2.l2shape", "s2.l2rate", "s2.l2sync", "s2.mea", "s2.med"]
+                    + [f"s2.m{j}amt" for j in range(1, 9)]),
     ("Drums 1-8", [f"dr.p{i}.tune" for i in range(1, 9)] + [f"dr.p{i}.decay" for i in range(1, 9)]),
     ("Drums 9-16", [f"dr.p{i}.tune" for i in range(9, 17)] + [f"dr.p{i}.decay" for i in range(9, 17)]),
     ("Mix", ["s1.vol", "s2.vol", "dr.vol", "m.master", "dr.filter", "dr.drive", "m.drive", "m.filter"]
@@ -214,6 +289,15 @@ PRESETS = {
                           attack=0.003, decay=0.5, sustain=0.9, release=0.1, drive=0.1)),
         ("Soft Lead", dict(wave=0.5, pw=0.3, octave=0, detune=12, cutoff=1500, reso=0.2, envamt=0.2, fdecay=0.5,
                            attack=0.08, decay=1.0, sustain=0.7, release=0.6, glide=0.15, drive=0.05)),
+        ("Sync Lead", dict(wave=0, sync=1, osc2=12, octave=0, cutoff=3200, reso=0.2, envamt=0.3, fdecay=0.4,
+                           attack=0.003, decay=0.6, sustain=0.7, release=0.2, glide=0.08, mea=0.001, med=0.35,
+                           m7dst=1, m7amt=0.6, drive=0.15)),
+        ("FM Bass", dict(wave=0, fm=0.55, osc2=0, octave=-1, detune=0, sub=0.3, cutoff=800, reso=0.25, envamt=0.45,
+                         fdecay=0.2, attack=0.001, decay=0.3, sustain=0.5, release=0.08, drive=0.4)),
+        ("Wobble Bass", dict(wave=0.6, octave=-1, sub=0.6, ftype=1, cutoff=250, reso=0.55, envamt=0.1, l1sync=6,
+                             m2amt=0.55, attack=0.002, decay=0.5, sustain=0.9, release=0.1, drive=0.5)),
+        ("Minor 7 Stab", dict(chord=9, voicing=1, wave=0.3, octave=0, cutoff=900, reso=0.3, envamt=0.6, fdecay=0.15,
+                              attack=0.001, decay=0.3, sustain=0, release=0.25, drift=0.3, drive=0.1)),
     ],
     "s2": [
         ("Glass Bell", dict(table=4, pos=0.4, posenv=0.3, lfoamt=0.1, cutoff=9000, reso=0.1, envamt=0.2,
@@ -228,8 +312,25 @@ PRESETS = {
                                 attack=0.01, decay=0.6, sustain=0.3, release=0.5, detune=0.25, octave=0)),
         ("Warm Pad", dict(table=0, pos=0.35, posenv=0, lforate=0.2, lfoamt=0.3, cutoff=1800, reso=0.15,
                           envamt=0.1, attack=0.6, decay=2, sustain=0.9, release=2, detune=0.5, octave=0)),
+        ("Chord Pad", dict(table=0, pos=0.4, posenv=0, chord=8, voicing=1, attack=0.5, decay=2, sustain=0.85,
+                           release=1.6, cutoff=2500, reso=0.1, envamt=0.1, detune=0.4, drift=0.4, l2shape=6, l2rate=0.3,
+                           m3amt=0.35, m6amt=0.3, octave=0)),
+        ("Chip Lead", dict(table=12, pos=0.2, posenv=0, lfoamt=0, cutoff=9000, reso=0.1, envamt=0.1, attack=0.001,
+                           decay=0.25, sustain=0.7, release=0.1, glide=0.03, glmode=1, octave=1, l1rate=5.5,
+                           m1amt=0.02, detune=0.05)),
+        ("Voice Choir", dict(table=9, pos=0.5, posenv=0, lforate=0.2, lfoamt=0.3, chord=3, attack=0.4, decay=1.5,
+                             sustain=0.8, release=1.2, cutoff=5000, reso=0.1, envamt=0.1, detune=0.5, drift=0.6,
+                             octave=0)),
+        ("Granular Drone", dict(table=10, pos=0.3, posenv=0, lfoamt=0, l2shape=6, l2rate=0.15, m3amt=0.7, attack=1.0,
+                                decay=3, sustain=1, release=2.5, cutoff=3000, reso=0.3, envamt=0.1, detune=0.6, sub=0.3,
+                                octave=-1)),
     ],
 }
+
+
+SUBPAGES = {"Synth 1": ["Synth 1", "Synth 1 Osc+", "Synth 1 Mod"], "Synth 2": ["Synth 2", "Synth 2 Osc+", "Synth 2 Mod"]}
+SUBPAGE_NAMES = ["Main", "Osc+", "Mod"]
+HIDDEN_PAGES = {p for subs in SUBPAGES.values() for p in subs[1:]}
 
 
 class ParamStore:
@@ -293,8 +394,8 @@ class ParamStore:
 
     def randomize(self, pre, rng=None):
         rng = rng or np.random.default_rng()
-        for k in SPECS:
-            if k.startswith(pre + ".") and not k.endswith(".vol") and not k.endswith(".octave"):
+        for k in PAGES["Synth 1" if pre == "s1" else "Synth 2"]:
+            if not k.endswith(".vol") and not k.endswith(".octave"):
                 self.set_norm(k, rng.random())
         # keep it playable: short-ish attack, audible cutoff
         self.set_norm(pre + ".attack", rng.random() * 0.4)
@@ -375,24 +476,121 @@ class ADSR:
         return out
 
 
+# ----------------------------------------------------------------------------- modulation
+class LFO:
+    """Free-running LFO. Random shapes pick a new value every cycle (Random) or glide between them (Smooth)."""
+
+    def __init__(self, seed):
+        self.ph = 0.0
+        self.rng = np.random.default_rng(seed)
+        self.a = float(self.rng.uniform(-1, 1))
+        self.b = float(self.rng.uniform(-1, 1))
+
+    def render(self, n, sr, hz, shape):
+        ph = self.ph + np.arange(1, n + 1) * (hz / sr)
+        t = ph % 1.0
+        if shape == 0:
+            out = np.sin(TWO_PI * t)
+        elif shape == 1:
+            out = 1.0 - 4.0 * np.abs(t - 0.5)
+        elif shape == 2:
+            out = 2.0 * t - 1.0
+        elif shape == 3:
+            out = 1.0 - 2.0 * t
+        elif shape == 4:
+            out = np.where(t < 0.5, 1.0, -1.0)
+        else:
+            k = np.floor(ph).astype(np.int64)
+            kmax = int(k[-1])
+            A = np.empty(kmax + 1)
+            Bv = np.empty(kmax + 1)
+            A[0], Bv[0] = self.a, self.b
+            for j in range(1, kmax + 1):
+                A[j] = Bv[j - 1]
+                Bv[j] = self.rng.uniform(-1, 1)
+            if shape == 5:
+                out = A[k]
+            else:
+                ss = t * t * (3 - 2 * t)
+                out = A[k] + (Bv[k] - A[k]) * ss
+            self.a, self.b = float(A[kmax]), float(Bv[kmax])
+        self.ph = float(ph[-1] % 1.0)
+        return out
+
+
+def _at(m, i):
+    return m[i] if isinstance(m, np.ndarray) else m
+
+
+def _mean(m):
+    return float(m.mean()) if isinstance(m, np.ndarray) else float(m)
+
+
+PASS = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+
+
+def bp_coeffs(fc, q, sr):
+    fc = min(max(fc, 20.0), 0.45 * sr)
+    w0 = TWO_PI * fc / sr
+    alpha = math.sin(w0) / (2.0 * q)
+    c = math.cos(w0)
+    a0 = 1.0 + alpha
+    return [alpha / a0, 0.0, -alpha / a0, 1.0, -2 * c / a0, (1 - alpha) / a0]
+
+
+def notch_coeffs(fc, q, sr):
+    fc = min(max(fc, 20.0), 0.45 * sr)
+    w0 = TWO_PI * fc / sr
+    alpha = math.sin(w0) / (2.0 * q)
+    c = math.cos(w0)
+    a0 = 1.0 + alpha
+    return [1 / a0, -2 * c / a0, 1 / a0, 1.0, -2 * c / a0, (1 - alpha) / a0]
+
+
+def filter_sections(ftype, fc, reso, sr):
+    q2 = 0.707 + (reso ** 2) * 11.0
+    if ftype == 0:
+        return [lp_coeffs(fc, 0.707, sr), lp_coeffs(fc, q2, sr)]
+    if ftype == 1:
+        return [lp_coeffs(fc, q2, sr), PASS]
+    if ftype == 2:
+        return [hp_coeffs(fc, q2, sr), PASS]
+    if ftype == 3:
+        return [bp_coeffs(fc, 0.6 + reso * 6.0, sr), PASS]
+    return [notch_coeffs(fc, 0.5 + reso * 4.0, sr), PASS]
+
+
 class MonoSynth:
-    """Mono voice handling shared by both synths. Tied/slid steps from the BeatStep Pro
-    arrive as overlapping notes -> legato with glide, no envelope retrigger."""
+    """Mono voice handling shared by both synths, plus the modulation system.
+    Tied/slid BeatStep steps arrive as overlapping notes -> legato with glide, no envelope retrigger.
+    Chord mode stacks up to 4 oscillator voices on each note through one filter and envelope."""
 
     SUB = 32
+    MAXV = 4
 
     def __init__(self, eng, pre, channels):
         self.eng, self.pre, self.sr = eng, pre, eng.sr
         self.held = []
         self.cur = self.tgt = 48.0
         self.sliding = False
-        self.vel = 1.0
+        self.vel_raw = 0.8
+        self.rnd = 0.0
         self.amp = ADSR(self.sr)
         self.fenv = ADSR(self.sr)
+        self.menv = ADSR(self.sr)
+        self.lfos = [LFO(11 if pre == "s1" else 21), LFO(12 if pre == "s1" else 22)]
+        self.rng = np.random.default_rng(31 if pre == "s1" else 41)
+        self.channels = channels
         self.zi = np.zeros((2, 2, channels)) if channels > 1 else np.zeros((2, 2))
-        self.active = 0.0  # for GUI activity light
+        self.ftype = 0
+        self.ptime = 10 ** 9
+        self.drift_val = np.zeros(self.MAXV)
+        self.drift_tgt = self.rng.uniform(-1, 1, self.MAXV)
+        self.active = 0.0
 
+    # ---- notes
     def note_on(self, note, vel):
+        v = self.eng.p.val
         legato = bool(self.held) and self.amp.stage in (1, 2)
         if note in self.held:
             self.held.remove(note)
@@ -401,11 +599,16 @@ class MonoSynth:
         if legato:
             self.sliding = True
         else:
-            self.cur = self.tgt
-            self.sliding = False
-            self.vel = 0.35 + 0.65 * (vel / 127.0)
+            always = v[self.pre + ".glmode"] >= 0.5 and self.amp.stage != 0
+            self.sliding = always
+            if not always:
+                self.cur = self.tgt
+            self.vel_raw = vel / 127.0
+            self.rnd = float(self.rng.uniform(-1, 1))
+            self.ptime = 0
             self.amp.gate_on()
             self.fenv.gate_on()
+            self.menv.gate_on()
         self.active = 1.0
 
     def note_off(self, note):
@@ -417,38 +620,123 @@ class MonoSynth:
         else:
             self.amp.gate_off()
             self.fenv.gate_off()
+            self.menv.gate_off()
 
     def all_off(self):
         self.held = []
         self.amp.gate_off()
         self.fenv.gate_off()
+        self.menv.gate_off()
 
+    # ---- pitch
     def pitch(self, n):
+        """Semitone array (glide + octave + pitch envelope)."""
         v = self.eng.p.val
+        pre = self.pre
         if self.sliding and abs(self.tgt - self.cur) > 1e-4:
-            k = math.exp(-3.0 / max(v[self.pre + ".glide"] * self.sr, 1.0))
+            k = math.exp(-3.0 / max(v[pre + ".glide"] * self.sr, 1.0))
             sem = self.tgt + (self.cur - self.tgt) * k ** np.arange(1, n + 1)
             self.cur = float(sem[-1])
         else:
             self.cur = self.tgt
             sem = np.full(n, self.tgt)
-        sem = sem + 12.0 * v[self.pre + ".octave"]
-        return 440.0 * 2.0 ** ((sem - 69.0) / 12.0)
+        sem = sem + 12.0 * v[pre + ".octave"]
+        pe = v[pre + ".penv"]
+        if abs(pe) > 0.01 and self.ptime < self.sr * 10:
+            tau = max(v[pre + ".pdec"] * self.sr / 3.0, 1.0)
+            sem = sem + pe * np.exp(-(self.ptime + np.arange(n)) / tau)
+        self.ptime += n
+        return sem
 
-    def filt(self, x, fe):
+    def chord(self):
+        v = self.eng.p.val
+        ints = list(CHORDS[int(v[self.pre + ".chord"])][1])
+        voicing = int(v[self.pre + ".voicing"])
+        if voicing >= 1 and len(ints) >= 3:
+            ints[1] += 12
+        if voicing >= 2 and len(ints) >= 4:
+            ints[3] += 12
+        return ints[: self.MAXV]
+
+    def drift(self, n):
+        amt = self.eng.p.val[self.pre + ".drift"]
+        if amt <= 0.001:
+            return np.zeros(self.MAXV)
+        step = min(1.0, n / self.sr * 1.5)
+        self.drift_val += (self.drift_tgt - self.drift_val) * step
+        done = np.abs(self.drift_tgt - self.drift_val) < 0.05
+        if done.any():
+            self.drift_tgt[done] = self.rng.uniform(-1, 1, int(done.sum()))
+        return self.drift_val * (amt * 0.3)  # up to +-30 cents
+
+    # ---- modulation
+    def lfo_hz(self, L):
+        v = self.eng.p.val
+        beats = LFO_SYNC[int(v[f"{self.pre}.l{L}sync"])][1]
+        if beats is None:
+            return v[f"{self.pre}.l{L}rate"]
+        return self.eng.bpm / 60.0 / beats
+
+    def modulation(self, n, ae, me):
+        """Sum of the 8 mod slots, per destination name (arrays or numbers in -1..1 per unit of amount)."""
         v = self.eng.p.val
         pre = self.pre
-        q2 = 0.707 + (v[pre + ".reso"] ** 2) * 11.0
-        base = v[pre + ".cutoff"]
+        lfo = [None, None]
+        out = {}
+        for j in range(1, 9):
+            amt = v[f"{pre}.m{j}amt"]
+            si = int(v[f"{pre}.m{j}src"])
+            if si == 0 or abs(amt) < 1e-4:
+                continue
+            name = MOD_SOURCES[si]
+            if name.startswith("LFO"):
+                L = int(name[-1]) - 1
+                if lfo[L] is None:
+                    lfo[L] = self.lfos[L].render(n, self.sr, self.lfo_hz(L + 1), int(v[f"{pre}.l{L+1}shape"]))
+                s = lfo[L]
+            elif name == "Mod env":
+                s = me
+            elif name == "Amp env":
+                s = ae
+            elif name == "Velocity":
+                s = self.vel_raw * 2.0 - 1.0
+            elif name == "Note":
+                s = max(-1.0, min(1.0, (self.cur - 60.0) / 24.0))
+            else:
+                s = self.rnd
+            dst = MOD_DESTS[pre][int(v[f"{pre}.m{j}dst"])]
+            out[dst] = out.get(dst, 0.0) + amt * s
+        for L in (0, 1):  # keep unused LFOs running so their timing stays steady
+            if lfo[L] is None:
+                self.lfos[L].ph = (self.lfos[L].ph + n * self.lfo_hz(L + 1) / self.sr) % 1.0
+        return out
+
+    def filt(self, x, fe, mods):
+        v = self.eng.p.val
+        pre = self.pre
+        ftype = int(v[pre + ".ftype"])
+        if ftype != self.ftype:
+            self.zi = np.zeros_like(self.zi)
+            self.ftype = ftype
+        reso0 = v[pre + ".reso"]
+        base = v[pre + ".cutoff"] * 2.0 ** ((self.cur - 60.0) / 12.0 * v[pre + ".keytrk"])
         amt = v[pre + ".envamt"] * 7.0
+        mc = mods.get("Cutoff", 0.0)
+        mr = mods.get("Resonance", 0.0)
         y = np.empty_like(x)
         n = len(x)
         for j in range(0, n, self.SUB):
             e = j + self.SUB
-            fc = base * 2.0 ** (amt * fe[min(j + self.SUB // 2, n - 1)])
-            sos = np.array([lp_coeffs(fc, 0.707, self.sr), lp_coeffs(fc, q2, self.sr)])
+            m = min(j + self.SUB // 2, n - 1)
+            fc = base * 2.0 ** (amt * fe[m] + 6.0 * _at(mc, m))
+            reso = min(max(reso0 + _at(mr, m), 0.0), 1.0)
+            sos = np.array(filter_sections(ftype, fc, reso, self.sr))
             y[j:e], self.zi = sosfilt(sos, x[j:e], axis=0, zi=self.zi)
-        return y / (1.0 + 0.6 * v[pre + ".reso"])
+        if ftype <= 1:
+            y = y / (1.0 + 0.6 * reso0)
+        elif ftype == 3:
+            y = y * 2.5  # band-pass removes most of the energy: make-up gain
+        return y
 
     def envs(self, n, fdecay):
         v = self.eng.p.val
@@ -456,41 +744,104 @@ class MonoSynth:
         a = v[pre + ".attack"]
         ae = self.amp.render(n, a, v[pre + ".decay"], v[pre + ".sustain"], v[pre + ".release"])
         fe = self.fenv.render(n, a, fdecay, 0.0, fdecay)
-        return ae, fe
+        me = self.menv.render(n, v[pre + ".mea"], v[pre + ".med"], 0.0, v[pre + ".med"])
+        return ae, fe, me
+
+    def idle(self, n):
+        for L in (0, 1):
+            self.lfos[L].ph = (self.lfos[L].ph + n * self.lfo_hz(L + 1) / self.sr) % 1.0
+
+    def finish(self, y, ae, mods, vol_key):
+        """Velocity, volume, tremolo and pan -> stereo (n, 2)."""
+        v = self.eng.p.val
+        pre = self.pre
+        va = v[pre + ".velamp"]
+        gain = ae * ((1.0 - va + va * self.vel_raw) * v[vol_key] * 0.6)
+        if "Volume" in mods:
+            gain = gain * np.clip(1.0 + mods["Volume"], 0.0, 2.0)
+        pan = np.clip(v[pre + ".pan"] + mods.get("Pan", 0.0), -1.0, 1.0)
+        th = (pan + 1.0) * (math.pi / 4.0)
+        gl = np.cos(th) * math.sqrt(2.0)
+        gr = np.sin(th) * math.sqrt(2.0)
+        if y.ndim == 1:
+            return np.stack([y * gain * gl, y * gain * gr], axis=1)
+        return np.stack([y[:, 0] * gain * gl, y[:, 1] * gain * gr], axis=1)
+
+
+def _osc(t, d, wave, pw):
+    saw = 2.0 * t - 1.0 - polyblep(t, d)
+    if not isinstance(wave, np.ndarray) and wave <= 0.001:
+        return saw
+    pulse = np.where(t < pw, 1.0, -1.0) + polyblep(t, d) - polyblep((t - pw) % 1.0, d) - (2 * pw - 1)
+    return (1 - wave) * saw + wave * pulse
 
 
 class OscSynth(MonoSynth):
     def __init__(self, eng, pre="s1"):
         super().__init__(eng, pre, 1)
-        self.ph = np.zeros(3)
+        self.ph = np.zeros((self.MAXV, 3))
 
     def render(self, n):
         if self.amp.stage == 0:
+            self.idle(n)
             return None
         v = self.eng.p.val
-        f = self.pitch(n)
-        dt = f / self.sr
-        dt2 = dt * 2.0 ** (v["s1.detune"] / 1200.0)
-        out = []
-        for idx, d in enumerate((dt, dt2, dt * 0.5)):
-            ph = (self.ph[idx] + np.cumsum(d)) % 1.0
-            self.ph[idx] = ph[-1]
-            out.append(ph)
-        wave, pw = v["s1.wave"], v["s1.pw"]
-
-        def osc(t, d):
-            saw = 2.0 * t - 1.0 - polyblep(t, d)
-            if wave <= 0.001:
-                return saw
-            pulse = np.where(t < pw, 1.0, -1.0) + polyblep(t, d) - polyblep((t - pw) % 1.0, d) - (2 * pw - 1)
-            return (1 - wave) * saw + wave * pulse
-
-        x = 0.5 * (osc(out[0], dt) + osc(out[1], dt2)) + v["s1.sub"] * np.sin(TWO_PI * out[2])
-        ae, fe = self.envs(n, v["s1.fdecay"])
-        y = self.filt(x, fe)
-        g = 1.0 + 4.0 * v["s1.drive"]
+        ae, fe, me = self.envs(n, v["s1.fdecay"])
+        mods = self.modulation(n, ae, me)
+        sem = self.pitch(n)
+        if "Pitch" in mods:
+            sem = sem + 12.0 * mods["Pitch"]
+        wave = v["s1.wave"] + mods.get("Saw > Square", 0.0)
+        wave = np.clip(wave, 0.0, 1.0) if isinstance(wave, np.ndarray) else min(max(wave, 0.0), 1.0)
+        pw = v["s1.pw"] + 0.45 * mods.get("Pulse width", 0.0)
+        pw = np.clip(pw, 0.05, 0.5) if isinstance(pw, np.ndarray) else min(max(pw, 0.05), 0.5)
+        fm = mods.get("FM", 0.0) + v["s1.fm"]
+        fm = np.clip(fm, 0.0, 1.0) if isinstance(fm, np.ndarray) else min(max(fm, 0.0), 1.0)
+        ring = mods.get("Ring mod", 0.0) + v["s1.ring"]
+        ring = np.clip(ring, 0.0, 1.0) if isinstance(ring, np.ndarray) else min(max(ring, 0.0), 1.0)
+        o2st = v["s1.osc2"] + v["s1.detune"] / 100.0 + 12.0 * mods.get("Osc 2 pitch", 0.0)
+        sync = v["s1.sync"] >= 0.5
+        sub = v["s1.sub"]
+        ints = self.chord()
+        drift = self.drift(n)
+        x = np.zeros(n)
+        use_fm = isinstance(fm, np.ndarray) or fm > 0.001
+        use_ring = isinstance(ring, np.ndarray) or ring > 0.001
+        for vi, iv in enumerate(ints):
+            ph = self.ph[vi]
+            f1 = 440.0 * 2.0 ** ((sem + iv + drift[vi] - 69.0) / 12.0)
+            dt1 = f1 / self.sr
+            dt2 = dt1 * 2.0 ** (o2st / 12.0)
+            t1 = (ph[0] + np.cumsum(dt1)) % 1.0
+            ph[0] = t1[-1]
+            if sync:
+                t2 = (t1 * (dt2 / dt1)) % 1.0
+            else:
+                t2 = (ph[1] + np.cumsum(dt2)) % 1.0
+                ph[1] = t2[-1]
+            o2 = _osc(t2, dt2, wave, pw)
+            t1m = (t1 + fm * 0.5 * np.sin(TWO_PI * t2)) % 1.0 if use_fm else t1
+            o1 = _osc(t1m, dt1, wave, pw)
+            mix = (o1 + o2) * 0.5
+            if use_ring:
+                mix = mix * (1.0 - ring) + o1 * o2 * ring
+            if sub > 0.001:
+                ts = (ph[2] + np.cumsum(dt1 * 0.5)) % 1.0
+                ph[2] = ts[-1]
+                mix = mix + sub * np.sin(TWO_PI * ts)
+            x += mix
+        if len(ints) > 1:
+            x /= math.sqrt(len(ints))
+        noise = v["s1.noise"] + _mean(mods.get("Noise", 0.0))
+        if noise > 0.001:
+            x += min(noise, 1.0) * 0.8 * self.rng.uniform(-1.0, 1.0, n)
+        y = self.filt(x, fe, mods)
+        drv = min(max(v["s1.drive"] + _mean(mods.get("Drive", 0.0)), 0.0), 1.0)
+        g = 1.0 + 4.0 * drv
         y = np.tanh(y * g) / math.tanh(g) * 0.8
-        return y * ae * (self.vel * v["s1.vol"] * 0.6)
+        return self.finish(y, ae, mods, "s1.vol")
+
+
 
 
 def _build_wavetables(N=2048, F=16):
@@ -553,10 +904,21 @@ def _build_wavetables(N=2048, F=16):
             X = np.fft.rfft(y)
             X[0] = 0
             return X
-        x = p * (len(dig_keys) - 1)
-        i = min(int(x), len(dig_keys) - 2)
+        if set_i == 5:
+            x = p * (len(dig_keys) - 1)
+            i = min(int(x), len(dig_keys) - 2)
+            f = x - i
+            return ((1 - f) * dig_keys[i] + f * dig_keys[i + 1]) * rphase * N / 2
+        # AKWF sets: 16 stored frames, linear morph between neighbours
+        spec = AKWF_SPECTRA[set_i - len(BASE_TABLES)]
+        nf = spec.shape[0]
+        x = p * (nf - 1)
+        i = min(int(x), nf - 2)
         f = x - i
-        return ((1 - f) * dig_keys[i] + f * dig_keys[i + 1]) * rphase * N / 2
+        h = (1 - f) * spec[i] + f * spec[i + 1]
+        X = np.zeros(K, dtype=complex)
+        X[1:1 + len(h)] = h
+        return X
 
     bank = []
     for s in range(len(TABLE_NAMES)):
@@ -565,8 +927,8 @@ def _build_wavetables(N=2048, F=16):
             X = spectrum(s, fi / (F - 1))
             full = np.fft.irfft(np.where(k <= harm_levels[0], X, 0), N)
             norm = 1.0 / max(np.max(np.abs(full)), 1e-9)
-            for li, H in enumerate(harm_levels):
-                y = np.fft.irfft(np.where(k <= H, X, 0), N) * norm
+            for li, Hh in enumerate(harm_levels):
+                y = np.fft.irfft(np.where(k <= Hh, X, 0), N) * norm
                 arr[li, fi, :N] = y
                 arr[li, fi, N] = y[0]
         bank.append(arr)
@@ -584,49 +946,76 @@ class WaveSynth(MonoSynth):
         if "bank" not in _WT_CACHE:
             _WT_CACHE["bank"] = _build_wavetables(self.N)
         self.bank, self.levels = _WT_CACHE["bank"]
-        self.ph = np.zeros(2)
+        self.ph = np.zeros((self.MAXV, 3))
         self.lfo = 0.0
 
     def render(self, n):
-        if self.amp.stage == 0:
-            self.lfo = (self.lfo + n * self.eng.p.val["s2.lforate"] / self.sr) % 1.0
-            return None
         v = self.eng.p.val
-        f = self.pitch(n)
-        det = v["s2.detune"] * 30.0
-        ae, fe = self.envs(n, v["s2.decay"])
+        if self.amp.stage == 0:
+            self.lfo = (self.lfo + n * v["s2.lforate"] / self.sr) % 1.0
+            self.idle(n)
+            return None
+        ae, fe, me = self.envs(n, v["s2.decay"])
+        mods = self.modulation(n, ae, me)
+        sem = self.pitch(n)
+        if "Pitch" in mods:
+            sem = sem + 12.0 * mods["Pitch"]
+        det = min(max(v["s2.detune"] + _mean(mods.get("Unison", 0.0)), 0.0), 1.0) * 30.0
         lfo_ph = self.lfo + np.arange(1, n + 1) * (v["s2.lforate"] / self.sr)
         self.lfo = float(lfo_ph[-1] % 1.0)
         pos = v["s2.pos"] + v["s2.posenv"] * fe + v["s2.lfoamt"] * 0.5 * np.sin(TWO_PI * lfo_ph)
-        np.clip(pos, 0.0, 1.0, out=pos)
-        tables = self.bank[int(v["s2.table"])]
+        if "Wave position" in mods:
+            pos = pos + mods["Wave position"]
+        pos = np.clip(pos, 0.0, 1.0)
+        tables = self.bank[min(int(v["s2.table"]), len(self.bank) - 1)]
         F = tables.shape[1]
         fpos = pos * (F - 1)
         fi = np.minimum(fpos.astype(np.int64), F - 2)
         ff = fpos - fi
-        chans = []
-        for idx, cents in enumerate((-det, det)):
-            dt = f * 2.0 ** (cents / 1200.0) / self.sr
-            ph = (self.ph[idx] + np.cumsum(dt)) % 1.0
-            self.ph[idx] = ph[-1]
-            hmax = 0.45 / max(float(dt.max()), 1e-9)
-            li = next((i for i, h in enumerate(self.levels) if h <= hmax), len(self.levels) - 1)
-            tb = tables[li]
-            x = ph * self.N
-            xi = x.astype(np.int64)
-            xf = x - xi
-            a = tb[fi, xi] * (1 - xf) + tb[fi, xi + 1] * xf
-            b = tb[fi + 1, xi] * (1 - xf) + tb[fi + 1, xi + 1] * xf
-            chans.append(a * (1 - ff) + b * ff)
-        L = chans[0] * 0.75 + chans[1] * 0.25
-        R = chans[0] * 0.25 + chans[1] * 0.75
+        sub = min(max(v["s2.sub"] + _mean(mods.get("Sub osc", 0.0)), 0.0), 1.0)
+        ints = self.chord()
+        drift = self.drift(n)
+        L = np.zeros(n)
+        R = np.zeros(n)
+        for vi, iv in enumerate(ints):
+            ph = self.ph[vi]
+            f = 440.0 * 2.0 ** ((sem + iv + drift[vi] - 69.0) / 12.0)
+            chans = []
+            for idx, cents in enumerate((-det, det)):
+                dt = f * 2.0 ** (cents / 1200.0) / self.sr
+                p = (ph[idx] + np.cumsum(dt)) % 1.0
+                ph[idx] = p[-1]
+                hmax = 0.45 / max(float(dt.max()), 1e-9)
+                li = next((i for i, hh in enumerate(self.levels) if hh <= hmax), len(self.levels) - 1)
+                tb = tables[li]
+                x = p * self.N
+                xi = x.astype(np.int64)
+                xf = x - xi
+                a = tb[fi, xi] * (1 - xf) + tb[fi, xi + 1] * xf
+                b = tb[fi + 1, xi] * (1 - xf) + tb[fi + 1, xi + 1] * xf
+                chans.append(a * (1 - ff) + b * ff)
+            L += chans[0] * 0.75 + chans[1] * 0.25
+            R += chans[0] * 0.25 + chans[1] * 0.75
+            if sub > 0.001:
+                ts = (ph[2] + np.cumsum(f * 0.5 / self.sr)) % 1.0
+                ph[2] = ts[-1]
+                s = sub * 0.8 * np.sin(TWO_PI * ts)
+                L += s
+                R += s
+        if len(ints) > 1:
+            L /= math.sqrt(len(ints))
+            R /= math.sqrt(len(ints))
+        noise = v["s2.noise"] + _mean(mods.get("Noise", 0.0))
+        if noise > 0.001:
+            nz = min(noise, 1.0) * 0.6 * self.rng.uniform(-1.0, 1.0, n)
+            L += nz
+            R += nz
         x = np.stack([L, R], axis=1)
-        y = self.filt(x, fe)
+        y = self.filt(x, fe, mods)
         y = np.tanh(y * 1.2)
-        return y * (ae * (self.vel * v["s2.vol"] * 0.6))[:, None]
+        return self.finish(y, ae, mods, "s2.vol")
 
 
-# ----------------------------------------------------------------------------- drums
 def load_wav(path, sr):
     from scipy.io import wavfile
     fs, x = wavfile.read(path)
@@ -977,9 +1366,9 @@ class Engine:
         rsend = np.zeros((n, 2))
         a = self.s1.render(n)
         if a is not None:
-            out += a[:, None]
-            send += a[:, None] * v["fx.s1"]
-            rsend += a[:, None] * v["rv.s1"]
+            out += a
+            send += a * v["fx.s1"]
+            rsend += a * v["rv.s1"]
         b = self.s2.render(n)
         if b is not None:
             out += b

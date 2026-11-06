@@ -43,15 +43,18 @@ except Exception:
 import tkinter as tk  # noqa: E402
 from tkinter import font as tkfont, filedialog  # noqa: E402
 
-from potentialbox.engine import Engine, ParamStore, SPECS, PAGES, PRESETS, MACROS  # noqa: E402
+from potentialbox.engine import (Engine, ParamStore, SPECS, PAGES, PRESETS, MACROS, SUBPAGES, SUBPAGE_NAMES,  # noqa: E402
+                                 HIDDEN_PAGES, MOD_SOURCES, MOD_DESTS)
 from potentialbox import kits  # noqa: E402
 from potentialbox.library import Library, map_kit, brand_of, build_index, filter_index, GROUPS, PAD_GROUP  # noqa: E402
 
 APP = "PotentialBox"
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
-TABS = list(PAGES.keys()) + ["Setup"]
+TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
+SHORT_DEST = {"Wave position": "Wave pos", "Saw > Square": "Wave", "Pulse width": "Pulse w.", "Osc 2 pitch": "Osc 2",
+              "Resonance": "Reso", "Velocity": "Vel", "Smooth random": "Smooth"}
 CFG_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.config"), APP)
 CFG_FILE = os.path.join(CFG_DIR, "state.json")
 LOG_FILE = os.path.join(CFG_DIR, "log.txt")
@@ -79,6 +82,12 @@ KNOB_GROUPS = {
     "Drums 1-8": [(0, 8, "Tune · pads 1-8"), (8, 16, "Length · pads 1-8")],
     "Drums 9-16": [(0, 8, "Tune · pads 9-16"), (8, 16, "Length · pads 9-16")],
     "Macros": [(0, 8, "Synth moves"), (8, 16, "Space & performance")],
+    "Synth 1 Osc+": [(0, 4, "Oscillator 2"), (4, 5, "Noise"), (5, 7, "Chord"), (7, 8, "Pan"), (8, 10, "Filter"),
+                     (10, 12, "Feel"), (12, 14, "Pitch env"), (14, 16, "Glide & level")],
+    "Synth 1 Mod": [(0, 3, "LFO 1"), (3, 6, "LFO 2"), (6, 8, "Mod env"), (8, 16, "Mod slots · tap a name to change it")],
+    "Synth 2 Osc+": [(0, 2, "Chord"), (2, 4, "Sub & noise"), (4, 6, "Pan & drift"), (6, 8, "Pitch env"),
+                     (8, 10, "Filter"), (10, 12, "Feel"), (12, 16, "Quick access")],
+    "Synth 2 Mod": [(0, 3, "LFO 1"), (3, 6, "LFO 2"), (6, 8, "Mod env"), (8, 16, "Mod slots · tap a name to change it")],
     "Mix": [(0, 4, "Levels"), (4, 8, "Bus & DJ filter"), (8, 16, "Drum levels · pads 1-8")],
     "FX": [(0, 3, "Delay sends"), (3, 6, "Delay"), (6, 8, "DJ filter & lo-fi"), (8, 11, "Reverb sends"),
            (11, 14, "Reverb"), (14, 16, "Bus")],
@@ -140,6 +149,7 @@ class State:
         self.preset = {"s1": 0, "s2": 0}
         self.preset_name = {"s1": PRESETS["s1"][0][0], "s2": PRESETS["s2"][0][0]}
         self.page = "Perform"
+        self.subpage = {"Synth 1": 0, "Synth 2": 0}
         self.midi_off = []  # port names the user switched off
         self.bad_audio = []  # labels of outputs that froze or crashed on open
         self.audio_pending = None  # label being opened right now (set before open, cleared after)
@@ -231,6 +241,10 @@ class State:
         self.preset_name.update(d.get("preset_name", {}))
         page = {"Mix & FX": "Mix"}.get(d.get("page"), d.get("page"))
         self.page = page if page in TABS else "Perform"
+        sp = d.get("subpage", {})
+        if isinstance(sp, dict):
+            for t in self.subpage:
+                self.subpage[t] = int(sp.get(t, 0)) % 3
         self.midi_off = d.get("midi_off", [])
         self.bad_audio = [x for x in d.get("bad_audio", []) if isinstance(x, str)]
         self.audio_pending = d.get("audio_pending")
@@ -240,7 +254,7 @@ class State:
             os.makedirs(CFG_DIR, exist_ok=True)
             d = dict(params=self.params.norm, cc_map=self.cc_map, knob_mode=self.knob_mode, ch=self.ch,
                      device=self.device, blocksize=self.blocksize, kit=self.kit, recent=self.recent, library_root=self.library_root,
-                     preset=self.preset, preset_name=self.preset_name, page=self.page, midi_off=self.midi_off,
+                     preset=self.preset, preset_name=self.preset_name, page=self.page, subpage=self.subpage, midi_off=self.midi_off,
                      bad_audio=self.bad_audio, audio_pending=self.audio_pending, actions=self.actions)
             tmp = CFG_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -686,9 +700,15 @@ class App:
     def request_redraw(self):
         self.redraw_wanted = True
 
-    def page_keys(self):
+    def page_name(self):
+        """The knob page shown: a tab, or the selected sub-page of a synth tab."""
         page = self.state.page if self.state.page in PAGES else "Perform"
-        return PAGES[page]
+        if page in SUBPAGES:
+            return SUBPAGES[page][self.state.subpage.get(page, 0) % 3]
+        return page
+
+    def page_keys(self):
+        return PAGES[self.page_name()]
 
     def X(self, x):
         return self.ox + x * self.scale
@@ -792,17 +812,40 @@ class App:
         dx, dy = cx + (r - 12) * math.cos(a), cy - (r - 12) * math.sin(a)
         self.cv.create_oval(X(dx - 7), Y(dy - 7), X(dx + 7), Y(dy + 7), fill=T["knob_dot"], outline="")
         self.text(cx, cy + r + 24, self.knob_label(key), 13, T["ink"], True)
-        self.text(cx, cy + r + 46, spec.fmt(p.val[key]), 15, T["accent"] if (hot or moved) else T["ink_dim"])
+        shown = spec.fmt(p.val[key])
+        if key[2:5] in (".l1", ".l2") and key.endswith("rate") and p.val[key[:5] + "sync"] >= 0.5:
+            shown = "Synced"
+        self.text(cx, cy + r + 46, shown, 15, T["accent"] if (hot or moved) else T["ink_dim"])
         self.text(cx - r - 4, cy - r - 2, str(idx + 1), 10, T["ink_faint"], False, "e")
         self.hit(cx - 70, cy - r - 16, 140, 2 * r + 70, lambda k=key: k, "knob")
+        slot = self.mod_slot(key)
+        if slot:
+            self.hit(cx - 74, cy + r + 10, 148, 26, lambda sl=slot: self.open_overlay(("route",) + sl))
+
+    @staticmethod
+    def mod_slot(key):
+        if len(key) == 8 and key[2:4] == ".m" and key.endswith("amt"):
+            return key[:2], int(key[4])
+        return None
+
+    def route_text(self, pre, j):
+        v = self.state.params.val
+        src = MOD_SOURCES[int(v[f"{pre}.m{j}src"])]
+        if src == "Off":
+            return f"Slot {j}: off"
+        dst = MOD_DESTS[pre][int(v[f"{pre}.m{j}dst"])]
+        return f"{SHORT_DEST.get(src, src)} > {SHORT_DEST.get(dst, dst)}"
 
     def knob_label(self, key):
+        slot = self.mod_slot(key)
+        if slot:
+            return self.route_text(*slot)[:20]
         if key.startswith("dr.p"):
             pad = int(key.split(".")[1][1:]) - 1
             name = self.audio.engine.drums.names[pad]
             return f"{name} {SPECS[key].label}"[:18]
         lab = SPECS[key].label
-        if self.state.page in ("Perform", "Mix", "FX") and key[:2] in ("s1", "s2") and "Synth" not in lab:
+        if self.page_name() in ("Perform", "Mix", "FX") and key[:2] in ("s1", "s2") and "Synth" not in lab:
             lab = key[:2].upper() + " " + lab
         return lab
 
@@ -834,6 +877,8 @@ class App:
             self.draw_mykits()
         elif self.overlay and self.overlay[0] == "actions":
             self.draw_actions()
+        elif self.overlay and self.overlay[0] == "route":
+            self.draw_route(self.overlay[1], self.overlay[2])
         msg, until = self.toast
         if msg and time.time() < until:
             self.rrect(300, 30, 430, 48, 12, T["btn_on"])
@@ -867,6 +912,10 @@ class App:
             sub = (f"{i + 1} {MACROS[i][0].upper()}: {MACROS[i][1].upper()}" if i is not None
                    else "EACH KNOB MOVES SEVERAL SETTINGS  ·  BACK TO ZERO = BACK TO YOUR SOUND")[:96]
             self.button(560, 121, 220, 32, "ZERO ALL MACROS", self.zero_macros, px=13)
+        if self.state.page in SUBPAGES:
+            sub = "TAP THE TAB AGAIN (OR ITS PAD) FOR THE NEXT PAGE  ·  TAP LEFT / RIGHT OF A KNOB TO NUDGE"
+            cur = SUBPAGE_NAMES[self.state.subpage.get(self.state.page, 0) % 3]
+            self.seg(300, 105, 110, 32, SUBPAGE_NAMES, cur, self.pick_subpage, vertical=False)
         self.frame(14, 100, 1252, 372, self.state.page, sub)
         if mix and self.midi.learn is None:
             armed = time.time() - getattr(self, "reset_armed", 0) < 3
@@ -882,7 +931,7 @@ class App:
             return
         for row in (0, 1):
             ly = 150 + row * 160
-            for a, b, label in KNOB_GROUPS.get(self.state.page, []):
+            for a, b, label in KNOB_GROUPS.get(self.page_name(), []):
                 if a // 8 != row:
                     continue
                 x0 = 14 + 10 + (a % 8) * 156.5
@@ -1496,8 +1545,57 @@ class App:
 
     def set_page(self, name):
         self.overlay = None
+        if name == self.state.page and name in SUBPAGES:
+            self.state.subpage[name] = (self.state.subpage.get(name, 0) + 1) % 3
         self.state.page = name
         self.state.dirty = True
+
+    def pick_subpage(self, label):
+        self.state.subpage[self.state.page] = SUBPAGE_NAMES.index(label)
+        self.state.dirty = True
+
+    # ---------------------------------------------------------------- mod routing menu
+    def draw_route(self, pre, j):
+        p = self.state.params
+        v = p.val
+        name = "Synth 1" if pre == "s1" else "Synth 2"
+        self.overlay_base(f"Mod slot {j} · {name}", f"PICK A SOURCE AND A TARGET  ·  KNOB {8 + j} ON THE MOD PAGE SETS THE AMOUNT")
+        si = int(v[f"{pre}.m{j}src"])
+        di = int(v[f"{pre}.m{j}dst"])
+        self.text(34, 168, "SOURCE", 14, T["accent"], True, "w")
+        for i, src in enumerate(MOD_SOURCES):
+            y0 = 182 + i * 50
+            on = i == si
+            self.rect(34, y0, 340, 44, fill=T["seg_active"] if on else T["seg_inactive"])
+            self.text(50, y0 + 22, src.upper(), 15, T["accent"] if on else T["ink"], on, "w")
+            self.hit(34, y0, 340, 44, lambda ii=i: (p.set_val(f"{pre}.m{j}src", ii), self.mark_dirty()))
+        self.text(400, 168, "TARGET", 14, T["accent"], True, "w")
+        dests = MOD_DESTS[pre]
+        for i, dst in enumerate(dests):
+            c, r = divmod(i, 6)
+            x0, y0 = 400 + c * 290, 182 + r * 50
+            on = i == di
+            self.rect(x0, y0, 280, 44, fill=T["seg_active"] if on else T["seg_inactive"])
+            self.text(x0 + 16, y0 + 22, dst.upper(), 15, T["accent"] if on else T["ink"], on, "w")
+            self.hit(x0, y0, 280, 44, lambda ii=i: (p.set_val(f"{pre}.m{j}dst", ii), self.mark_dirty()))
+        key = f"{pre}.m{j}amt"
+        self.text(1000, 168, "AMOUNT", 14, T["accent"], True, "w")
+        self.readout(1120, 230, 240, 52, SPECS[key].fmt(p.base_val(key)))
+        self.button(1060, 300, 116, 60, "−", lambda: (p.nudge(key, -1), self.mark_dirty()), px=28)
+        self.button(1180, 300, 116, 60, "+", lambda: (p.nudge(key, 1), self.mark_dirty()), px=28)
+        self.button(1120, 376, 240, 52, "ZERO", lambda: (p.set_val(key, 0.0), self.mark_dirty()), px=16)
+        self.text(1000, 430, "Negative amounts turn the", 13, T["ink_dim"], False, "w")
+        self.text(1000, 450, "movement upside down.", 13, T["ink_dim"], False, "w")
+        prev_j, next_j = (j - 2) % 8 + 1, j % 8 + 1
+        self.button(560, 640, 220, 60, f"< SLOT {prev_j}", lambda: self.open_overlay(("route", pre, prev_j)), px=16)
+        self.button(800, 640, 220, 60, f"SLOT {next_j} >", lambda: self.open_overlay(("route", pre, next_j)), px=16)
+        self.button(1120, 640, 240, 70, "DONE", self.close_overlay, accent=True, px=20)
+        self.button(160, 640, 250, 60, "CLEAR SLOT", lambda: (p.set_val(f"{pre}.m{j}src", 0), p.set_val(key, 0.0),
+                                                            self.mark_dirty()), px=16)
+
+    def mark_dirty(self):
+        self.state.dirty = True
+        self.request_redraw()
 
     def preset_step(self, pre, d):
         lst = self.sound_list(pre)

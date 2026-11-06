@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0
+- Synth 1 and Synth 2 now have three pages each: **Main**, **Osc+** and **Mod**. Tap the tab again (or press its pad action) to flip pages.
+- **Modulation**: 2 LFOs per synth (Sine, Triangle, Saw up/down, Square, Random, Smooth random; free or synced from 4 bars to 1/32 with triplets), a mod envelope and **8 mod slots**. Tap a slot's name to route any source (LFO 1/2, mod env, amp env, velocity, note, random) to any target.
+- **Filter types**: LP 24, LP 12, HP 12, band-pass, notch, plus key tracking and velocity-to-volume.
+- **Oscillator tricks**: Synth 1 osc 2 tuning, FM, ring mod, hard sync; noise, sub (Synth 2), pitch envelope, analog drift, pan and glide mode on both.
+- **Chord mode** with 13 chords and Close/Open/Wide voicings.
+- **24 new wavetables** from the AKWF collection (CC0), 30 in total.
+- 8 new presets: Sync Lead, FM Bass, Wobble Bass, Minor 7 Stab, Chord Pad, Chip Lead, Voice Choir, Granular Drone.
+- Synth 1 is now stereo. Saved sounds from earlier versions load unchanged.
+- Manual: new chapter "Modulation and chords" and the new knob pages.
+
 ## 1.4.0
 - **Macros tab**: 16 performance macros (S1 Sweep, S2 Sweep, Acid, Wobble, Bright, Pluck, Glide, Wide, Dub Throw, Space, DJ Filter, Build-Up, Lo-Fi, Drum Smash, Tighten, Glue). Macros work on top of your settings, so zero always returns your sound exactly.
 - New effects: reverb with per-instrument sends, DJ filter, lo-fi crusher.

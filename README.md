@@ -6,8 +6,8 @@ The BeatStep Pro is the sequencer and controller, and PotentialBox makes the sou
 
 | BeatStep Pro | Plays in PotentialBox |
 |---|---|
-| **Sequencer 1** (MIDI ch 1) | **Synth 1**: analog-style mono synth for basslines, acid and leads |
-| **Sequencer 2** (MIDI ch 2) | **Synth 2**: wavetable mono synth with 6 morphing tables |
+| **Sequencer 1** (MIDI ch 1) | **Synth 1**: analog-style synth for basslines, acid, leads and chords |
+| **Sequencer 2** (MIDI ch 2) | **Synth 2**: wavetable synth with 30 morphing tables |
 | **Drum sequencer** (MIDI ch 10) | **Drums**: 16-pad sampler with 9 built-in kits, your own folders and a drum machine library browser |
 | **16 knobs** (Control Mode) | The 16 knobs on whichever PotentialBox page is open, including **16 performance macros** |
 | **16 pads** (Control Mode, ch 16) | Actions: random sounds, switch pages, next kit and more |
@@ -23,6 +23,10 @@ It's pre-wired for the BeatStep Pro's factory settings, so you can plug it in an
 ## Features
 
 - **Two synths** with resonant filters, envelopes, glide on tied/slid steps, drive and unison
+- **Modulation**: on each synth, 2 tempo-syncable LFOs (7 shapes), a mod envelope and 8 mod slots routing LFOs, envelopes, velocity, note or random to pitch, filter, wave position, FM, pan, volume and more
+- **Filters and oscillators**: LP 24, LP 12, HP, band-pass and notch with key tracking; Synth 1 adds osc 2 tuning, FM, ring mod, hard sync and noise; both have pitch envelope, analog drift and pan
+- **Chord mode**: turn every step into a chord (13 chord types, 3 voicings), even though the BeatStep sequences one note at a time
+- **30 wavetables** on Synth 2, including 24 from the free AKWF single-cycle collection
 - **Drum sampler**: 9 synthesized kits (808 Boom, 909 Punch, 606 Tight, Trap 808, SP Dust 12-bit, Electro 80s, Minimal Tech, Industrial, Potential), all with the same pad layout so patterns carry over
 - **Drum machine library**: point it at a collection of sampled machines (one folder per machine) and browse brand > machine > kit. Sounds are sorted onto the right pads by their file names, and silence at the start of every hit is trimmed
 - **Build your own kits**: put any one-shot from your whole collection on any pad, with a random pick per pad type, and save 8 of your own kits
@@ -32,9 +36,13 @@ It's pre-wired for the BeatStep Pro's factory settings, so you can plug it in an
 - **Low lag**: ASIO support (your interface's own driver is chosen first), WASAPI exclusive and WASAPI
 - Follows the BeatStep Pro's tempo, and Stop sends All Notes Off
 
-| Macros | Pad editor | Drum machines |
+| Macros | Synth modulation | Mod routing |
 |---|---|---|
-| ![Macros](docs/images/macros.png) | ![Pad editor](docs/images/pad.png) | ![Drum machines](docs/images/machines.png) |
+| ![Macros](docs/images/macros.png) | ![Synth 1 Mod page](docs/images/s1mod.png) | ![Mod routing menu](docs/images/route.png) |
+
+| Synth 1 Osc+ | Pad editor | Drum machines |
+|---|---|---|
+| ![Synth 1 Osc+ page](docs/images/s1osc.png) | ![Pad editor](docs/images/pad.png) | ![Drum machines](docs/images/machines.png) |
 
 ---
 

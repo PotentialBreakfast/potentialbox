@@ -58,6 +58,16 @@ MACROS (performance knobs)
   The last macro you touched is described at the top of the page. ZERO ALL MACROS resets them.
   Knobs pushed by a macro show their value in amber, with a small ring where your setting is.
 
+SYNTH PAGES: MAIN, OSC+, MOD (new in 1.5)
+  Synth 1 and Synth 2 each have three pages. Tap the tab again (or its pad action) to flip.
+  OSC+: osc 2 tuning, FM, ring mod and hard sync (Synth 1), sub (Synth 2), noise, chord and
+  voicing, pan, filter type (LP 24 / LP 12 / HP / band-pass / notch), key tracking,
+  velocity, drift, pitch envelope and glide mode.
+  MOD: 2 LFOs (shape, speed, tempo sync), a mod envelope and the 8 mod slot amounts.
+  Every slot starts at 0. Turn one up to hear it; tap its name to choose another source
+  or target. Chords on both synths use more PC: if it crackles, pick BUFFER 256 in SETUP.
+  Synth 2 has 30 wavetables, 24 of them from the free AKWF collection (CC0).
+
 FX AND MIX TABS
   FX: delay sends and settings, reverb sends and settings, DJ filter, lo-fi crush.
   MIX: synth and drum levels, drum bus, master drive, DJ filter, levels for pads 1-8.
