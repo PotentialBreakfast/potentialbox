@@ -72,6 +72,13 @@ SYNTH PAGES: MAIN, OSC+, MOD (new in 1.5)
     OSC+ page: INIT OSC+ PAGE.  MAIN page: INIT SYNTH 1 / 2 = the whole synth.
   UNDO INIT shows for a few seconds afterwards if you change your mind.
 
+NEW IN 1.8: THE BEATS TAB (genre beat generator)
+  Tap a genre (24 of them), PLAY, NEW BEAT for another take. Tap dots to edit.
+  SEND TO BEATSTEP: pick an empty drum pattern on the BeatStep, tap SEND TO BEATSTEP, then
+  press REC + PLAY on the BeatStep. The beat is sent once from step 1 and the BeatStep keeps it.
+  Pads on the Beats tab: 1 play, 2 new beat, 3/4 genre, 5 fill, 6 mutate, 7 simpler, 8 busier,
+  9-12 mutes, 13/14 tempo, 15 send to BeatStep, 16 back.
+
 NEW IN 1.7: THE LOOP TAB (5-track looper, like a BOSS RC-505)
   1. Tap INPUT OFF (top right) and pick your mic/instrument input (needs your interface's
      ASIO driver in SETUP). 2. Press pad 1 to record, again to play, again to overdub.

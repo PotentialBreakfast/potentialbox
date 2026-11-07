@@ -113,6 +113,8 @@ class Param:
             return f"L {abs(v)*100:.0f}%" if v < 0 else f"R {v*100:.0f}%"
         if u == "ct":
             return f"{v:.0f} cents"
+        if u == "sw":
+            return "Genre" if v <= 50.5 else f"{v:.0f}%"
         if u == "dB":
             return "0 dB" if abs(v) < 0.05 else f"{v:+.1f} dB"
         return f"{v:.2f}"
@@ -274,6 +276,11 @@ def _build_specs():
     a(Param("lp.fb", "Overdub keep", 0.3, 1, 1.0, unit="%"))
     a(Param("lp.filter", "Loop filter", -1, 1, 0.0, unit="bip"))
     a(Param("lp.duck", "Duck loops", 0, 1, 0.0, unit="%"))
+    # ---- beats (v1.8)
+    a(Param("bt.busy", "Busy", -1, 1, 0.0, unit="+-%"))
+    a(Param("bt.var", "Variation", 0, 1, 0.2, unit="%"))
+    a(Param("bt.swing", "Swing", 50, 75, 50, unit="sw"))
+    a(Param("bt.human", "Humanize", 0, 1, 0.3, unit="%"))
     a(Param("dr.filter", "Drum filter", 200, 20000, 20000, "exp", unit="Hz"))
     a(Param("dr.drive", "Drum drive", 0, 1, 0.0, unit="%"))
     a(Param("dr.vol", "Drums volume", 0, 1, 0.8, unit="%"))
@@ -303,6 +310,9 @@ SPECS = _build_specs()
 PAGES = collections.OrderedDict([
     ("Perform", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s2.pos", "s2.cutoff", "s2.envamt", "s2.decay",
                  "dr.p1.tune", "dr.p1.decay", "dr.p3.tune", "dr.p5.decay", "dr.filter", "s1.vol", "s2.vol", "dr.vol"]),
+    ("Beats", ["bt.busy", "bt.var", "bt.swing", "bt.human", "dr.vol", "dr.filter", "dr.drive", "rv.dr",
+               "dr.p1.level", "dr.p2.level", "dr.p3.level", "dr.p4.level", "dr.p5.level", "dr.p6.level",
+               "dr.p13.level", "dr.p1.tune"]),
     ("Live", ["sc.morph", "m.filter", "mc.12", "mc.9", "mc.10", "mc.13", "m.glue", "m.master",
               "s1.cutoff", "s1.reso", "s2.cutoff", "s2.pos", "dk.s1", "dk.s2", "fx.fb", "rv.size"]),
     ("Loop", ["lp.t1.vol", "lp.t2.vol", "lp.t3.vol", "lp.t4.vol", "lp.t5.vol", "lp.in", "lp.mon", "lp.vol",
@@ -1458,7 +1468,7 @@ class Drums:
         srcs = [{"file": p, "label": l} if p else {"factory": 0, "pad": i} for i, (p, l) in enumerate(pads[:16])]
         return self.load_sources(srcs, name)
 
-    def trigger(self, pad, vel):
+    def trigger(self, pad, vel, offset=0):
         pad %= 16
         for c in self.CHOKE.get(pad, []):
             for v in self.voices:
@@ -1476,7 +1486,9 @@ class Drums:
         gain = val[f"dr.p{pad+1}.level"] * (vel / 127.0) ** 1.2
         th = (val[f"dr.p{pad+1}.pan"] + 1.0) * (math.pi / 4.0)
         # [pad, pos, rate, gain, env, choking, k, left, right]
-        self.voices.append([pad, 0.0, rate, gain, 1.0, False, k, math.cos(th) * math.sqrt(2.0), math.sin(th) * math.sqrt(2.0)])
+        # a negative position = starts `offset` samples into the next block
+        self.voices.append([pad, -float(offset) * rate, rate, gain, 1.0, False, k,
+                            math.cos(th) * math.sqrt(2.0), math.sin(th) * math.sqrt(2.0)])
         if len(self.voices) > 32:
             self.voices.pop(0)
         self.active[pad] = 1.0
@@ -1491,10 +1503,18 @@ class Drums:
             pad, pos, rate, gain, e, choking, k, gl, gr = v
             s = self.samples[pad]
             M = len(s) - 1
-            m = min(n, int(math.ceil((M - pos) / rate)))
+            st = 0
+            if pos < 0:
+                st = int(math.ceil(-pos / rate - 1e-9))
+                if st >= n:
+                    v[1] = pos + rate * n
+                    alive.append(v)
+                    continue
+            p0 = pos + rate * st
+            m = min(n - st, int(math.ceil((M - p0) / rate)))
             if m <= 0:
                 continue
-            p = pos + rate * ar[:m]
+            p = p0 + rate * ar[:m]
             i = p.astype(np.int64)
             np.minimum(i, M - 1, out=i)
             fr = p - i
@@ -1505,11 +1525,11 @@ class Drums:
                 y = y * ev
                 e = float(ev[-1])
             y *= gain
-            out[:m, 0] += y * gl
-            out[:m, 1] += y * gr
+            out[st:st + m, 0] += y * gl
+            out[st:st + m, 1] += y * gr
             v[1] = pos + rate * n
             v[4] = e
-            if m == n and e > 1e-4:
+            if st + m == n and e > 1e-4:
                 alive.append(v)
         self.voices = alive
         val = self.eng.p.val
@@ -1863,7 +1883,9 @@ class Engine:
         self.recorder = None
         self.capture = None
         from potentialbox.looper import Looper
+        from potentialbox.beats import BeatPlayer
         self.looper = Looper(self)
+        self.beats = BeatPlayer(self)
 
     # thread-safe entry points (MIDI / GUI threads)
     def note_on(self, target, note, vel=100):
@@ -1910,6 +1932,7 @@ class Engine:
             self.step = 0
             p.apply_step(0)
             self.looper.on_start()
+            self.beats.on_start()
         elif kind == "cont":
             self.playing = True
         elif kind == "stop":
@@ -1917,6 +1940,7 @@ class Engine:
             self.step = None
             p.apply_step(None)
             self.looper.on_stop()
+            self.beats.on_stop()
         elif kind == "tick":
             self.tick += 1
             if not self.playing:
@@ -1924,6 +1948,8 @@ class Engine:
             t = self.tick
             if t > 0 and t % 96 == 0:
                 self.looper.on_bar()
+            if t >= 0:
+                self.beats.on_tick(t)
             if t % 6 == 5:  # one tick early: the BeatStep may send the step's note before its clock
                 self.step = ((t + 1) // 6) % 16
                 p.apply_step(self.step)
@@ -2014,6 +2040,7 @@ class Engine:
             rsend += a * v["rv." + key]
             if stems is not None:
                 stems[key] = a
+        self.beats.render_hits(n)
         c = self.drums.render(n)
         if c is not None:
             c = self.eqs["dr"].process(c, v["eq.dr.lo"], v["eq.dr.mid"], v["eq.dr.hi"], lof, hif)

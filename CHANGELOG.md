@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.8.0
+- **Beats tab**: genre beat generator with 24 genres, each with its own tempo, swing, length (16 or 32 steps), fill style and matching kit.
+  - NEW BEAT for another take, MUTATE one part, SIMPLER / BUSIER, HOLD FOR FILL, mutes for kick, snares, hats and percussion; tap the grid to add or remove hits.
+  - Knobs: busy, variation, swing (genre or your own), humanize, drum bus and pad levels.
+  - Plays locked to the BeatStep's clock (sample-accurate, with swing), or on its own tempo when the BeatStep is stopped. Hits respect the drum pads' chance and conditions, and trigger side-chain ducking.
+  - **Send to BeatStep**: press REC + PLAY on the BeatStep and the beat is sent once over MIDI (drum channel, notes 36-51) from step 1, so the BeatStep's drum sequencer records it and keeps playing it. Echoed notes are ignored while sending.
+  - While the Beats tab is open, BeatStep pads 1-16 run it (play, new beat, genre, fill, mutate, simpler/busier, mutes, tempo, send, back).
+- Drum hits can now start at an exact sample inside an audio block.
+- New pad action: Beats Tab. The current beat is saved with your settings and in My Setups.
+
 ## 1.7.0
 - **Loop tab**: a 5-track stereo looper inspired by the BOSS RC-505.
   - Records the audio interface's inputs (pick mono or stereo inputs; needs the interface's ASIO driver), PotentialBox's own mix, or both, per track. Round-trip latency is compensated.

@@ -47,11 +47,12 @@ from potentialbox.engine import (Engine, ParamStore, SPECS, PAGES, PRESETS, MACR
                                  HIDDEN_PAGES, MOD_SOURCES, MOD_DESTS, PUNCH_FX)
 from potentialbox.recorder import Recorder, write_wav, recordings_dir  # noqa: E402
 from potentialbox.looper import TRACKS, SOURCES, FX_TYPES, SPEEDS, LENGTHS, STATE_TEXT  # noqa: E402
+from potentialbox.beats import Beat, GENRES, GENRE_NAMES, ROLE_PAD, ROLE_NAME, GROUP_NAMES, GROUPS as BEAT_GROUPS  # noqa: E402
 from potentialbox import kits  # noqa: E402
 from potentialbox.library import Library, map_kit, brand_of, build_index, filter_index, GROUPS, PAD_GROUP  # noqa: E402
 
 APP = "PotentialBox"
-VERSION = "1.7.0"
+VERSION = "1.8.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
@@ -65,11 +66,14 @@ SLOTS = 8
 KITS_FILE = os.path.join(CFG_DIR, "my-kits.json")
 SETUPS_FILE = os.path.join(CFG_DIR, "my-setups.json")
 RESAMPLE_DIR = os.path.join(CFG_DIR, "Resampled")
-NO_LOCK_PAGES = ("Macros", "Live", "Loop", "Setup")
-OWN_SCREEN_PAGES = ("Live", "Loop")  # tabs that draw their own screen and turn the pads into their own pads
+NO_LOCK_PAGES = ("Macros", "Beats", "Live", "Loop", "Setup")
+OWN_SCREEN_PAGES = ("Beats", "Live", "Loop")  # tabs that draw their own screen and turn the pads into their own pads
 LOOP_PADS = [f"Track {t} rec / play / dub" for t in range(1, 6)] + ["Undo / redo", "All stop / play",
              "Record next empty track"] + [f"Track {t} stop (hold: clear)" for t in range(1, 6)] + [
              "Reverse last track", "Speed last track", "Back to last tab"]
+BEAT_PADS = ["Play / stop", "New beat", "Previous genre", "Next genre", "Hold: Fill", "Mutate", "Simpler", "Busier",
+             "Mute kick", "Mute snare", "Mute hats", "Mute perc", "Tempo down", "Tempo up", "Send to BeatStep",
+             "Back to last tab"]
 ACTIONS = [("rand_s1", "Random Synth 1"), ("rand_s2", "Random Synth 2"), ("rand_kit", "Random Drum Kit"),
            ("next_kit", "Next Kit"), ("prev_tab", "Previous Tab"), ("next_tab", "Next Tab"),
            ("tab:Perform", "Perform Tab"), ("tab:Synth 1", "Synth 1 Tab"), ("tab:Synth 2", "Synth 2 Tab"),
@@ -78,7 +82,7 @@ ACTIONS = [("rand_s1", "Random Synth 1"), ("rand_s2", "Random Synth 2"), ("rand_
            ("panic", "All Notes Off"),
            # v1.6: no default pad, tap the card and press a pad or step to use them
            ("tab:Live", "Live Tab"), ("tab:FX", "FX Tab"), ("rec", "Record On/Off"), ("fill", "Fill (hold)"),
-           ("tab:Loop", "Loop Tab")]
+           ("tab:Loop", "Loop Tab"), ("tab:Beats", "Beats Tab")]
 ACTION_NAMES = dict(ACTIONS)
 PAD_ACTIONS = [aid for aid, _ in ACTIONS[:16]]
 HOLD_ACTIONS = {"fill"}
@@ -108,6 +112,8 @@ KNOB_GROUPS = {
                      (8, 10, "Filter"), (10, 12, "Feel"), (12, 16, "Quick access")],
     "Synth 2 Mod": [(0, 3, "LFO 1"), (3, 6, "LFO 2"), (6, 8, "Mod env"), (8, 16, "Mod slots · tap a name to change it")],
     "Mix": [(0, 4, "Levels"), (4, 8, "Bus & DJ filter"), (8, 13, "Side-chain duck"), (13, 16, "Glue & width")],
+    "Beats": [(0, 4, "Beat feel"), (4, 8, "Drum bus"), (8, 15, "Pad levels"), (15, 16, "Kick")],
+    "Live": [(0, 1, "Scenes"), (1, 8, "Mix and macros"), (8, 12, "Synths"), (12, 14, "Duck"), (14, 16, "Effects")],
     "Mix EQ": [(0, 3, "Synth 1 EQ"), (3, 6, "Synth 2 EQ"), (6, 8, "EQ frequencies"), (8, 11, "Drums EQ"),
                (11, 14, "Master EQ"), (14, 16, "Synth pan")],
     "Synth 1 Arp": [(0, 4, "Arpeggiator"), (4, 8, "Feel"), (8, 9, "Duck"), (9, 12, "EQ"), (12, 16, "Pan, sends & level")],
@@ -182,6 +188,9 @@ class State:
         self.rec_stems = True
         self.loop_input = None    # list of interface input channels (0-based) or None
         self.loop_cfg = {}
+        self.beat = None          # Beat.to_json()
+        self.beat_kit = True      # picking a genre also loads its kit
+        self.beat_mutes = []
         self.midi_off = []  # port names the user switched off
         self.bad_audio = []  # labels of outputs that froze or crashed on open
         self.audio_pending = None  # label being opened right now (set before open, cleared after)
@@ -323,6 +332,9 @@ class State:
         li = d.get("loop_input")
         self.loop_input = [int(c) for c in li][:2] if isinstance(li, list) and li else None
         self.loop_cfg = d.get("loop_cfg", {}) if isinstance(d.get("loop_cfg"), dict) else {}
+        self.beat = d.get("beat") if isinstance(d.get("beat"), dict) else None
+        self.beat_kit = bool(d.get("beat_kit", True))
+        self.beat_mutes = [g for g in d.get("beat_mutes", []) if g in GROUP_NAMES]
         self.last_tab = d.get("last_tab", "Perform") if d.get("last_tab") in TABS else "Perform"
         self.midi_off = d.get("midi_off", [])
         self.bad_audio = [x for x in d.get("bad_audio", []) if isinstance(x, str)]
@@ -336,7 +348,8 @@ class State:
                      preset=self.preset, preset_name=self.preset_name, page=self.page, subpage=self.subpage, midi_off=self.midi_off,
                      bad_audio=self.bad_audio, audio_pending=self.audio_pending, actions=self.actions,
                      locks=self.locks_json(), scenes=self.params.scenes, rec_stems=self.rec_stems, last_tab=self.last_tab,
-                     loop_input=self.loop_input, loop_cfg=self.loop_cfg)
+                     loop_input=self.loop_input, loop_cfg=self.loop_cfg, beat=self.beat, beat_kit=self.beat_kit,
+                     beat_mutes=self.beat_mutes)
             tmp = CFG_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(d, f, indent=1)
@@ -593,6 +606,48 @@ class Midi:
         self.clock_port = None
         self.clock_seen = 0.0
         self.scene_hold = None
+        self.out = None
+        self.out_name = None
+        self.offs = collections.deque()
+
+    def open_out(self):
+        """MIDI out to the BeatStep (for SEND TO BEATSTEP)."""
+        if self.out is not None:
+            return True
+        if mido is None:
+            return False
+        try:
+            names = mido.get_output_names()
+        except Exception as e:
+            log("midi out names", e)
+            return False
+        cand = [n for n in names if "beatstep" in n.lower()]
+        cand.sort(key=lambda n: ("midiout2" in n.lower() or "2 (" in n.lower(), n))
+        for n in cand:
+            try:
+                self.out = mido.open_output(n)
+                self.out_name = n
+                log("midi out", n)
+                return True
+            except Exception as e:
+                log("midi out failed", n, e)
+        return False
+
+    def send_drum(self, pad, vel):  # audio thread
+        if self.out is None:
+            return
+        ch = self.app.state.ch["dr"] - 1
+        self.out.send(mido.Message("note_on", channel=ch, note=36 + pad, velocity=int(vel)))
+        self.offs.append((time.time() + 0.06, mido.Message("note_off", channel=ch, note=36 + pad, velocity=0)))
+
+    def flush_offs(self):
+        now = time.time()
+        while self.offs and self.offs[0][0] <= now:
+            _, m = self.offs.popleft()
+            try:
+                self.out.send(m)
+            except Exception:
+                pass
 
     def names(self):
         if mido is None:
@@ -702,6 +757,8 @@ class Midi:
                     app.live_pad(PAD_ACTIONS.index(aid), val > 0)  # straight from this thread: no GUI delay
                 elif app.state.page == "Loop" and aid in PAD_ACTIONS and app.overlay is None:
                     app.loop_pad(PAD_ACTIONS.index(aid), val > 0)
+                elif app.state.page == "Beats" and aid in PAD_ACTIONS and app.overlay is None:
+                    app.beat_pad(PAD_ACTIONS.index(aid), val > 0)
                 elif aid in HOLD_ACTIONS:
                     eng.set_fill(val > 0)
                     app.action_flash[aid] = time.time()
@@ -718,6 +775,8 @@ class Midi:
             elif ch == app.state.ch["s2"]:
                 target = "s2"
             if target == "dr":
+                if eng.beats.send == "sending":
+                    return  # the BeatStep echoing the beat we're sending it: don't play it twice
                 if vel > 0:
                     eng.note_on("dr", (msg.note - 36) % 16, vel)
             elif target:
@@ -827,8 +886,8 @@ class App:
         self.last_rec_folder = None
         self.live_held = set()
         self.loop_held = {}
-        self.audio.on_engine = self.apply_loop_cfg
-        self.apply_loop_cfg(self.audio.engine)
+        self.audio.on_engine = self.apply_engine_state
+        self.apply_engine_state(self.audio.engine)
 
         if self.state.audio_pending:  # last launch froze or crashed while opening this output
             bad = self.state.audio_pending
@@ -1024,6 +1083,8 @@ class App:
             self.draw_live()
         elif self.state.page == "Loop":
             self.draw_loop()
+        elif self.state.page == "Beats":
+            self.draw_beats()
         else:
             self.draw_knobs()
             if self.lock_mode:
@@ -1660,6 +1721,9 @@ class App:
         lab = {"Build-Up": "Build-up", "Dub Throw": "Dub throw"}.get(lab, lab)
         if key.startswith("lp.t"):
             lab = lab.replace("Track ", "T")
+        if key.startswith("dr.p"):
+            pn = int(key.split(".")[1][1:]) - 1
+            lab = f"{self.audio.engine.drums.names[pn][:7]} {lab.lower()}"
         if key[:2] in ("s1", "s2") and "Synth" not in lab:
             lab = key[:2].upper() + " " + lab
         self.text(cx, cy + r + 15, lab[:13], 11, T["ink"], True)
@@ -1758,6 +1822,217 @@ class App:
                 self.show_toast(path[-38:])
         except Exception as e:
             log("open folder failed", e)
+
+    # ---------------------------------------------------------------- beats tab
+    def apply_engine_state(self, eng):
+        self.apply_loop_cfg(eng)
+        bp = eng.beats
+        if self.state.beat:
+            try:
+                bp.beat = Beat.from_json(self.state.beat)
+            except Exception:
+                pass
+        bp.mutes = set(self.state.beat_mutes)
+
+    def clock_live(self):
+        return time.time() - self.midi.last_clock < 1.0
+
+    def beat_save(self):
+        bp = self.audio.engine.beats
+        self.state.beat = bp.beat.to_json()
+        self.state.beat_mutes = sorted(bp.mutes)
+        self.state.dirty = True
+
+    def beat_genre(self, g):
+        eng = self.audio.engine
+        name, bpm, swing, steps, kit, fill, parts = GENRES[g % len(GENRES)]
+        eng.beats.beat = Beat(g)
+        if self.state.beat_kit:
+            self.select_kit("factory", kit, preview=False)
+        if not self.clock_live():
+            eng.bpm = float(bpm)
+        self.beat_save()
+        self.show_toast(f"{name.upper()} · {bpm} BPM" + (" · TAP PLAY" if not eng.beats.on and not eng.playing else ""), 1.6)
+
+    def beat_pad(self, i, on):
+        eng = self.audio.engine
+        bp = eng.beats
+        if i == 4:
+            eng.set_fill(on)
+            (self.live_held.add if on else self.live_held.discard)(("fill",))
+            self.request_redraw()
+            return
+        if not on:
+            return
+        g = bp.beat.genre
+        if i == 0:
+            bp.on = not bp.on
+            bp.auto = False
+            if bp.on and not eng.playing:
+                bp.pos = 0.0
+        elif i == 1:
+            bp.beat = Beat(g)
+            self.beat_save()
+        elif i in (2, 3):
+            self.action_q.append(("genre", (g + (1 if i == 3 else -1)) % len(GENRES)))
+        elif i == 5:
+            bp.beat.mutate()
+            self.beat_save()
+        elif i in (6, 7):
+            p = self.state.params
+            p.set_val("bt.busy", p.val["bt.busy"] + (0.25 if i == 7 else -0.25))
+            self.state.dirty = True
+        elif 8 <= i <= 11:
+            grp = GROUP_NAMES[i - 8]
+            (bp.mutes.discard if grp in bp.mutes else bp.mutes.add)(grp)
+            self.beat_save()
+        elif i in (12, 13):
+            self.action_q.append(("tempo", 2 if i == 13 else -2))
+        elif i == 14:
+            self.action_q.append(("send",))
+        elif i == 15:
+            self.action_q.append("tab:" + self.state.last_tab)
+        self.request_redraw()
+
+    def beat_tempo(self, d):
+        eng = self.audio.engine
+        if self.clock_live():
+            self.show_toast("TEMPO COMES FROM THE BEATSTEP")
+            return
+        eng.bpm = float(min(max(round(eng.bpm) + d, 40), 220))
+
+    def beat_send(self):
+        bp = self.audio.engine.beats
+        if bp.send:
+            bp.send = None
+            self.show_toast("SEND CANCELLED")
+            return
+        if not self.midi.open_out():
+            self.show_toast("NO MIDI OUT TO THE BEATSTEP FOUND - IS IT PLUGGED IN?", 2.5)
+            return
+        bp.midi_out = self.midi.send_drum
+        bp.send_done = False
+        bp.send = "armed"
+        self.show_toast("READY: CLEAR THE BEATSTEP'S DRUM PATTERN, THEN PRESS REC + PLAY ON IT", 3.5)
+
+    def beat_tick(self):
+        bp = self.audio.engine.beats
+        if self.midi.offs:
+            self.midi.flush_offs()
+        if bp.send_done:
+            bp.send_done = False
+            bp.on = False
+            bp.auto = False
+            self.show_toast("SENT! THE BEATSTEP HAS THE BEAT - PRESS REC TO STOP RECORDING", 3.5)
+        if self.state.page == "Beats" and (bp.on or bp.send or self.audio.engine.playing):
+            self.request_redraw()
+
+    def run_beat_q(self, item):
+        if item[0] == "genre":
+            self.beat_genre(item[1])
+        elif item[0] == "tempo":
+            self.beat_tempo(item[1])
+        elif item[0] == "send":
+            self.beat_send()
+
+    def beat_cell(self, role, step):
+        bp = self.audio.engine.beats
+        bp.beat.toggle(role, step)
+        self.beat_save()
+
+    def draw_beats(self):
+        eng = self.audio.engine
+        bp = eng.beats
+        b = bp.beat
+        gname, gbpm, gswing, steps, gkit, _, _ = GENRES[b.genre]
+        self.frame(14, 100, 1252, 632, "Beats",
+                   "PADS HERE: 1 PLAY · 2 NEW BEAT · 3/4 GENRE · 5 FILL · 6 MUTATE · 7/8 SIMPLER/BUSIER · 9-12 MUTES · 15 SEND · 16 BACK")
+        for i, key in enumerate(PAGES["Beats"]):
+            self.mini_knob(i, 14 + 39 + i * 77.5, 172, key)
+        # genres
+        for g, name in enumerate(GENRE_NAMES):
+            r, c = divmod(g, 12)
+            x0, y0 = 30 + c * 102, 240 + r * 54
+            on = g == b.genre
+            self.rrect(x0, y0, 96, 48, 9, T["btn_on"] if on else T["btn_bg"])
+            words = name.upper().split(" ")
+            if len(words) > 1 and len(name) > 9:
+                self.text(x0 + 48, y0 + 16, " ".join(words[:-1]), 11, T["btn_text"], True)
+                self.text(x0 + 48, y0 + 32, words[-1], 11, T["btn_text"], True)
+            else:
+                self.text(x0 + 48, y0 + 24, name.upper(), 12, T["btn_text"], True)
+            self.hit(x0, y0, 96, 48, lambda gg=g: self.beat_genre(gg))
+        # pattern grid
+        roles = sorted(b.grid, key=lambda r: ROLE_PAD[r])
+        y0 = 352
+        rh = min(34, int(200 / max(len(roles), 1)))
+        gx0, gx1 = 140, 1250
+        cw = (gx1 - gx0) / b.steps
+        cur = bp.step if (bp.on or bp.send or eng.playing) else None
+        for j in range(b.steps):
+            if j % 4 == 0:
+                self.rect(gx0 + j * cw, y0 - 4, cw * 4 - 2, rh * len(roles) + 6, fill=T["well"])
+        if cur is not None:
+            self.rect(gx0 + cur * cw, y0 - 4, cw - 1, rh * len(roles) + 6, fill=T["seg_active"])
+        for i, role in enumerate(roles):
+            y = y0 + i * rh
+            pad = ROLE_PAD[role]
+            muted = any(pad in BEAT_GROUPS[m] for m in bp.mutes)
+            self.text(30, y + rh / 2, ROLE_NAME[role][:13], 12, T["ink_faint"] if muted else T["ink"], True, "w")
+            s = b.grid[role]
+            for j, ch in enumerate(s):
+                cx = gx0 + j * cw + cw / 2
+                if ch != ".":
+                    big = ch in "Xxrt"
+                    rad = min(cw, rh) * (0.38 if big else 0.24)
+                    col = T["ink_faint"] if muted else (T["accent"] if ch in "Xrt" else (T["ink"] if ch == "x" else T["ink_dim"]))
+                    self.cv.create_oval(self.X(cx - rad), self.Y(y + rh / 2 - rad), self.X(cx + rad), self.Y(y + rh / 2 + rad),
+                                        fill=col, outline="")
+                    if ch in "?;":
+                        self.text(cx, y + rh / 2, "?", 9, T["well"], True)
+                self.hit(gx0 + j * cw, y, cw, rh, lambda rr=role, jj=j: self.beat_cell(rr, jj))
+        # controls
+        cy = 594
+        self.button(120, cy, 180, 60, "STOP" if bp.on else "▶ PLAY", lambda: self.beat_pad(0, True), accent=not bp.on, px=20)
+        self.button(320, cy, 200, 60, "NEW BEAT", lambda: self.beat_pad(1, True), accent=True, px=20)
+        self.button(500, cy, 140, 60, "MUTATE", lambda: self.beat_pad(5, True), px=16)
+        self.button(640, cy, 120, 60, "SIMPLER", lambda: self.beat_pad(6, True), px=14)
+        self.button(770, cy, 120, 60, "BUSIER", lambda: self.beat_pad(7, True), px=14)
+        fon = eng.fill or ("fill",) in self.live_held
+        self.rrect(840, cy - 30, 150, 60, 12, T["btn_on"] if fon else T["btn_bg"])
+        self.text(915, cy - 6, "HOLD FOR", 11, T["btn_text"], True)
+        self.text(915, cy + 12, "FILL", 18, T["btn_text"], True)
+        self.hit(840, cy - 30, 150, 60, lambda on: self.beat_pad(4, on), "hold")
+        sl = {"armed": "WAITING FOR REC + PLAY", "sending": f"SENDING {bp.sent}/{b.steps}"}.get(bp.send, "SEND TO BEATSTEP")
+        self.button(1130, cy, 250, 60, sl, lambda: self.beat_pad(14, True), accent=not bp.send, on=bool(bp.send), px=15)
+        cy2 = 664
+        for k, grp in enumerate(GROUP_NAMES):
+            self.button(84 + k * 112, cy2, 104, 44, ("MUTED " if grp in bp.mutes else "") + grp.upper(),
+                        lambda kk=k: self.beat_pad(8 + kk, True), on=grp in bp.mutes, px=12)
+        live = self.clock_live()
+        self.button(540, cy2, 50, 44, "−", lambda: self.beat_tempo(-1), px=20)
+        self.readout(640, cy2, 140, 44, f"{eng.bpm:.0f} BPM")
+        self.button(740, cy2, 50, 44, "+", lambda: self.beat_tempo(1), px=20)
+        self.button(890, cy2, 220, 44, "GENRE KIT: ON" if self.state.beat_kit else "GENRE KIT: OFF", self.toggle_beat_kit,
+                    on=self.state.beat_kit, px=13)
+        tip = f"{gname.upper()}: {gbpm} BPM"
+        if gswing > 50:
+            tip += f" · SWING {gswing}%"
+        tip += f" · {b.steps} STEPS"
+        self.text(1010, cy2 - 8, tip, 11, T["accent"], True, "w")
+        self.text(1010, cy2 + 10, "TEMPO FROM BEATSTEP" if live else "OWN TEMPO (BEATSTEP STOPPED)", 10, T["ink_dim"], True, "w")
+        if bp.send:
+            msg = ("CLEAR THE BEATSTEP'S DRUM PATTERN, THEN PRESS REC AND PLAY ON IT. THE BEAT IS SENT ONCE, FROM STEP 1."
+                   if bp.send == "armed" else "RECORDING INTO THE BEATSTEP... KEEP IT PLAYING")
+        else:
+            msg = "TAP A GENRE, NEW BEAT FOR ANOTHER TAKE, TAP DOTS TO EDIT. SEND TO BEATSTEP RECORDS IT INTO THE BEATSTEP'S DRUM SEQUENCER."
+            if b.steps == 32:
+                msg = "32-STEP BEAT: SET THE BEATSTEP'S DRUM PATTERN LENGTH TO 32 BEFORE SENDING. " + msg[:60]
+        self.text(30, 714, msg[:150], 11, T["accent"] if bp.send else T["ink_dim"], bool(bp.send), "w")
+
+    def toggle_beat_kit(self):
+        self.state.beat_kit = not self.state.beat_kit
+        self.state.dirty = True
 
     # ---------------------------------------------------------------- loop tab
     LOOP_COL = {"rec": "#d9534f", "ending": "#d9534f", "armed": "#d9534f", "play": "#4cae4c", "cued": "#4cae4c",
@@ -2181,7 +2456,8 @@ class App:
         p = st.params
         st.setups[i] = {"name": f"Setup {i + 1}", "saved": time.strftime("%Y-%m-%d %H:%M"), "params": dict(p.norm),
                         "kit": json.loads(json.dumps(st.kit)), "preset_name": dict(st.preset_name),
-                        "locks": st.locks_json(), "scenes": json.loads(json.dumps(p.scenes))}
+                        "locks": st.locks_json(), "scenes": json.loads(json.dumps(p.scenes)),
+                        "beat": self.audio.engine.beats.beat.to_json()}
         self.setup_loaded = i
         self.show_toast(f"SAVED SETUP {i + 1}" if st.save_setups() else "COULD NOT SAVE - SEE LOG")
 
@@ -2202,6 +2478,9 @@ class App:
         p.norm["sc.morph"] = float(su.get("params", {}).get("sc.morph", 0.0))
         p._apply("sc.morph")
         st.load_locks(su.get("locks"))
+        if isinstance(su.get("beat"), dict):
+            self.audio.engine.beats.beat = Beat.from_json(su["beat"])
+            st.beat = su["beat"]
         st.preset_name.update(su.get("preset_name", {}))
         if isinstance(su.get("kit"), dict):
             st.kit = su["kit"]
@@ -2916,9 +3195,14 @@ class App:
                 syn.active *= 0.8
             eng.drums.active = [a * 0.75 for a in eng.drums.active]
             while self.action_q:
-                self.run_action(self.action_q.popleft())
+                a = self.action_q.popleft()
+                if isinstance(a, tuple):
+                    self.run_beat_q(a)
+                else:
+                    self.run_action(a)
             self.resample_tick()
             self.loop_tick()
+            self.beat_tick()
             now = time.time()
             if self.redraw_wanted or now - self.last_draw > 0.1:
                 self.draw()
