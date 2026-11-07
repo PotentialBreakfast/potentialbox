@@ -7,6 +7,7 @@ Block-based numpy DSP:
   FX       - tempo-synced ping-pong delay
 """
 import math
+import time
 import os
 import collections
 
@@ -277,7 +278,7 @@ def _build_specs():
     a(Param("lp.filter", "Loop filter", -1, 1, 0.0, unit="bip"))
     a(Param("lp.duck", "Duck loops", 0, 1, 0.0, unit="%"))
     # ---- beats (v1.8)
-    a(Param("bt.busy", "Busy", -1, 1, 0.0, unit="+-%"))
+    a(Param("bt.busy", "Random hits", -1, 1, 0.0, unit="+-%"))
     a(Param("bt.var", "Variation", 0, 1, 0.2, unit="%"))
     a(Param("bt.swing", "Swing", 50, 75, 50, unit="sw"))
     a(Param("bt.human", "Humanize", 0, 1, 0.3, unit="%"))
@@ -1882,6 +1883,9 @@ class Engine:
         self.beat_ph = 0.0
         self.recorder = None
         self.capture = None
+        self.cb_t = 0.0
+        self.cb_prev = 0.0
+        self.blk_n = 256
         from potentialbox.looper import Looper
         from potentialbox.beats import BeatPlayer
         self.looper = Looper(self)
@@ -1897,8 +1901,8 @@ class Engine:
     def panic(self):
         self.events.append(("all", "panic", 0, 0))
 
-    def clock(self, kind):  # "tick", "start", "stop", "cont"
-        self.events.append(("clk", kind, 0, 0))
+    def clock(self, kind, ts=0.0):  # "tick", "start", "stop", "cont"; ts = time.perf_counter() when it arrived
+        self.events.append(("clk", kind, 0, ts))
 
     def punch_fx(self, i, on):
         self.events.append(("pf", "on" if on else "off", i, 0))
@@ -1924,7 +1928,15 @@ class Engine:
         k, of = c.split(" of ")
         return self.bar() % int(of) == int(k[:-2]) - 1
 
-    def _clock(self, kind):
+    def tick_offset(self, ts):
+        """Where in this block a tick that arrived at `ts` belongs: events from the last block period are
+        spread over this block in the same spacing, so timing jitter becomes a small fixed delay."""
+        a, b = self.cb_prev, self.cb_t
+        if not ts or b <= a:
+            return 0
+        return int(min(max((ts - a) / (b - a), 0.0), 0.999) * self.blk_n)
+
+    def _clock(self, kind, ts=0.0):
         p = self.p
         if kind == "start":
             self.tick = -1
@@ -1949,7 +1961,7 @@ class Engine:
             if t > 0 and t % 96 == 0:
                 self.looper.on_bar()
             if t >= 0:
-                self.beats.on_tick(t)
+                self.beats.on_tick(t, self.tick_offset(ts))
             if t % 6 == 5:  # one tick early: the BeatStep may send the step's note before its clock
                 self.step = ((t + 1) // 6) % 16
                 p.apply_step(self.step)
@@ -1971,7 +1983,7 @@ class Engine:
                 self.drums.voices = []
                 continue
             if target == "clk":
-                self._clock(kind)
+                self._clock(kind, vel)
                 continue
             if target == "pf":
                 self.punch.press(note, kind == "on")
@@ -2020,6 +2032,10 @@ class Engine:
         return env
 
     def render(self, n, inp=None):
+        now = time.perf_counter()
+        self.cb_prev = self.cb_t if self.cb_t else now - n / self.sr
+        self.cb_t = now
+        self.blk_n = n
         self._dispatch()
         v = self.p.val
         out = np.zeros((n, 2))

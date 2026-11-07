@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.1
+- Beats are now **2 bars** by default (LENGTH: 1, 2 or 4 bars), and the last bar **ends with a change that leads back to the start**: snare roll or pickup, tom run, open hat, kick run, kick skip or a drop-out with a crash back in. NEW ENDING picks another.
+- **SIMPLER / BUSIER** now change the beat itself, one layer per tap (16th hats, ghost snares, extra kick, shaker, congas / no percussion, no maybe-hits, no ghosts, 8th hats), shown in the grid and sent to the BeatStep. The knob is now called Random hits.
+- **CLOCK OUT TO BEATSTEP**: PotentialBox sends MIDI clock, Start and Stop at the beat's tempo (set the BeatStep's SYNC to USB). PLAY starts the BeatStep and the beat together; SEND TO BEATSTEP counts down 4 seconds so you can press REC, then starts everything itself.
+- Clock ticks are time-stamped, so beat steps land evenly instead of on audio-block boundaries.
+- Fixed: the "tempo comes from the BeatStep" check never noticed the BeatStep's clock.
+
 ## 1.8.0
 - **Beats tab**: genre beat generator with 24 genres, each with its own tempo, swing, length (16 or 32 steps), fill style and matching kit.
   - NEW BEAT for another take, MUTATE one part, SIMPLER / BUSIER, HOLD FOR FILL, mutes for kick, snares, hats and percussion; tap the grid to add or remove hits.

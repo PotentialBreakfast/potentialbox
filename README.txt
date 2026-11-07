@@ -72,6 +72,12 @@ SYNTH PAGES: MAIN, OSC+, MOD (new in 1.5)
     OSC+ page: INIT OSC+ PAGE.  MAIN page: INIT SYNTH 1 / 2 = the whole synth.
   UNDO INIT shows for a few seconds afterwards if you change your mind.
 
+NEW IN 1.8.1
+  Beats are 2 bars (LENGTH: 1/2/4) with an ending that leads back to the start; NEW ENDING.
+  SIMPLER / BUSIER now add or take away a layer each tap.
+  CLOCK OUT TO BEATSTEP: set the BeatStep's SYNC to USB, then PLAY in PotentialBox starts both
+  at the beat's tempo. SEND TO BEATSTEP then counts down: press REC on the BeatStep and wait.
+
 NEW IN 1.8: THE BEATS TAB (genre beat generator)
   Tap a genre (24 of them), PLAY, NEW BEAT for another take. Tap dots to edit.
   SEND TO BEATSTEP: pick an empty drum pattern on the BeatStep, tap SEND TO BEATSTEP, then

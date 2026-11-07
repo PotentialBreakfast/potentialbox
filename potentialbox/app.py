@@ -47,12 +47,13 @@ from potentialbox.engine import (Engine, ParamStore, SPECS, PAGES, PRESETS, MACR
                                  HIDDEN_PAGES, MOD_SOURCES, MOD_DESTS, PUNCH_FX)
 from potentialbox.recorder import Recorder, write_wav, recordings_dir  # noqa: E402
 from potentialbox.looper import TRACKS, SOURCES, FX_TYPES, SPEEDS, LENGTHS, STATE_TEXT  # noqa: E402
-from potentialbox.beats import Beat, GENRES, GENRE_NAMES, ROLE_PAD, ROLE_NAME, GROUP_NAMES, GROUPS as BEAT_GROUPS  # noqa: E402
+from potentialbox.beats import (Beat, GENRES, GENRE_NAMES, ROLE_PAD, ROLE_NAME, GROUP_NAMES,  # noqa: E402
+                               GROUPS as BEAT_GROUPS, BAR_CHOICES)
 from potentialbox import kits  # noqa: E402
 from potentialbox.library import Library, map_kit, brand_of, build_index, filter_index, GROUPS, PAD_GROUP  # noqa: E402
 
 APP = "PotentialBox"
-VERSION = "1.8.0"
+VERSION = "1.8.1"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
@@ -191,6 +192,8 @@ class State:
         self.beat = None          # Beat.to_json()
         self.beat_kit = True      # picking a genre also loads its kit
         self.beat_mutes = []
+        self.beat_bars = 2
+        self.clock_master = False   # PotentialBox sends clock + Start/Stop to the BeatStep
         self.midi_off = []  # port names the user switched off
         self.bad_audio = []  # labels of outputs that froze or crashed on open
         self.audio_pending = None  # label being opened right now (set before open, cleared after)
@@ -335,6 +338,8 @@ class State:
         self.beat = d.get("beat") if isinstance(d.get("beat"), dict) else None
         self.beat_kit = bool(d.get("beat_kit", True))
         self.beat_mutes = [g for g in d.get("beat_mutes", []) if g in GROUP_NAMES]
+        self.beat_bars = int(d.get("beat_bars", 2)) if int(d.get("beat_bars", 2)) in BAR_CHOICES else 2
+        self.clock_master = bool(d.get("clock_master", False))
         self.last_tab = d.get("last_tab", "Perform") if d.get("last_tab") in TABS else "Perform"
         self.midi_off = d.get("midi_off", [])
         self.bad_audio = [x for x in d.get("bad_audio", []) if isinstance(x, str)]
@@ -349,7 +354,8 @@ class State:
                      bad_audio=self.bad_audio, audio_pending=self.audio_pending, actions=self.actions,
                      locks=self.locks_json(), scenes=self.params.scenes, rec_stems=self.rec_stems, last_tab=self.last_tab,
                      loop_input=self.loop_input, loop_cfg=self.loop_cfg, beat=self.beat, beat_kit=self.beat_kit,
-                     beat_mutes=self.beat_mutes)
+                     beat_mutes=self.beat_mutes, beat_bars=self.beat_bars,
+                     clock_master=self.clock_master)
             tmp = CFG_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(d, f, indent=1)
@@ -591,6 +597,81 @@ def library_kit_label(machine, kit_name):
 
 
 # ----------------------------------------------------------------------------- MIDI
+class ClockOut:
+    """PotentialBox as the master clock: sends MIDI clock (24 per beat), Start and Stop to the BeatStep and
+    drives PotentialBox's own transport with the same ticks. The BeatStep's Sync must be set to USB."""
+
+    def __init__(self, app):
+        self.app = app
+        self.run = False
+        self.th = None
+        self.playing = False
+        self.reset = False
+
+    def eng(self):
+        return self.app.audio.engine
+
+    def _send(self, kind):
+        out = self.app.midi.out
+        if out is not None:
+            try:
+                out.send(mido.Message(kind))
+            except Exception as e:
+                log("clock out", e)
+
+    def enable(self):
+        if not self.app.midi.open_out():
+            return False
+        if self.th is None or not self.th.is_alive():
+            self.run = True
+            self.th = threading.Thread(target=self._loop, daemon=True, name="clock-out")
+            self.th.start()
+        return True
+
+    def disable(self):
+        if self.playing:
+            self.stop_transport()
+        self.run = False
+
+    def start_transport(self):
+        if not self.run and not self.enable():
+            return False
+        self._send("stop")
+        self.reset = True
+        self.eng().clock("start", time.perf_counter())
+        self._send("start")
+        self.playing = True
+        return True
+
+    def stop_transport(self):
+        self._send("stop")
+        eng = self.eng()
+        eng.clock("stop")
+        eng.panic()
+        self.playing = False
+
+    def _loop(self):
+        nxt = time.perf_counter()
+        while self.run:
+            dt = 60.0 / max(self.eng().bpm, 30.0) / 24.0
+            now = time.perf_counter()
+            if self.reset:
+                self.reset = False
+                nxt = now
+            wait = nxt - now
+            if wait > 0.002:
+                time.sleep(wait - 0.0015)
+                continue
+            while time.perf_counter() < nxt:
+                pass
+            self._send("clock")
+            self.eng().clock("tick", time.perf_counter())
+            nxt += dt
+            if time.perf_counter() - nxt > 0.1:  # we were held up: don't rush to catch up
+                nxt = time.perf_counter()
+        self.playing = False
+
+
 class Midi:
     def __init__(self, app):
         self.app = app
@@ -710,6 +791,8 @@ class Midi:
         eng = app.audio.engine
         t = msg.type
         if t in ("clock", "start", "stop", "continue"):
+            if app.state.clock_master:
+                return  # PotentialBox is the clock: ignore any clock coming back
             # the BeatStep shows up as two ports: only follow the clock from one of them
             now = time.time()
             if self.clock_port is None or now - self.clock_seen > 2.0:
@@ -722,7 +805,7 @@ class Midi:
                 if t == "stop":
                     eng.panic()
                 return
-            eng.clock("tick")
+            eng.clock("tick", time.perf_counter())
         if t == "clock":
             now = time.perf_counter()
             if self.last_clock and now - self.last_clock < 0.25:
@@ -888,6 +971,10 @@ class App:
         self.loop_held = {}
         self.audio.on_engine = self.apply_engine_state
         self.apply_engine_state(self.audio.engine)
+        self.clockout = ClockOut(self)
+        self.send_countdown = None
+        if self.state.clock_master:
+            self.root.after(1500, lambda: self.clockout.enable() or self.show_toast("CLOCK OUT: BEATSTEP NOT FOUND"))
 
         if self.state.audio_pending:  # last launch froze or crashed while opening this output
             bad = self.state.audio_pending
@@ -1835,7 +1922,8 @@ class App:
         bp.mutes = set(self.state.beat_mutes)
 
     def clock_live(self):
-        return time.time() - self.midi.last_clock < 1.0
+        """True when the tempo comes from the BeatStep (it's sending clock and we're not the master)."""
+        return not self.state.clock_master and time.perf_counter() - self.midi.last_clock < 1.0
 
     def beat_save(self):
         bp = self.audio.engine.beats
@@ -1846,11 +1934,11 @@ class App:
     def beat_genre(self, g):
         eng = self.audio.engine
         name, bpm, swing, steps, kit, fill, parts = GENRES[g % len(GENRES)]
-        eng.beats.beat = Beat(g)
+        eng.beats.beat = Beat(g, bars=self.state.beat_bars)
         if self.state.beat_kit:
             self.select_kit("factory", kit, preview=False)
         if not self.clock_live():
-            eng.bpm = float(bpm)
+            eng.bpm = float(bpm)  # with CLOCK OUT on, the BeatStep follows this tempo
         self.beat_save()
         self.show_toast(f"{name.upper()} · {bpm} BPM" + (" · TAP PLAY" if not eng.beats.on and not eng.playing else ""), 1.6)
 
@@ -1866,12 +1954,15 @@ class App:
             return
         g = bp.beat.genre
         if i == 0:
+            if self.state.clock_master:
+                self.action_q.append(("transport",))
+                return
             bp.on = not bp.on
             bp.auto = False
             if bp.on and not eng.playing:
                 bp.pos = 0.0
         elif i == 1:
-            bp.beat = Beat(g)
+            bp.beat = Beat(g, bars=self.state.beat_bars)
             self.beat_save()
         elif i in (2, 3):
             self.action_q.append(("genre", (g + (1 if i == 3 else -1)) % len(GENRES)))
@@ -1879,9 +1970,10 @@ class App:
             bp.beat.mutate()
             self.beat_save()
         elif i in (6, 7):
-            p = self.state.params
-            p.set_val("bt.busy", p.val["bt.busy"] + (0.25 if i == 7 else -0.25))
-            self.state.dirty = True
+            what = bp.beat.busier() if i == 7 else bp.beat.simpler()
+            self.beat_save()
+            self.action_q.append(("toast", ("BUSIER: " if i == 7 else "SIMPLER: ") + what.upper() if what else
+                                  ("AS BUSY AS IT GETS" if i == 7 else "AS SIMPLE AS IT GETS")))
         elif 8 <= i <= 11:
             grp = GROUP_NAMES[i - 8]
             (bp.mutes.discard if grp in bp.mutes else bp.mutes.add)(grp)
@@ -1897,14 +1989,45 @@ class App:
     def beat_tempo(self, d):
         eng = self.audio.engine
         if self.clock_live():
-            self.show_toast("TEMPO COMES FROM THE BEATSTEP")
+            self.show_toast("TEMPO COMES FROM THE BEATSTEP · TURN ON CLOCK OUT TO SET IT HERE", 2.5)
             return
         eng.bpm = float(min(max(round(eng.bpm) + d, 40), 220))
 
+    def beat_transport(self):
+        """PLAY / STOP with CLOCK OUT on: starts and stops the BeatStep and the beat together."""
+        eng = self.audio.engine
+        bp = eng.beats
+        if self.clockout.playing:
+            bp.on = False
+            bp.auto = False
+            self.clockout.stop_transport()
+        else:
+            bp.on = True
+            bp.auto = False
+            if not self.clockout.start_transport():
+                bp.on = False
+                self.show_toast("NO MIDI OUT TO THE BEATSTEP FOUND - IS IT PLUGGED IN?", 2.5)
+
+    def toggle_clock_master(self):
+        st = self.state
+        if st.clock_master:
+            self.clockout.disable()
+            st.clock_master = False
+            self.show_toast("CLOCK OUT OFF · SET THE BEATSTEP'S SYNC BACK TO INT", 2.5)
+        else:
+            if not self.clockout.enable():
+                self.show_toast("NO MIDI OUT TO THE BEATSTEP FOUND - IS IT PLUGGED IN?", 2.5)
+                return
+            st.clock_master = True
+            self.audio.engine.beats.on = False
+            self.show_toast("CLOCK OUT ON · SET THE BEATSTEP'S SYNC TO USB (SYNC BUTTON)", 3.0)
+        st.dirty = True
+
     def beat_send(self):
         bp = self.audio.engine.beats
-        if bp.send:
+        if bp.send or self.send_countdown:
             bp.send = None
+            self.send_countdown = None
             self.show_toast("SEND CANCELLED")
             return
         if not self.midi.open_out():
@@ -1913,22 +2036,38 @@ class App:
         bp.midi_out = self.midi.send_drum
         bp.send_done = False
         bp.send = "armed"
-        self.show_toast("READY: CLEAR THE BEATSTEP'S DRUM PATTERN, THEN PRESS REC + PLAY ON IT", 3.5)
+        if self.state.clock_master and not self.clockout.playing:
+            # we start the BeatStep ourselves: give a few seconds to press REC on it
+            self.send_countdown = time.time() + 4.0
+            self.show_toast("PRESS REC ON THE BEATSTEP NOW · STARTING IN 4 SECONDS", 3.5)
+        elif self.state.clock_master:
+            self.show_toast("PRESS REC ON THE BEATSTEP · THE BEAT GOES IN FROM THE NEXT STEP 1", 3.5)
+        else:
+            self.show_toast("READY: CLEAR THE BEATSTEP'S DRUM PATTERN, THEN PRESS REC + PLAY ON IT", 3.5)
 
     def beat_tick(self):
         bp = self.audio.engine.beats
         if self.midi.offs:
             self.midi.flush_offs()
+        if self.send_countdown and time.time() >= self.send_countdown:
+            self.send_countdown = None
+            if bp.send == "armed" and not self.clockout.playing:
+                bp.on = True
+                self.clockout.start_transport()
         if bp.send_done:
             bp.send_done = False
             bp.on = False
             bp.auto = False
             self.show_toast("SENT! THE BEATSTEP HAS THE BEAT - PRESS REC TO STOP RECORDING", 3.5)
-        if self.state.page == "Beats" and (bp.on or bp.send or self.audio.engine.playing):
+        if self.state.page == "Beats" and (bp.on or bp.send or self.audio.engine.playing or self.send_countdown):
             self.request_redraw()
 
     def run_beat_q(self, item):
-        if item[0] == "genre":
+        if item[0] == "toast":
+            self.show_toast(item[1], 1.8)
+        elif item[0] == "transport":
+            self.beat_transport()
+        elif item[0] == "genre":
             self.beat_genre(item[1])
         elif item[0] == "tempo":
             self.beat_tempo(item[1])
@@ -1972,6 +2111,12 @@ class App:
         for j in range(b.steps):
             if j % 4 == 0:
                 self.rect(gx0 + j * cw, y0 - 4, cw * 4 - 2, rh * len(roles) + 6, fill=T["well"])
+        tsteps = sorted({i for d in getattr(b, "turn", {}).values() for i in d if i >= b.steps - 8})
+        if tsteps and b.steps >= 16:
+            t0 = min(tsteps)
+            self.rect(gx0 + t0 * cw, y0 - 4, (b.steps - t0) * cw - 2, rh * len(roles) + 6, fill=T["seg_inactive"])
+        for bar in range(16, b.steps, 16):
+            self.rect(gx0 + bar * cw - 2, y0 - 8, 2, rh * len(roles) + 14, fill=T["accent"])
         if cur is not None:
             self.rect(gx0 + cur * cw, y0 - 4, cw - 1, rh * len(roles) + 6, fill=T["seg_active"])
         for i, role in enumerate(roles):
@@ -1993,42 +2138,71 @@ class App:
                 self.hit(gx0 + j * cw, y, cw, rh, lambda rr=role, jj=j: self.beat_cell(rr, jj))
         # controls
         cy = 594
-        self.button(120, cy, 180, 60, "STOP" if bp.on else "▶ PLAY", lambda: self.beat_pad(0, True), accent=not bp.on, px=20)
-        self.button(320, cy, 200, 60, "NEW BEAT", lambda: self.beat_pad(1, True), accent=True, px=20)
-        self.button(500, cy, 140, 60, "MUTATE", lambda: self.beat_pad(5, True), px=16)
-        self.button(640, cy, 120, 60, "SIMPLER", lambda: self.beat_pad(6, True), px=14)
-        self.button(770, cy, 120, 60, "BUSIER", lambda: self.beat_pad(7, True), px=14)
+        running = self.clockout.playing if self.state.clock_master else bp.on
+        self.button(105, cy, 150, 60, "STOP" if running else "▶ PLAY", lambda: self.beat_pad(0, True), accent=not running, px=20)
+        self.button(275, cy, 170, 60, "NEW BEAT", lambda: self.beat_pad(1, True), accent=True, px=19)
+        self.button(440, cy, 140, 60, "NEW ENDING", self.beat_new_ending, px=14)
+        self.button(578, cy, 116, 60, "MUTATE", lambda: self.beat_pad(5, True), px=14)
+        self.button(698, cy, 104, 60, "SIMPLER", lambda: self.beat_pad(6, True), px=13)
+        self.button(808, cy, 96, 60, "BUSIER", lambda: self.beat_pad(7, True), px=13)
         fon = eng.fill or ("fill",) in self.live_held
-        self.rrect(840, cy - 30, 150, 60, 12, T["btn_on"] if fon else T["btn_bg"])
-        self.text(915, cy - 6, "HOLD FOR", 11, T["btn_text"], True)
-        self.text(915, cy + 12, "FILL", 18, T["btn_text"], True)
-        self.hit(840, cy - 30, 150, 60, lambda on: self.beat_pad(4, on), "hold")
-        sl = {"armed": "WAITING FOR REC + PLAY", "sending": f"SENDING {bp.sent}/{b.steps}"}.get(bp.send, "SEND TO BEATSTEP")
+        self.rrect(862, cy - 30, 130, 60, 12, T["btn_on"] if fon else T["btn_bg"])
+        self.text(927, cy - 6, "HOLD FOR", 11, T["btn_text"], True)
+        self.text(927, cy + 12, "FILL", 18, T["btn_text"], True)
+        self.hit(862, cy - 30, 130, 60, lambda on: self.beat_pad(4, on), "hold")
+        if self.send_countdown:
+            sl = f"PRESS REC · STARTS IN {max(0, int(self.send_countdown - time.time()) + 1)}"
+        else:
+            sl = {"armed": "WAITING FOR STEP 1" if self.state.clock_master else "WAITING FOR REC + PLAY",
+                  "sending": f"SENDING {bp.sent}/{b.steps}"}.get(bp.send, "SEND TO BEATSTEP")
         self.button(1130, cy, 250, 60, sl, lambda: self.beat_pad(14, True), accent=not bp.send, on=bool(bp.send), px=15)
         cy2 = 664
         for k, grp in enumerate(GROUP_NAMES):
-            self.button(84 + k * 112, cy2, 104, 44, ("MUTED " if grp in bp.mutes else "") + grp.upper(),
-                        lambda kk=k: self.beat_pad(8 + kk, True), on=grp in bp.mutes, px=12)
+            self.button(76 + k * 96, cy2, 90, 44, ("MUTED " if grp in bp.mutes else "") + grp.upper(),
+                        lambda kk=k: self.beat_pad(8 + kk, True), on=grp in bp.mutes, px=11 if grp in bp.mutes else 12)
         live = self.clock_live()
-        self.button(540, cy2, 50, 44, "−", lambda: self.beat_tempo(-1), px=20)
-        self.readout(640, cy2, 140, 44, f"{eng.bpm:.0f} BPM")
-        self.button(740, cy2, 50, 44, "+", lambda: self.beat_tempo(1), px=20)
-        self.button(890, cy2, 220, 44, "GENRE KIT: ON" if self.state.beat_kit else "GENRE KIT: OFF", self.toggle_beat_kit,
+        self.button(456, cy2, 44, 44, "−", lambda: self.beat_tempo(-1), px=20)
+        self.readout(534, cy2, 104, 44, f"{eng.bpm:.0f} BPM")
+        self.button(612, cy2, 44, 44, "+", lambda: self.beat_tempo(1), px=20)
+        self.button(732, cy2, 176, 44, f"LENGTH: {b.steps // 16} BAR{'S' if b.steps > 16 else ''}", self.beat_bars_step,
+                    on=b.steps > 16, px=13)
+        self.button(916, cy2, 176, 44, "GENRE KIT: ON" if self.state.beat_kit else "GENRE KIT: OFF", self.toggle_beat_kit,
                     on=self.state.beat_kit, px=13)
-        tip = f"{gname.upper()}: {gbpm} BPM"
-        if gswing > 50:
-            tip += f" · SWING {gswing}%"
-        tip += f" · {b.steps} STEPS"
-        self.text(1010, cy2 - 8, tip, 11, T["accent"], True, "w")
-        self.text(1010, cy2 + 10, "TEMPO FROM BEATSTEP" if live else "OWN TEMPO (BEATSTEP STOPPED)", 10, T["ink_dim"], True, "w")
+        self.button(1130, cy2, 240, 44, "CLOCK OUT TO BEATSTEP: ON" if self.state.clock_master else "CLOCK OUT TO BEATSTEP: OFF",
+                    self.toggle_clock_master, on=self.state.clock_master, px=13)
         if bp.send:
-            msg = ("CLEAR THE BEATSTEP'S DRUM PATTERN, THEN PRESS REC AND PLAY ON IT. THE BEAT IS SENT ONCE, FROM STEP 1."
-                   if bp.send == "armed" else "RECORDING INTO THE BEATSTEP... KEEP IT PLAYING")
+            if self.state.clock_master:
+                msg = ("PRESS REC ON THE BEATSTEP (EMPTY DRUM PATTERN). POTENTIALBOX STARTS IT AND SENDS THE BEAT ONCE, FROM STEP 1."
+                       if bp.send == "armed" else "RECORDING INTO THE BEATSTEP...")
+            else:
+                msg = ("CLEAR THE BEATSTEP'S DRUM PATTERN, THEN PRESS REC AND PLAY ON IT. THE BEAT IS SENT ONCE, FROM STEP 1."
+                       if bp.send == "armed" else "RECORDING INTO THE BEATSTEP... KEEP IT PLAYING")
         else:
-            msg = "TAP A GENRE, NEW BEAT FOR ANOTHER TAKE, TAP DOTS TO EDIT. SEND TO BEATSTEP RECORDS IT INTO THE BEATSTEP'S DRUM SEQUENCER."
-            if b.steps == 32:
-                msg = "32-STEP BEAT: SET THE BEATSTEP'S DRUM PATTERN LENGTH TO 32 BEFORE SENDING. " + msg[:60]
+            msg = f"{gname.upper()} {gbpm} BPM" + (f" · SWING {gswing}%" if gswing > 50 else "")
+            if b.turn_text():
+                msg += " · ENDS: " + b.turn_text().upper()
+            if b.steps != 16:
+                msg += f"  ·  SET THE BEATSTEP'S DRUM LENGTH TO {b.steps} BEFORE SENDING"
+            if self.state.clock_master:
+                msg += "  ·  CLOCK OUT: BEATSTEP SYNC MUST BE ON USB"
+            else:
+                msg += "  ·  " + ("TEMPO FROM THE BEATSTEP" if live else "OWN TEMPO")
         self.text(30, 714, msg[:150], 11, T["accent"] if bp.send else T["ink_dim"], bool(bp.send), "w")
+
+    def beat_bars_step(self):
+        bp = self.audio.engine.beats
+        i = BAR_CHOICES.index(self.state.beat_bars) if self.state.beat_bars in BAR_CHOICES else 1
+        self.state.beat_bars = BAR_CHOICES[(i + 1) % len(BAR_CHOICES)]
+        bp.beat = Beat(bp.beat.genre, bars=self.state.beat_bars)
+        self.beat_save()
+        n = self.state.beat_bars
+        self.show_toast(f"{n} BAR{'S' if n > 1 else ''} · {bp.beat.steps} STEPS")
+
+    def beat_new_ending(self):
+        bp = self.audio.engine.beats
+        bp.beat.new_ending()
+        self.beat_save()
+        self.show_toast("NEW ENDING: " + bp.beat.turn_text().upper())
 
     def toggle_beat_kit(self):
         self.state.beat_kit = not self.state.beat_kit

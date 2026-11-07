@@ -220,42 +220,261 @@ def fill_pattern(style, steps, rng):
     return out
 
 
-class Beat:
-    """A generated pattern: hits[step] = [(pad, prob, vel, ratchet, core)]"""
+# ways to end the loop that lead back to the start, by the genre's fill style
+TURNS = {"roll": ["roll", "pickup", "openhat", "dropout", "kickrun"],
+         "toms": ["toms", "pickup", "openhat", "dropout"],
+         "break": ["pickup", "kickskip", "openhat", "dropout", "roll"]}
+TURN_NAMES = {"roll": "snare roll", "pickup": "snare pickup", "openhat": "open hat", "dropout": "drop-out",
+              "kickrun": "kick run", "toms": "tom run", "kickskip": "kick skip"}
+BAR_CHOICES = [1, 2, 4]
 
-    def __init__(self, genre=0, seed=None, busy=0.0):
+
+class Beat:
+    """A generated pattern of 1, 2 or 4 bars. The last bar ends with a change (a turnaround)
+    that leads back to the start."""
+
+    def __init__(self, genre=0, seed=None, bars=2):
         self.genre = genre % len(GENRES)
         self.rng = np.random.default_rng(seed)
-        name, bpm, swing, steps, kit, fill, parts = GENRES[self.genre]
-        self.steps = steps
+        name, bpm, swing, native, kit, fill, parts = GENRES[self.genre]
+        self.native = native
+        self.bars = bars if bars in BAR_CHOICES else 2
+        self.steps = max(16 * self.bars, 16) if not (native == 32 and self.bars == 1) else 16
         self.choice = {}
+        self.base = {}
         self.grid = {}
+        self.fill = fill_pattern(fill, native, self.rng)
+        self.make_turn()
         for role in parts:
             self.pick(role)
-        self.fill = fill_pattern(fill, steps, self.rng)
+        self.ensure_roles()
+
+    def make_turn(self):
+        """Choose the turnaround (one or two ideas) and the steps it changes: {role: {step: char}}"""
+        fill = GENRES[self.genre][5]
+        roles = GENRES[self.genre][6]
+        L = self.steps
+        kinds = list(TURNS[fill])
+        first = kinds[int(self.rng.integers(len(kinds)))]
+        chosen = [first]
+        if self.rng.random() < 0.45:
+            rest = [k for k in kinds if k != first and {k, first} != {"dropout", "kickrun"}]
+            chosen.append(rest[int(self.rng.integers(len(rest)))])
+        snare = "S" if "S" in roles else ("C" if "C" in roles else "R")
+        kick = "K" if "K" in roles else "B"
+        m = collections.defaultdict(dict)
+        for k in chosen:
+            if k == "roll":
+                for i, ch in zip(range(L - 4, L), ["x", "x", "r", "t"]):
+                    m[snare][i] = ch
+            elif k == "pickup":
+                pat = [["g", "x", "X"], [".", "x", "x"], ["x", ".", "X"], ["g", "g", "x"]][int(self.rng.integers(4))]
+                for i, ch in zip(range(L - 3, L), pat):
+                    m[snare][i] = ch
+                m[kick][L - 1] = "."
+            elif k == "openhat":
+                at = L - 1 if self.rng.random() < 0.5 else L - 2
+                m["O"][at] = "x"
+                m["H"][at] = "."
+            elif k == "dropout":
+                for i in range(L - 4, L):  # kick and snare out for the last beat, hats carry on
+                    m[kick][i] = "."
+                    m[snare][i] = "."
+                    if "C" in roles and snare != "C":
+                        m["C"][i] = "."
+                if self.rng.random() < 0.6:
+                    m["Y"][0] = "x"  # crash back in on the one
+            elif k == "kickrun":
+                for i in range(L - 4, L):
+                    m[kick][i] = "x" if i % 2 == 0 or self.rng.random() < 0.5 else "g"
+            elif k == "kickskip":
+                for i in range(L - 8, L):
+                    m[kick][i] = "."
+                for i in (L - 6, L - 3):
+                    m[kick][i] = "x"
+            elif k == "toms":
+                run = [("T", "x"), ("T", "x"), ("M", "x"), ("L", "X")] if self.rng.random() < 0.6 else \
+                      [("M", "g"), ("T", "x"), ("M", "x"), ("L", "x")]
+                for i, (r, ch) in zip(range(L - 4, L), run):
+                    m[r][i] = ch
+                for i in range(L - 4, L):
+                    m[snare].setdefault(i, ".")
+        self.turn = dict(m)
+        self.turn_kinds = chosen
 
     def pick(self, role, mutate=False):
         parts = GENRES[self.genre][6]
-        vs = parts[role]
+        vs = parts.get(role)
+        if vs is None:
+            self.base[role] = E[:self.native]
+            self.expand(role)
+            return
         cur = self.choice.get(role)
         if mutate and len(vs) > 1:
             k = int(self.rng.choice([i for i in range(len(vs)) if i != cur]))
         else:
             k = 0 if (len(vs) == 1 or self.rng.random() < 0.55) else int(self.rng.integers(1, len(vs)))
         self.choice[role] = k
-        s = _fit(vs[k], self.steps)
-        # small surprise: sometimes swap a rest for a ghost or a ghost for a rest on hats/perc
-        if role in "HZRGVW" and self.rng.random() < 0.5:
-            s = list(s)
-            for _ in range(int(self.rng.integers(1, 3))):
-                i = int(self.rng.integers(self.steps))
-                s[i] = ";" if s[i] == "." else ("." if s[i] in "g;" else s[i])
-            s = "".join(s)
-        self.grid[role] = s
+        self.base[role] = _fit(vs[k], self.native)
+        self.expand(role)
+
+    def expand(self, role):
+        """Repeat the genre pattern over the loop, vary the hats a little in later bars, then the turnaround."""
+        b = self.base[role]
+        L = self.steps
+        s = list((b * (L // len(b) + 1))[:L])
+        if role in "HZRGVW":
+            for bar_start in range(0, L, 16):
+                if self.rng.random() < (0.35 if bar_start else 0.5):
+                    for _ in range(int(self.rng.integers(1, 3))):
+                        i = bar_start + int(self.rng.integers(16))
+                        if i < L:
+                            s[i] = ";" if s[i] == "." else ("." if s[i] in "g;" else s[i])
+        for i, ch in self.turn.get(role, {}).items():
+            if 0 <= i < L:
+                s[i] = ch
+        if any(c != "." for c in s) or role in self.grid:
+            self.grid[role] = "".join(s)
+        else:
+            self.grid.pop(role, None)
+
+    def ensure_roles(self):
+        for role in self.turn:
+            if role not in self.base:
+                self.base[role] = E[:self.native]
+                self.expand(role)
 
     def mutate(self):
-        roles = list(self.grid)
+        roles = [r for r in self.base if r in GENRES[self.genre][6]]
         self.pick(roles[int(self.rng.integers(len(roles)))], mutate=True)
+
+    def new_ending(self):
+        self.make_turn()
+        for role in list(self.base):
+            self.expand(role)
+        self.ensure_roles()
+
+    # ---- SIMPLER / BUSIER: change the beat itself, one layer at a time
+    def _row(self, role):
+        return list(self.grid.get(role, E[:self.steps] * (self.steps // 32 + 1))[:self.steps])
+
+    def _set(self, role, row):
+        r = "".join(row)
+        if any(c != "." for c in r):
+            self.grid[role] = r
+        else:
+            self.grid.pop(role, None)
+
+    def _turn_steps(self):
+        return {i for d in getattr(self, "turn", {}).values() for i in d}
+
+    def busier(self):
+        """Add a layer. Returns a short description of what changed (or '')."""
+        rng = self.rng
+        L = self.steps
+        keep = self._turn_steps()
+        snare = "S" if "S" in self.grid else ("C" if "C" in self.grid else "S")
+        kick = "K" if "K" in self.grid else ("B" if "B" in self.grid else "K")
+        ideas = []
+        h = self._row("H")
+        if "H" not in self.grid:
+            ideas.append("hats")
+        elif sum(c != "." for c in h) < L * 0.75:
+            ideas.append("hat16")
+        if "?" in "".join(self.grid.values()):
+            ideas.append("maybes")
+        ideas += ["ghosts", "kick"]
+        if "Z" not in self.grid:
+            ideas.append("shaker")
+        elif "G" not in self.grid:
+            ideas.append("conga")
+        rng.shuffle(ideas)
+        done = []
+        for idea in ideas:
+            if len(done) >= 2:
+                break
+            if idea == "hats":
+                self._set("H", [("x" if i % 4 == 2 else ".") for i in range(L)])
+                done.append("offbeat hats")
+            elif idea == "hat16":
+                row = self._row("H")
+                for i in range(L):
+                    if row[i] == "." and i not in keep:
+                        row[i] = "g" if i % 2 else "x"
+                self._set("H", row)
+                done.append("16th hats")
+            elif idea == "maybes":
+                for r, s2 in list(self.grid.items()):
+                    self.grid[r] = s2.replace("?", "x").replace(";", "g")
+                done.append("all maybe-hits play")
+            elif idea == "ghosts":
+                row = self._row(snare)
+                free = [i for i in range(L) if row[i] == "." and i not in keep and i % 4 in (1, 3)]
+                if not free:
+                    continue
+                for i in rng.choice(free, size=min(len(free), max(1, L // 12)), replace=False):
+                    row[int(i)] = "g"
+                self._set(snare, row)
+                done.append("ghost snares")
+            elif idea == "kick":
+                row = self._row(kick)
+                sn = self._row(snare)
+                free = [i for i in range(L) if row[i] == "." and sn[i] == "." and i not in keep and i % 2 == 0
+                        and i % 8 != 4]
+                if not free:
+                    continue
+                row[int(rng.choice(free))] = "x"
+                self._set(kick, row)
+                done.append("extra kick")
+            elif idea == "shaker":
+                self._set("Z", [("g" if i % 2 else ";") for i in range(L)])
+                done.append("shaker")
+            elif idea == "conga":
+                self._set("G", [("x" if (i % 16) in (3, 6, 11, 14) else ".") for i in range(L)])
+                done.append("congas")
+        return " + ".join(done)
+
+    def simpler(self):
+        """Take a layer away. Returns a short description of what changed (or '')."""
+        L = self.steps
+        keep = self._turn_steps()
+        for r in ("Z", "G", "V", "W", "F"):
+            if r in self.grid:
+                self.grid.pop(r)
+                return f"no {ROLE_NAME[r].lower()}"
+        all_s = "".join(self.grid.values())
+        if "?" in all_s or ";" in all_s:
+            for r, s2 in list(self.grid.items()):
+                self._set(r, list(s2.replace("?", ".").replace(";", ".")))
+            return "no maybe-hits"
+        if "g" in all_s:
+            for r, s2 in list(self.grid.items()):
+                self._set(r, list(s2.replace("g", ".")))
+            return "no ghost notes"
+        h = self._row("H")
+        if sum(1 for i in range(1, L, 2) if h[i] != ".") > 0:
+            for i in range(1, L, 2):
+                if i not in keep:
+                    h[i] = "."
+            self._set("H", h)
+            return "8th hats"
+        if "R" in self.grid:
+            self.grid.pop("R")
+            return "no rim"
+        if "O" in self.grid:
+            self.grid.pop("O")
+            return "no open hat"
+        h = self._row("H")
+        if sum(1 for i in range(L) if h[i] != "." and i % 4 != 2 and i % 4 != 0) == 0 and \
+                sum(1 for i in range(0, L, 4) if h[i] != ".") > 0 and sum(1 for i in range(2, L, 4) if h[i] != ".") > 0:
+            for i in range(0, L, 4):
+                h[i] = "."
+            self._set("H", h)
+            return "offbeat hats only"
+        return ""
+
+    def turn_text(self):
+        return " + ".join(TURN_NAMES[k] for k in getattr(self, "turn_kinds", []))
 
     def hits_at(self, step, human):
         out = []
@@ -271,15 +490,17 @@ class Beat:
         self.grid[role] = "".join(s)
 
     def to_json(self):
-        return dict(genre=self.genre, steps=self.steps, grid=self.grid)
+        return dict(genre=self.genre, steps=self.steps, bars=self.bars, grid=self.grid,
+                    turn=getattr(self, "turn_kinds", []))
 
     @classmethod
     def from_json(cls, d):
-        b = cls(int(d.get("genre", 0)))
+        b = cls(int(d.get("genre", 0)), bars=int(d.get("bars", 2)))
         g = d.get("grid")
         if isinstance(g, dict):
             b.steps = int(d.get("steps", b.steps))
             b.grid = {r: _fit(s, b.steps) for r, s in g.items() if r in ROLE_PAD}
+            b.turn_kinds = [k for k in d.get("turn", []) if k in TURN_NAMES]
         return b
 
 
@@ -316,8 +537,8 @@ class BeatPlayer:
             self.send = None
         self.pending = []
 
-    def on_tick(self, t):
-        """BeatStep clock tick while it plays; step k starts at tick 6k."""
+    def on_tick(self, t, offset=0):
+        """Clock tick while the transport plays; step k starts at tick 6k."""
         if t % 6:
             return
         k = t // 6
@@ -325,7 +546,7 @@ class BeatPlayer:
             self.send = "sending"
             self.sent = 0
         if self.on or self.send == "sending":
-            self._step(k, 0)
+            self._step(k, offset)
 
     def step_len(self):
         return 60.0 / max(self.eng.bpm, 30.0) / 4.0 * self.sr
