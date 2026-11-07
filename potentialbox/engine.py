@@ -264,6 +264,16 @@ def _build_specs():
     a(Param("m.gluespd", "Glue speed", 0, len(GLUE_SPEEDS) - 1, 1, step=1, choices=[g[0] for g in GLUE_SPEEDS]))
     a(Param("m.width", "Stereo width", 0, 2, 1.0, unit="%"))
     a(Param("sc.morph", "Scene morph", 0, 1, 0.0, unit="%"))
+    # ---- looper (v1.7)
+    for t in range(1, 6):
+        a(Param(f"lp.t{t}.vol", f"Track {t} level", 0, 1.2, 0.85, unit="%"))
+        a(Param(f"lp.t{t}.fx", f"Track {t} FX", 0, 1, 0.0, unit="%"))
+    a(Param("lp.in", "Input level", 0, 2, 1.0, unit="%"))
+    a(Param("lp.mon", "Hear input", 0, 1, 1.0, unit="%"))
+    a(Param("lp.vol", "Looper level", 0, 1.5, 1.0, unit="%"))
+    a(Param("lp.fb", "Overdub keep", 0.3, 1, 1.0, unit="%"))
+    a(Param("lp.filter", "Loop filter", -1, 1, 0.0, unit="bip"))
+    a(Param("lp.duck", "Duck loops", 0, 1, 0.0, unit="%"))
     a(Param("dr.filter", "Drum filter", 200, 20000, 20000, "exp", unit="Hz"))
     a(Param("dr.drive", "Drum drive", 0, 1, 0.0, unit="%"))
     a(Param("dr.vol", "Drums volume", 0, 1, 0.8, unit="%"))
@@ -295,6 +305,8 @@ PAGES = collections.OrderedDict([
                  "dr.p1.tune", "dr.p1.decay", "dr.p3.tune", "dr.p5.decay", "dr.filter", "s1.vol", "s2.vol", "dr.vol"]),
     ("Live", ["sc.morph", "m.filter", "mc.12", "mc.9", "mc.10", "mc.13", "m.glue", "m.master",
               "s1.cutoff", "s1.reso", "s2.cutoff", "s2.pos", "dk.s1", "dk.s2", "fx.fb", "rv.size"]),
+    ("Loop", ["lp.t1.vol", "lp.t2.vol", "lp.t3.vol", "lp.t4.vol", "lp.t5.vol", "lp.in", "lp.mon", "lp.vol",
+              "lp.t1.fx", "lp.t2.fx", "lp.t3.fx", "lp.t4.fx", "lp.t5.fx", "lp.fb", "lp.filter", "lp.duck"]),
     ("Macros", [f"mc.{i}" for i in range(1, 17)]),
     ("Synth 1", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s1.wave", "s1.pw", "s1.detune", "s1.sub",
                  "s1.attack", "s1.decay", "s1.sustain", "s1.release", "s1.glide", "s1.octave", "s1.drive", "s1.vol"]),
@@ -1850,6 +1862,8 @@ class Engine:
         self.beat_ph = 0.0
         self.recorder = None
         self.capture = None
+        from potentialbox.looper import Looper
+        self.looper = Looper(self)
 
     # thread-safe entry points (MIDI / GUI threads)
     def note_on(self, target, note, vel=100):
@@ -1895,17 +1909,21 @@ class Engine:
             self.playing = True
             self.step = 0
             p.apply_step(0)
+            self.looper.on_start()
         elif kind == "cont":
             self.playing = True
         elif kind == "stop":
             self.playing = False
             self.step = None
             p.apply_step(None)
+            self.looper.on_stop()
         elif kind == "tick":
             self.tick += 1
             if not self.playing:
                 return
             t = self.tick
+            if t > 0 and t % 96 == 0:
+                self.looper.on_bar()
             if t % 6 == 5:  # one tick early: the BeatStep may send the step's note before its clock
                 self.step = ((t + 1) // 6) % 16
                 p.apply_step(self.step)
@@ -1975,7 +1993,7 @@ class Engine:
         self.duck_e = float(env[-1])
         return env
 
-    def render(self, n):
+    def render(self, n, inp=None):
         self._dispatch()
         v = self.p.val
         out = np.zeros((n, 2))
@@ -2014,6 +2032,15 @@ class Engine:
         out += fx
         if stems is not None:
             stems["fx"] = fx
+        # looper: records the interface input and/or this mix, plays its loops into the mix before the master FX
+        lp = self.looper
+        loops = lp.process(n, inp, out, duck)  # always: its clock must keep running
+        if loops is not None:
+            out = out + loops
+            if stems is not None:
+                stems["lp"] = loops
+        if inp is not None and v["lp.mon"] > 0.005:
+            out = out + inp * (v["lp.in"] * v["lp.mon"])
         out = self.master.process(out, v["m.filter"], v["m.crush"])
         out = self.eqs["m"].process(out, v["eq.m.lo"], v["eq.m.mid"], v["eq.m.hi"], lof, hif)
         out = self.glue.process(out, v["m.glue"], v["m.gluespd"])

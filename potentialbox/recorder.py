@@ -7,7 +7,7 @@ import wave
 
 import numpy as np
 
-STEM_NAMES = {"dr": "Drums", "s1": "Synth 1", "s2": "Synth 2", "fx": "FX returns"}
+STEM_NAMES = {"dr": "Drums", "s1": "Synth 1", "s2": "Synth 2", "fx": "FX returns", "lp": "Looper"}
 
 
 def to_pcm24(x):

@@ -72,6 +72,14 @@ SYNTH PAGES: MAIN, OSC+, MOD (new in 1.5)
     OSC+ page: INIT OSC+ PAGE.  MAIN page: INIT SYNTH 1 / 2 = the whole synth.
   UNDO INIT shows for a few seconds afterwards if you change your mind.
 
+NEW IN 1.7: THE LOOP TAB (5-track looper, like a BOSS RC-505)
+  1. Tap INPUT OFF (top right) and pick your mic/instrument input (needs your interface's
+     ASIO driver in SETUP). 2. Press pad 1 to record, again to play, again to overdub.
+  Pads on the Loop tab: 1-5 rec/play/dub tracks 1-5, 9-13 stop (hold = clear), 6 undo/redo,
+  7 all stop/play, 8 record next empty track, 14 reverse, 15 speed, 16 back.
+  Loops snap to whole bars while the BeatStep plays and follow its Play/Stop.
+  MY LOOPS saves all tracks as WAVs in Music > PotentialBox Loops. Use headphones with a mic.
+
 NEW IN 1.6
   LIVE TAB: hold the 8 effect pads (repeat, roll, tape stop, reverse, filter sweep, gate,
   echo). SAVE A, change things, SAVE B, then morph with the bar or BeatStep knob 1.

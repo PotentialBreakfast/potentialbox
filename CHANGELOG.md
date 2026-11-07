@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.7.0
+- **Loop tab**: a 5-track stereo looper inspired by the BOSS RC-505.
+  - Records the audio interface's inputs (pick mono or stereo inputs; needs the interface's ASIO driver), PotentialBox's own mix, or both, per track. Round-trip latency is compensated.
+  - REC → PLAY → OVERDUB → PLAY on one pad per track; STOP pad per track (hold to clear); undo/redo of the last overdub; all stop/play; record on next empty track; clear all.
+  - Synced to the BeatStep: loop lengths snap to whole bars, loops follow Play/Stop and restart in time with bar 1, with gentle varispeed to stay locked to its clock. Stopped: the first loop sets the length for the rest.
+  - Start when you tap (end snaps) or on the bar (late presses still count); optional fixed length of 1, 2, 4 or 8 bars.
+  - Per-track FX (low-pass, high-pass, lo-fi, echo, tremolo), reverse, half/double speed; overdub keep (feedback), loop bus filter and ducking, input level and monitoring.
+  - My Loops: 8 loop sets saved as WAV files in Music > PotentialBox Loops.
+  - While the Loop tab is open, BeatStep pads 1-16 play the looper (each column = one track).
+- Recording on the Live tab also saves a Looper stem.
+- New pad action: Loop Tab.
+
 ## 1.6.0
 - **Live tab**: hold-to-play punch-in effects (Repeat 1/8, Repeat 1/16, Roll 1/32, Tape stop, Reverse, Filter sweep, Gate 1/16, Echo throw), Scene A/B snapshots with a morph bar (BeatStep knob 1) and HOLD FOR SCENE B, HOLD FOR FILL, Record, Resample and My Setups. While the Live tab is open, BeatStep pads 1-16 play the Live pads.
 - **Arpeggiator** on both synths (new ARP+ page): Up, Down, Up-down, Random, As played; 1/4 to 1/32 synced; 1-4 octaves; gate, swing, hold, chance, accents. Arpeggiates the chord from chord mode.

@@ -46,11 +46,12 @@ from tkinter import font as tkfont, filedialog  # noqa: E402
 from potentialbox.engine import (Engine, ParamStore, SPECS, PAGES, PRESETS, MACROS, SUBPAGES,  # noqa: E402
                                  HIDDEN_PAGES, MOD_SOURCES, MOD_DESTS, PUNCH_FX)
 from potentialbox.recorder import Recorder, write_wav, recordings_dir  # noqa: E402
+from potentialbox.looper import TRACKS, SOURCES, FX_TYPES, SPEEDS, LENGTHS, STATE_TEXT  # noqa: E402
 from potentialbox import kits  # noqa: E402
 from potentialbox.library import Library, map_kit, brand_of, build_index, filter_index, GROUPS, PAD_GROUP  # noqa: E402
 
 APP = "PotentialBox"
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
@@ -64,7 +65,11 @@ SLOTS = 8
 KITS_FILE = os.path.join(CFG_DIR, "my-kits.json")
 SETUPS_FILE = os.path.join(CFG_DIR, "my-setups.json")
 RESAMPLE_DIR = os.path.join(CFG_DIR, "Resampled")
-NO_LOCK_PAGES = ("Macros", "Live", "Setup")
+NO_LOCK_PAGES = ("Macros", "Live", "Loop", "Setup")
+OWN_SCREEN_PAGES = ("Live", "Loop")  # tabs that draw their own screen and turn the pads into their own pads
+LOOP_PADS = [f"Track {t} rec / play / dub" for t in range(1, 6)] + ["Undo / redo", "All stop / play",
+             "Record next empty track"] + [f"Track {t} stop (hold: clear)" for t in range(1, 6)] + [
+             "Reverse last track", "Speed last track", "Back to last tab"]
 ACTIONS = [("rand_s1", "Random Synth 1"), ("rand_s2", "Random Synth 2"), ("rand_kit", "Random Drum Kit"),
            ("next_kit", "Next Kit"), ("prev_tab", "Previous Tab"), ("next_tab", "Next Tab"),
            ("tab:Perform", "Perform Tab"), ("tab:Synth 1", "Synth 1 Tab"), ("tab:Synth 2", "Synth 2 Tab"),
@@ -72,7 +77,8 @@ ACTIONS = [("rand_s1", "Random Synth 1"), ("rand_s2", "Random Synth 2"), ("rand_
            ("next_s1", "Synth 1 Next Sound"), ("next_s2", "Synth 2 Next Sound"), ("tab:Macros", "Macros Tab"),
            ("panic", "All Notes Off"),
            # v1.6: no default pad, tap the card and press a pad or step to use them
-           ("tab:Live", "Live Tab"), ("tab:FX", "FX Tab"), ("rec", "Record On/Off"), ("fill", "Fill (hold)")]
+           ("tab:Live", "Live Tab"), ("tab:FX", "FX Tab"), ("rec", "Record On/Off"), ("fill", "Fill (hold)"),
+           ("tab:Loop", "Loop Tab")]
 ACTION_NAMES = dict(ACTIONS)
 PAD_ACTIONS = [aid for aid, _ in ACTIONS[:16]]
 HOLD_ACTIONS = {"fill"}
@@ -174,6 +180,8 @@ class State:
         self.last_tab = "Perform"
         self.setups = [None] * SLOTS
         self.rec_stems = True
+        self.loop_input = None    # list of interface input channels (0-based) or None
+        self.loop_cfg = {}
         self.midi_off = []  # port names the user switched off
         self.bad_audio = []  # labels of outputs that froze or crashed on open
         self.audio_pending = None  # label being opened right now (set before open, cleared after)
@@ -312,6 +320,9 @@ class State:
         self.load_locks(d.get("locks"))
         self.load_scenes(d.get("scenes"))
         self.rec_stems = bool(d.get("rec_stems", True))
+        li = d.get("loop_input")
+        self.loop_input = [int(c) for c in li][:2] if isinstance(li, list) and li else None
+        self.loop_cfg = d.get("loop_cfg", {}) if isinstance(d.get("loop_cfg"), dict) else {}
         self.last_tab = d.get("last_tab", "Perform") if d.get("last_tab") in TABS else "Perform"
         self.midi_off = d.get("midi_off", [])
         self.bad_audio = [x for x in d.get("bad_audio", []) if isinstance(x, str)]
@@ -324,7 +335,8 @@ class State:
                      device=self.device, blocksize=self.blocksize, kit=self.kit, recent=self.recent, library_root=self.library_root,
                      preset=self.preset, preset_name=self.preset_name, page=self.page, subpage=self.subpage, midi_off=self.midi_off,
                      bad_audio=self.bad_audio, audio_pending=self.audio_pending, actions=self.actions,
-                     locks=self.locks_json(), scenes=self.params.scenes, rec_stems=self.rec_stems, last_tab=self.last_tab)
+                     locks=self.locks_json(), scenes=self.params.scenes, rec_stems=self.rec_stems, last_tab=self.last_tab,
+                     loop_input=self.loop_input, loop_cfg=self.loop_cfg)
             tmp = CFG_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(d, f, indent=1)
@@ -345,6 +357,9 @@ class Audio:
         self.error = ""
         self.label = "No audio"
         self.latency_ms = 0.0
+        self.in_chans = None
+        self.in_error = ""
+        self.max_in = 0
 
     def devices(self):
         out = []
@@ -398,6 +413,17 @@ class Audio:
             outdata.fill(0)
             log("render error", traceback.format_exc())
 
+    def duplex_callback(self, indata, outdata, frames, t, status):
+        try:
+            ch = self.in_chans
+            x = indata[:, ch]
+            if x.shape[1] == 1:
+                x = np.repeat(x, 2, axis=1)
+            outdata[:] = self.engine.render(frames, x)
+        except Exception:
+            outdata.fill(0)
+            log("render error", traceback.format_exc())
+
     def stop(self):
         if self.stream is not None:
             try:
@@ -433,15 +459,41 @@ class Audio:
         last = None
         self.state.audio_pending = dev["label"]
         self.state.save()
+        self.max_in = int(info.get("max_input_channels", 0) or 0)
+        want = self.state.loop_input
+        self.in_error = ""
+        if want and max(want) >= self.max_in:
+            self.in_error = "This output has no inputs. Use your interface's ASIO driver to loop mics and instruments."
+            want = None
         for sr in rates:
             try:
                 if sr != self.engine.sr:
                     self.rebuild_engine(sr)
-                self.stream = sd.OutputStream(device=dev["index"], samplerate=sr, channels=2, dtype="float32",
-                                              blocksize=self.state.blocksize, latency="low",
-                                              extra_settings=extra, callback=self.callback)
-                self.stream.start()
-                self.latency_ms = float(self.stream.latency) * 1000.0
+                self.stream = None
+                if want:
+                    try:
+                        self.stream = sd.Stream(device=(dev["index"], dev["index"]), samplerate=sr,
+                                                channels=(max(want) + 1, 2), dtype="float32",
+                                                blocksize=self.state.blocksize, latency="low",
+                                                extra_settings=(extra, extra) if extra else None,
+                                                callback=self.duplex_callback)
+                        self.in_chans = list(want)
+                        self.stream.start()
+                    except Exception as e:
+                        log("input open failed", e)
+                        self.in_error = f"Couldn't open the input: {e}"[:110]
+                        self.stream = None
+                if self.stream is None:
+                    self.in_chans = None
+                    self.stream = sd.OutputStream(device=dev["index"], samplerate=sr, channels=2, dtype="float32",
+                                                  blocksize=self.state.blocksize, latency="low",
+                                                  extra_settings=extra, callback=self.callback)
+                    self.stream.start()
+                lat = self.stream.latency
+                if isinstance(lat, (tuple, list)):
+                    self.engine.looper.rt = (float(lat[0]) + float(lat[1])) * sr
+                    lat = lat[1]
+                self.latency_ms = float(lat) * 1000.0
                 self.state.device = {k: dev[k] for k in ("name", "hostapi", "exclusive", "label")}
                 api = "ASIO" if dev["hostapi"] == "ASIO" else ("WASAPI EXCL" if dev["exclusive"] else
                                                                dev["hostapi"].replace("Windows ", ""))
@@ -466,6 +518,8 @@ class Audio:
         eng.bpm = old.bpm
         self.apply_kit(eng)
         self.engine = eng
+        if hasattr(self, "on_engine"):
+            self.on_engine(eng)
 
     def apply_kit(self, eng=None):
         """Load the kit named in state into the engine. Returns number of pads loaded (16 for factory)."""
@@ -646,6 +700,8 @@ class Midi:
             if aid:
                 if app.state.page == "Live" and aid in PAD_ACTIONS and app.overlay is None:
                     app.live_pad(PAD_ACTIONS.index(aid), val > 0)  # straight from this thread: no GUI delay
+                elif app.state.page == "Loop" and aid in PAD_ACTIONS and app.overlay is None:
+                    app.loop_pad(PAD_ACTIONS.index(aid), val > 0)
                 elif aid in HOLD_ACTIONS:
                     eng.set_fill(val > 0)
                     app.action_flash[aid] = time.time()
@@ -770,6 +826,9 @@ class App:
         self.rs = {"src": "Synth 1", "len": "1 bar"}
         self.last_rec_folder = None
         self.live_held = set()
+        self.loop_held = {}
+        self.audio.on_engine = self.apply_loop_cfg
+        self.apply_loop_cfg(self.audio.engine)
 
         if self.state.audio_pending:  # last launch froze or crashed while opening this output
             bad = self.state.audio_pending
@@ -963,6 +1022,8 @@ class App:
             self.draw_setup()
         elif self.state.page == "Live":
             self.draw_live()
+        elif self.state.page == "Loop":
+            self.draw_loop()
         else:
             self.draw_knobs()
             if self.lock_mode:
@@ -988,6 +1049,10 @@ class App:
             self.draw_resample()
         elif self.overlay and self.overlay[0] == "setups":
             self.draw_setups()
+        elif self.overlay and self.overlay[0] == "loopinput":
+            self.draw_loop_input()
+        elif self.overlay and self.overlay[0] == "myloops":
+            self.draw_my_loops()
         msg, until = self.toast
         if msg and time.time() < until:
             self.rrect(300, 30, 430, 48, 12, T["btn_on"])
@@ -1484,19 +1549,19 @@ class App:
         now = time.time()
         for i, (aid, name) in enumerate(ACTIONS):
             r, c = divmod(i, 5)
-            x0, y0 = 34 + c * 244, 205 + r * 116
+            x0, y0 = 34 + c * 244, 205 + r * 98
             learning = self.midi.action_learn == aid
             hot = now - self.action_flash.get(aid, 0) < 0.4
             fill = T["btn_on"] if learning else (T["seg_active"] if hot else T["btn_bg"])
-            self.rrect(x0, y0, 232, 104, 12, fill)
-            self.text(x0 + 14, y0 + 22, str(i + 1), 12, T["ink_dim"], True, "w")
-            self.text(x0 + 116, y0 + 46, name.upper(), 15, T["accent"] if hot else T["btn_text"], True)
+            self.rrect(x0, y0, 232, 88, 12, fill)
+            self.text(x0 + 14, y0 + 18, str(i + 1), 12, T["ink_dim"], True, "w")
+            self.text(x0 + 116, y0 + 38, name.upper(), 15, T["accent"] if hot else T["btn_text"], True)
             sub = "PRESS A PAD OR STEP NOW" if learning else self.trig_text(self.state.actions.get(aid))
-            self.text(x0 + 116, y0 + 78, sub, 12, T["btn_text"] if learning else T["ink_dim"])
-            self.hit(x0, y0, 232, 104, lambda a=aid: self.learn_action(a))
-        self.text(700, 700, "On the LIVE tab, pads 1-16 play the Live pads instead (effects, fill, scene B, record).",
+            self.text(x0 + 116, y0 + 66, sub, 12, T["btn_text"] if learning else T["ink_dim"])
+            self.hit(x0, y0, 232, 88, lambda a=aid: self.learn_action(a))
+        self.text(560, 714, "On the LIVE and LOOP tabs, pads 1-16 play that tab's own pads instead.",
                   12, T["ink_dim"], False, "w")
-        self.button(250, 700, 420, 48, "RESET TO CHANNEL 16 DEFAULTS", self.reset_actions, px=14)
+        self.button(250, 714, 420, 38, "RESET TO CHANNEL 16 DEFAULTS", self.reset_actions, px=14)
 
     def learn_action(self, aid):
         self.midi.action_learn = None if self.midi.action_learn == aid else aid
@@ -1593,6 +1658,8 @@ class App:
         self.cv.create_oval(X(dx - 4), Y(dy - 4), X(dx + 4), Y(dy + 4), fill=T["knob_dot"], outline="")
         lab = SPECS[key].label
         lab = {"Build-Up": "Build-up", "Dub Throw": "Dub throw"}.get(lab, lab)
+        if key.startswith("lp.t"):
+            lab = lab.replace("Track ", "T")
         if key[:2] in ("s1", "s2") and "Synth" not in lab:
             lab = key[:2].upper() + " " + lab
         self.text(cx, cy + r + 15, lab[:13], 11, T["ink"], True)
@@ -1691,6 +1758,319 @@ class App:
                 self.show_toast(path[-38:])
         except Exception as e:
             log("open folder failed", e)
+
+    # ---------------------------------------------------------------- loop tab
+    LOOP_COL = {"rec": "#d9534f", "ending": "#d9534f", "armed": "#d9534f", "play": "#4cae4c", "cued": "#4cae4c",
+                "dub": "#e8b73a"}
+
+    def apply_loop_cfg(self, eng):
+        lp = eng.looper
+        c = self.state.loop_cfg or {}
+        lp.sync = bool(c.get("sync", True))
+        lp.length = int(c.get("length", 0)) % len(LENGTHS)
+        lp.on_bar_start = bool(c.get("on_bar", False))
+        for tr, tc in zip(lp.tracks, c.get("tracks", [])):
+            tr.src = int(tc.get("src", tr.src)) % len(SOURCES)
+            tr.fx = int(tc.get("fx", tr.fx)) % len(FX_TYPES)
+            tr.reverse = bool(tc.get("reverse", False))
+            tr.speed = int(tc.get("speed", 1)) % len(SPEEDS)
+
+    def save_loop_cfg(self):
+        lp = self.audio.engine.looper
+        tracks = [dict(src=t.src, fx=t.fx, reverse=t.reverse, speed=t.speed) for t in lp.tracks]
+        self.state.loop_cfg = dict(sync=lp.sync, length=lp.length, on_bar=lp.on_bar_start, tracks=tracks)
+        self.state.dirty = True
+
+    def loop_pad(self, i, on):
+        """A BeatStep pad on the Loop tab (MIDI thread or screen)."""
+        lp = self.audio.engine.looper
+        if 8 <= i <= 12:
+            t = i - 8
+            if on:
+                lp.cmd("stop", t)
+                self.loop_held[t] = time.time()
+            else:
+                self.loop_held.pop(t, None)
+        elif on:
+            if i < 5:
+                lp.cmd("main", i)
+            elif i == 5:
+                lp.cmd("undo", lp.last)
+            elif i == 6:
+                lp.cmd("allstop")
+            elif i == 7:
+                lp.cmd("recnext")
+            elif i == 13:
+                self.loop_set("rev", lp.last)
+            elif i == 14:
+                self.loop_set("speed", lp.last)
+            elif i == 15:
+                self.action_q.append("tab:" + self.state.last_tab)
+        self.request_redraw()
+
+    def loop_tick(self):
+        lp = self.audio.engine.looper
+        now = time.time()
+        for t, t0 in list(self.loop_held.items()):
+            if now - t0 > 0.9:
+                self.loop_held.pop(t, None)
+                lp.cmd("clear", t)
+                self.show_toast(f"TRACK {t + 1} CLEARED")
+        if lp.toast:
+            self.show_toast(lp.toast)
+            lp.toast = None
+        if self.state.page == "Loop" and any(t.state != "empty" for t in lp.tracks):
+            self.request_redraw()
+
+    def loop_set(self, what, i=None):
+        lp = self.audio.engine.looper
+        tr = lp.tracks[i] if i is not None else None
+        # simple per-track settings are plain attributes: set them here so quick taps never get lost
+        if what == "src":
+            tr.src = (tr.src + 1) % len(SOURCES)
+        elif what == "fx":
+            tr.fx = (tr.fx + 1) % len(FX_TYPES)
+        elif what == "rev":
+            tr.reverse = not tr.reverse
+        elif what == "speed":
+            tr.speed = (tr.speed + 1) % len(SPEEDS)
+            lp.cmd("speed", i, tr.speed)  # also drops out of overdub if needed
+        if tr is not None:
+            lp.last = i
+            self.save_loop_cfg()
+        elif what == "sync":
+            lp.sync = not lp.sync
+            self.save_loop_cfg()
+        elif what == "length":
+            lp.length = (lp.length + 1) % len(LENGTHS)
+            self.save_loop_cfg()
+        elif what == "onbar":
+            lp.on_bar_start = not lp.on_bar_start
+            self.save_loop_cfg()
+        elif what == "clearall":
+            now = time.time()
+            if self.armed and self.armed[:1] == ("clearall",) and now - self.armed[1] < 3:
+                self.armed = None
+                lp.cmd("clearall")
+                self.show_toast("ALL TRACKS CLEARED")
+            else:
+                self.armed = ("clearall", now)
+                self.root.after(3100, self.request_redraw)
+        self.request_redraw()
+
+    def input_label(self):
+        ch = self.audio.in_chans
+        if not ch:
+            return "INPUT OFF"
+        return "IN " + "+".join(str(c + 1) for c in ch)
+
+    def draw_loop(self):
+        eng = self.audio.engine
+        lp = eng.looper
+        now = time.time()
+        self.frame(14, 100, 1252, 632, "Loop",
+                   "PADS HERE: 1-5 REC / PLAY / DUB · 9-13 STOP (HOLD = CLEAR) · 6 UNDO · 7 ALL STOP · 8 REC NEXT · 16 BACK")
+        for i, key in enumerate(PAGES["Loop"]):
+            self.mini_knob(i, 14 + 39 + i * 77.5, 172, key)
+        for i, tr in enumerate(lp.tracks):
+            x0, y0 = 30 + i * 202, 252
+            st = tr.state
+            col = self.LOOP_COL.get(st)
+            self.rrect(x0, y0, 192, 470, 12, T["panel"] if hasattr(T, "get") and "panel" in T else T["well"])
+            self.text(x0 + 14, y0 + 22, f"TRACK {i + 1}", 15, T["accent"] if lp.last == i else T["ink"], True, "w")
+            blink = st in ("armed", "cued", "ending") and int(now * 3) % 2
+            self.text(x0 + 178, y0 + 22, STATE_TEXT.get(st, st.upper()), 13,
+                      (col if not blink else T["ink_faint"]) if col else T["ink_dim"], True, "e")
+            # loop position
+            self.rect(x0 + 14, y0 + 44, 164, 12, fill=T["well"], outline=T["line"])
+            pr = lp.progress(tr)
+            if pr is not None:
+                self.rect(x0 + 14, y0 + 44, 164 * pr, 12, fill=col or T["accent"])
+            self.text(x0 + 96, y0 + 74, lp.length_text(tr) or "—", 12, T["ink_dim"])
+            # level
+            self.rect(x0 + 14, y0 + 90, 164, 5, fill=T["well"])
+            self.rect(x0 + 14, y0 + 90, 164 * min(tr.peak, 1.0), 5, fill=T["accent"])
+            # main button: shows what a tap does
+            nxt = {"empty": "REC", "armed": "CANCEL", "rec": "PLAY", "ending": "...", "play": "DUB", "dub": "PLAY",
+                   "stopped": "PLAY", "paused": "PLAY", "cued": "CANCEL"}.get(st, "REC")
+            self.rrect(x0 + 14, y0 + 106, 164, 120, 14, col or T["btn_bg"])
+            self.text(x0 + 96, y0 + 126, "TAP TO", 10, "#111111" if col else T["ink_dim"], True)
+            self.text(x0 + 96, y0 + 160, nxt, 30, "#111111" if col else T["btn_text"], True)
+            self.text(x0 + 96, y0 + 200, f"PAD {i + 1}", 11, "#111111" if col else T["ink_dim"], True)
+            self.hit(x0 + 14, y0 + 106, 164, 120, lambda j=i: self.loop_pad(j, True))
+            held = i in self.loop_held
+            self.rrect(x0 + 14, y0 + 236, 164, 62, 12, T["btn_on"] if held else T["btn_bg"])
+            self.text(x0 + 96, y0 + 258, "STOP", 18, T["btn_text"], True)
+            self.text(x0 + 96, y0 + 282, f"HOLD = CLEAR · PAD {9 + i}", 10, T["btn_text"] if held else T["ink_dim"], True)
+            self.hit(x0 + 14, y0 + 236, 164, 62, lambda on, j=i: self.loop_pad(8 + j, on), "hold")
+            src = SOURCES[tr.src] if self.audio.in_chans or tr.src == 1 else "PotentialBox"
+            self.button(x0 + 96, y0 + 330, 164, 40, ("FROM: " + src).upper()[:22], lambda j=i: self.loop_set("src", j), px=12)
+            self.button(x0 + 96, y0 + 376, 164, 40, ("FX: " + FX_TYPES[tr.fx]).upper(), lambda j=i: self.loop_set("fx", j), px=12)
+            self.button(x0 + 55, y0 + 422, 82, 40, "REVERSE", lambda j=i: self.loop_set("rev", j), on=tr.reverse, px=11)
+            self.button(x0 + 137, y0 + 422, 82, 40, SPEEDS[tr.speed][0].upper() + " SPEED", lambda j=i: self.loop_set("speed", j),
+                        on=tr.speed != 1, px=11)
+        # right column
+        x = 1046
+        cx = x + 103
+        self.button(cx, 278, 206, 46, self.input_label(), lambda: self.open_overlay(("loopinput",)), accent=not self.audio.in_chans, px=15)
+        self.rect(x, 306, 206, 6, fill=T["well"])
+        self.rect(x, 306, 206 * min(lp.in_peak, 1.0), 6, fill="#d9534f" if lp.in_peak > 0.98 else T["accent"])
+        self.button(cx, 340, 206, 44, "SYNC TO BEATSTEP" if lp.sync else "SYNC OFF", lambda: self.loop_set("sync"), on=lp.sync, px=13)
+        self.button(cx, 392, 206, 44, "START: ON THE BAR" if lp.on_bar_start else "START: WHEN I TAP",
+                    lambda: self.loop_set("onbar"), px=13)
+        self.button(cx, 444, 206, 44, "LENGTH: " + LENGTHS[lp.length][0].upper(), lambda: self.loop_set("length"),
+                    on=lp.length > 0, px=13)
+        self.button(cx, 504, 206, 50, f"UNDO / REDO · T{lp.last + 1}", lambda: self.loop_pad(5, True), px=14)
+        playing = any(t.state in ("play", "dub", "rec", "ending", "cued", "armed") for t in lp.tracks)
+        self.button(cx, 560, 206, 50, "ALL STOP" if playing else "ALL PLAY", lambda: self.loop_pad(6, True), px=15)
+        armed = self.armed and self.armed[:1] == ("clearall",) and now - self.armed[1] < 3
+        self.button(cx, 616, 206, 50, "TAP AGAIN TO CLEAR" if armed else "CLEAR ALL", lambda: self.loop_set("clearall"),
+                    accent=armed, px=14)
+        self.button(cx, 676, 206, 56, "MY LOOPS", lambda: self.open_overlay(("myloops",)), accent=True, px=16)
+
+    def draw_loop_input(self):
+        self.overlay_base("Looper input", "WHICH INPUT ON YOUR AUDIO INTERFACE TO RECORD (MIC, GUITAR, KEYS...)")
+        self.button(1150, 172, 160, 56, "CLOSE", self.close_overlay, px=17)
+        mx = min(self.audio.max_in, 8)
+        opts = [("INPUT OFF", None)]
+        opts += [(f"IN {c + 1}", [c]) for c in range(mx)]
+        opts += [(f"IN {c + 1}+{c + 2} STEREO", [c, c + 1]) for c in range(0, mx - 1, 2)]
+        cur = self.state.loop_input
+        for j, (lab, ch) in enumerate(opts):
+            r, c = divmod(j, 4)
+            x0, y0 = 34 + c * 305, 220 + r * 76
+            on = ch == cur
+            self.rect(x0, y0, 290, 64, fill=T["seg_active"] if on else T["seg_inactive"], outline=T["line"])
+            self.text(x0 + 145, y0 + 32, lab, 17, T["accent"] if on else T["ink"], on)
+            self.hit(x0, y0, 290, 64, lambda cc=ch: self.pick_loop_input(cc))
+        y = 220 + ((len(opts) + 3) // 4) * 76 + 20
+        if mx == 0:
+            self.text(40, y, "This audio output has no inputs. In SETUP, pick your interface's ASIO driver, then come back here.",
+                      14, T["accent"], True, "w")
+            y += 30
+        if self.audio.in_error:
+            self.text(40, y, self.audio.in_error[:120], 13, "#d9534f", False, "w")
+            y += 28
+        for line in ("Mono inputs (a mic, a guitar) are heard in both speakers. HEAR INPUT (knob 7) sets how loud you hear it live.",
+                     "With a mic, use headphones so the speakers don't feed back. The delay of your interface is made up for, "
+                     "so what you record lands in time."):
+            self.text(40, y, line, 13, T["ink_dim"], False, "w")
+            y += 26
+
+    def pick_loop_input(self, ch):
+        self.state.loop_input = ch
+        self.state.dirty = True
+        self.state.save()
+        self.close_overlay()
+        self.start_audio()
+
+    # ---------------------------------------------------------------- my loops (folders of WAVs)
+    def loops_root(self):
+        home = os.path.expanduser("~")
+        music = os.path.join(home, "Music")
+        return os.path.join(music if os.path.isdir(music) else home, "PotentialBox Loops")
+
+    def loop_slot_dir(self, i):
+        return os.path.join(self.loops_root(), f"Loop set {i + 1}")
+
+    def loop_slot_info(self, i):
+        try:
+            with open(os.path.join(self.loop_slot_dir(i), "loopset.json"), encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
+
+    def draw_my_loops(self):
+        self.overlay_base("My loops", "SAVES ALL 5 TRACKS AS WAV FILES IN MUSIC > POTENTIALBOX LOOPS")
+        self.button(1150, 172, 160, 56, "CLOSE", self.close_overlay, px=17)
+        now = time.time()
+        for i in range(SLOTS):
+            r, c = divmod(i, 4)
+            x0, y0 = 34 + c * 305, 215 + r * 260
+            info = self.loop_slot_info(i)
+            self.rect(x0, y0, 290, 245, fill=T["seg_inactive"], outline=T["line"])
+            self.text(x0 + 16, y0 + 24, f"LOOP SET {i + 1}", 13, T["ink_dim"], True, "w")
+            if info:
+                n = sum(1 for t in info.get("tracks", []) if t.get("file"))
+                self.readout(x0 + 145, y0 + 66, 258, 40, f"{n} TRACK{'S' if n != 1 else ''} · {info.get('bpm', 0):.0f} BPM")
+                self.text(x0 + 145, y0 + 104, f"saved {info.get('saved', '')}"[:34], 12, T["ink_dim"])
+                self.button(x0 + 145, y0 + 150, 258, 52, "LOAD", lambda j=i: self.load_loops(j), px=18)
+            else:
+                self.readout(x0 + 145, y0 + 66, 258, 40, "EMPTY")
+                self.rrect(x0 + 16, y0 + 124, 258, 52, 12, T["well"])
+                self.text(x0 + 145, y0 + 150, "NOTHING SAVED YET", 13, T["ink_faint"], True)
+            armed = self.armed and self.armed[:2] == ("loops", i) and now - self.armed[2] < 3
+            self.button(x0 + 145, y0 + 210, 258, 52, "TAP AGAIN TO REPLACE" if armed else "SAVE HERE",
+                        lambda j=i: self.save_loops(j), accent=True, px=15 if armed else 18)
+
+    def save_loops(self, i):
+        lp = self.audio.engine.looper
+        if not any(t.has_audio() for t in lp.tracks):
+            self.show_toast("NOTHING TO SAVE YET")
+            return
+        now = time.time()
+        if self.loop_slot_info(i) and not (self.armed and self.armed[:2] == ("loops", i) and now - self.armed[2] < 3):
+            self.armed = ("loops", i, now)
+            self.root.after(3100, self.request_redraw)
+            return
+        self.armed = None
+        d = self.loop_slot_dir(i)
+        try:
+            os.makedirs(d, exist_ok=True)
+            for f in os.listdir(d):
+                if f.lower().endswith(".wav") or f == "loopset.json":
+                    os.remove(os.path.join(d, f))
+            tracks = []
+            for t in lp.tracks:
+                td = dict(src=t.src, fx=t.fx, reverse=t.reverse, speed=t.speed, vol=self.state.params.norm[f"lp.t{t.i + 1}.vol"])
+                if t.has_audio():
+                    name = f"Track {t.i + 1}.wav"
+                    write_wav(os.path.join(d, name), np.clip(t.buf.copy(), -1, 1), lp.sr)
+                    td.update(file=name, idx0=t.idx0)
+                tracks.append(td)
+            with open(os.path.join(d, "loopset.json"), "w", encoding="utf-8") as f:
+                json.dump(dict(saved=time.strftime("%Y-%m-%d %H:%M"), bpm=self.audio.engine.bpm, sr=lp.sr,
+                               tracks=tracks), f, indent=1)
+            self.show_toast(f"SAVED LOOP SET {i + 1}")
+        except Exception as e:
+            log("save loops failed", e)
+            self.show_toast("COULDN'T SAVE THE LOOPS")
+
+    def load_loops(self, i):
+        info = self.loop_slot_info(i)
+        if not info:
+            return
+        from scipy.io import wavfile
+        lp = self.audio.engine.looper
+        d = self.loop_slot_dir(i)
+        data = []
+        try:
+            for j, td in enumerate(info.get("tracks", [])[:TRACKS]):
+                item = {k: td[k] for k in ("src", "fx", "reverse", "speed", "idx0") if k in td}
+                if td.get("file"):
+                    fs, x = wavfile.read(os.path.join(d, td["file"]))
+                    x = x / float(np.iinfo(x.dtype).max) if x.dtype.kind == "i" else x.astype(np.float64)
+                    if x.ndim == 1:
+                        x = np.stack([x, x], 1)
+                    if fs != lp.sr:
+                        n = int(len(x) * lp.sr / fs)
+                        pos = np.linspace(0, len(x) - 1, n)
+                        x = np.stack([np.interp(pos, np.arange(len(x)), x[:, c]) for c in range(2)], 1)
+                        if "idx0" in item:
+                            item["idx0"] = int(item["idx0"] * lp.sr / fs)
+                    item["buf"] = x[:, :2].astype(np.float32)
+                if "vol" in td:
+                    self.state.params.set_norm(f"lp.t{j + 1}.vol", float(td["vol"]))
+                data.append(item)
+        except Exception as e:
+            log("load loops failed", e)
+            self.show_toast("COULDN'T LOAD THOSE LOOPS")
+            return
+        lp.cmd("load", data)
+        bpm = info.get("bpm", 0)
+        self.show_toast(f"LOOP SET {i + 1} LOADED · TAP ALL PLAY" + (f" · SAVED AT {bpm:.0f} BPM" if bpm else ""), 2.5)
+        self.close_overlay()
+        self.root.after(300, lambda: self.save_loop_cfg())
 
     # ---------------------------------------------------------------- resample
     RS_SOURCES = {"Synth 1": "s1", "Synth 2": "s2", "Both synths": "synths", "Everything": "all"}
@@ -2066,7 +2446,7 @@ class App:
         if name == self.state.page and name in SUBPAGES:
             self.state.subpage[name] = (self.state.subpage.get(name, 0) + 1) % len(SUBPAGES[name])
         if name != self.state.page:
-            if self.state.page != "Live":
+            if self.state.page not in OWN_SCREEN_PAGES:
                 self.state.last_tab = self.state.page
             if name in NO_LOCK_PAGES:
                 self.lock_off()
@@ -2538,6 +2918,7 @@ class App:
             while self.action_q:
                 self.run_action(self.action_q.popleft())
             self.resample_tick()
+            self.loop_tick()
             now = time.time()
             if self.redraw_wanted or now - self.last_draw > 0.1:
                 self.draw()

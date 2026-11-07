@@ -27,6 +27,7 @@ It's pre-wired for the BeatStep Pro's factory settings, so you can plug it in an
 - **Filters and oscillators**: LP 24, LP 12, HP, band-pass and notch with key tracking; Synth 1 adds osc 2 tuning, FM, ring mod, hard sync and noise; both have pitch envelope, analog drift and pan
 - **Chord mode**: turn every step into a chord (13 chord types, 3 voicings), even though the BeatStep sequences one note at a time
 - **30 wavetables** on Synth 2, including 24 from the free AKWF single-cycle collection
+- **5-track looper** (Loop tab), inspired by the BOSS RC-505: record your interface's inputs (mic, guitar, keys) and PotentialBox itself, overdub, undo/redo, per-track FX, reverse and half/double speed, loops snapped to the BeatStep's bars and following its Play/Stop, played from the BeatStep's pads, saved as WAV loop sets
 - **Arpeggiator** on each synth: 5 patterns, tempo-synced rate, octaves, gate, swing, hold, chance and accents; arpeggiates chord mode
 - **Live tab**: 8 hold-to-play punch-in effects (beat repeat, roll, tape stop, reverse, filter sweep, gate, echo throw), Scene A/B with a morph knob and hold-for-B drops, a fill button, and the BeatStep's pads switch to these while the tab is open
 - **Step locks**: give any knob its own value on any of the 16 steps, following the BeatStep's clock (like Elektron parameter locks)
@@ -44,9 +45,9 @@ It's pre-wired for the BeatStep Pro's factory settings, so you can plug it in an
 - **Low lag**: ASIO support (your interface's own driver is chosen first), WASAPI exclusive and WASAPI
 - Follows the BeatStep Pro's tempo, and Stop sends All Notes Off
 
-| Live tab | Step locks | Arpeggiator |
+| Loop tab | Live tab | Step locks |
 |---|---|---|
-| ![Live tab](docs/images/live.png) | ![Step locks](docs/images/locks.png) | ![Synth 1 Arp+ page](docs/images/s1arp.png) |
+| ![Loop tab](docs/images/loop.png) | ![Live tab](docs/images/live.png) | ![Step locks](docs/images/locks.png) |
 
 | Macros | Synth modulation | Mod routing |
 |---|---|---|
