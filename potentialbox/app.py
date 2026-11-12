@@ -5,7 +5,7 @@ Seq 2 (MIDI ch 2)  -> Synth 2 (wavetable)
 Drum  (MIDI ch 10) -> Drums  (16 pads, notes 36-51)
 16 knobs (CNTRL mode) -> the 16 knobs on the current page
 
-Look: the shared Potential* dark theme (shared/potential-theme.conf).
+Look: the three PotentialSuite looks (Print Plate, Night Rack, Colour Block), picked on the Setup tab.
 """
 import os
 import sys
@@ -53,7 +53,7 @@ from potentialbox import kits  # noqa: E402
 from potentialbox.library import Library, map_kit, brand_of, build_index, filter_index, GROUPS, PAD_GROUP  # noqa: E402
 
 APP = "PotentialBox"
-VERSION = "1.8.1"
+VERSION = "1.9.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
@@ -139,30 +139,49 @@ def log(*a):
         pass
 
 
-# ----------------------------------------------------------------------------- theme
-DEFAULT_THEME = dict(
-    bg="17191d", panel="24282d", line="3a3f47", ink="e6e9ee", ink_dim="8b929c", ink_faint="5b616b",
-    accent="f2b34a", accent_hi="f5ab3d", knob_face="2a2e34", knob_ring="3a3f47", knob_dot="dc9b3c",
-    seg_active="3a2c0f", seg_inactive="1c1e22", seg_active_tx="f2b34a", btn_text="e6e9ee", btn_bg="2a2e34",
-    btn_on="a86f1a", tab_on="3a2c0f", tab_on_tx="f2b34a", lcd="0c0e10", well="0c0e10", chrome_ink="e6e9ee",
-)
+# ----------------------------------------------------------------------------- looks
+# The three PotentialSuite looks. PotentialBox's own colour is emerald. Each look is a palette (the same roles as the
+# old Potential theme) plus three shape numbers: round = how round the keys are (1 = as drawn), edge = an outline on
+# every key (0 = none), frame = how heavy panel outlines are. Colours that sit under text keep the text's contrast:
+# btn_on and seg_active are light where the text is dark and dark where the text is light.
+LOOKS = {
+    "print": dict(  # a warm printed panel, black ink, emerald as the second ink
+        name="Print Plate", round=0.7, edge=1.5, frame=1.5, narrow=False,
+        bg="d9d3c7", panel="dfd9cd", line="1b1a18", ink="1b1a18", ink_dim="4a463f", ink_faint="8a8374",
+        accent="0f6534", accent_hi="0f6534", knob_face="1b1a18", knob_ring="1b1a18", knob_dot="efe8d8",
+        seg_active="9fdcb8", seg_inactive="e7e1d5", seg_active_tx="0b3d20", btn_text="1b1a18", btn_bg="e7e1d5",
+        btn_on="6fcf97", tab_on="1b1a18", tab_on_tx="efe8d8", lcd="c9c2b3", well="c9c2b3", chrome_ink="1b1a18"),
+    "rack": dict(   # a navy rack unit, cream print, emerald LEDs
+        name="Night Rack", round=0.35, edge=1.0, frame=1.0, narrow=True,
+        bg="121826", panel="161d2f", line="4a5674", ink="ece5d3", ink_dim="aeb7cc", ink_faint="6a7694",
+        accent="4fe08a", accent_hi="4fe08a", knob_face="1e2740", knob_ring="ece5d3", knob_dot="ece5d3",
+        seg_active="1f4d36", seg_inactive="161d2f", seg_active_tx="4fe08a", btn_text="ece5d3", btn_bg="1e2740",
+        btn_on="2a6a47", tab_on="ece5d3", tab_on_tx="121826", lcd="080c16", well="080c16", chrome_ink="ece5d3"),
+    "block": dict(  # the whole window in emerald, heavy black rules, yellow for anything switched on
+        name="Colour Block", round=0.0, edge=3.0, frame=3.0, narrow=False,
+        bg="57d68d", panel="57d68d", line="0e1f1b", ink="0e1f1b", ink_dim="1d332c", ink_faint="2f8a5a",
+        accent="0e1f1b", accent_hi="0e1f1b", knob_face="0e1f1b", knob_ring="0e1f1b", knob_dot="f2ecdd",
+        seg_active="ffe14a", seg_inactive="f2ecdd", seg_active_tx="0e1f1b", btn_text="0e1f1b", btn_bg="f2ecdd",
+        btn_on="ffe14a", tab_on="0e1f1b", tab_on_tx="f2ecdd", lcd="f2ecdd", well="f2ecdd", chrome_ink="0e1f1b"),
+}
+LOOK_ORDER = ["print", "rack", "block"]
+T = {}        # the current look's colours, "#rrggbb"
+STYLE = {}    # the current look's name and shape numbers
 
 
-def load_theme():
-    t = dict(DEFAULT_THEME)
-    try:
-        with open(os.path.join(HERE, "potential-theme.conf"), encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("theme_") and "=" in line:
-                    k, v = line[6:].split("=", 1)
-                    t[k.strip()] = v.strip()
-    except Exception:
-        pass
-    return {k: "#" + v for k, v in t.items()}
+def apply_look(look):
+    """Make `look` the current one (in place: every drawing call reads T and STYLE)."""
+    d = LOOKS[look if look in LOOKS else "print"]
+    T.clear()
+    STYLE.clear()
+    for k, v in d.items():
+        if isinstance(v, str) and k != "name":
+            T[k] = "#" + v
+        else:
+            STYLE[k] = v
 
 
-T = load_theme()
+apply_look("print")
 
 
 # ----------------------------------------------------------------------------- state
@@ -194,6 +213,7 @@ class State:
         self.beat_mutes = []
         self.beat_bars = 2
         self.clock_master = False   # PotentialBox sends clock + Start/Stop to the BeatStep
+        self.look = "print"         # Print Plate / Night Rack / Colour Block (LOOKS)
         self.midi_off = []  # port names the user switched off
         self.bad_audio = []  # labels of outputs that froze or crashed on open
         self.audio_pending = None  # label being opened right now (set before open, cleared after)
@@ -340,6 +360,7 @@ class State:
         self.beat_mutes = [g for g in d.get("beat_mutes", []) if g in GROUP_NAMES]
         self.beat_bars = int(d.get("beat_bars", 2)) if int(d.get("beat_bars", 2)) in BAR_CHOICES else 2
         self.clock_master = bool(d.get("clock_master", False))
+        self.look = d.get("look") if d.get("look") in LOOKS else "print"
         self.last_tab = d.get("last_tab", "Perform") if d.get("last_tab") in TABS else "Perform"
         self.midi_off = d.get("midi_off", [])
         self.bad_audio = [x for x in d.get("bad_audio", []) if isinstance(x, str)]
@@ -355,7 +376,7 @@ class State:
                      locks=self.locks_json(), scenes=self.params.scenes, rec_stems=self.rec_stems, last_tab=self.last_tab,
                      loop_input=self.loop_input, loop_cfg=self.loop_cfg, beat=self.beat, beat_kit=self.beat_kit,
                      beat_mutes=self.beat_mutes, beat_bars=self.beat_bars,
-                     clock_master=self.clock_master)
+                     clock_master=self.clock_master, look=self.look)
             tmp = CFG_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(d, f, indent=1)
@@ -918,6 +939,7 @@ class App:
                 pass
         self.state = State()
         self.state.load()
+        apply_look(self.state.look)
         self.audio = Audio(self.state)
         self.audio.apply_kit()
         self.midi = Midi(self)
@@ -933,9 +955,7 @@ class App:
         self.cv.pack(fill="both", expand=True)
         self.scale, self.ox, self.oy = s, 0, 0
         self.fonts = {}
-        fams = set(tkfont.families(self.root))
-        self.fam = next((f for f in ("Bahnschrift", "Segoe UI", "DejaVu Sans", "Helvetica") if f in fams), "TkDefaultFont")
-        self.fam_b = next((f for f in ("Bahnschrift SemiBold", "Segoe UI Semibold") if f in fams), self.fam)
+        self.pick_fonts()
         self.hits = []
         self.redraw_wanted = True
         self.drag = None
@@ -1015,6 +1035,32 @@ class App:
     def Y(self, y):
         return self.oy + y * self.scale
 
+    def pick_fonts(self):
+        """The look's typefaces, from what Windows has. Every look stays on Bahnschrift, which the pages are laid out
+        for; Night Rack takes its narrower cut (a narrower face always fits)."""
+        fams = set(tkfont.families(self.root))
+        base = ("Bahnschrift", "Segoe UI", "DejaVu Sans", "Helvetica")
+        bold = ("Bahnschrift SemiBold", "Segoe UI Semibold")
+        if STYLE.get("narrow"):
+            base = ("Bahnschrift SemiCondensed",) + base
+            bold = ("Bahnschrift SemiBold SemiCondensed", "Bahnschrift SemiBold SemiConden") + bold
+        self.fam = next((f for f in base if f in fams), "TkDefaultFont")
+        self.fam_b = next((f for f in bold if f in fams), self.fam)
+        self.fonts = {}
+
+    def cycle_look(self):
+        """Setup tab: the LOOK key steps Print Plate > Night Rack > Colour Block. Shows at once and is saved."""
+        cur = self.state.look if self.state.look in LOOK_ORDER else "print"
+        self.state.look = LOOK_ORDER[(LOOK_ORDER.index(cur) + 1) % len(LOOK_ORDER)]
+        apply_look(self.state.look)
+        self.pick_fonts()
+        self.root.configure(bg=T["bg"])
+        self.cv.configure(bg=T["bg"])
+        self.state.dirty = True
+        self.state.save()
+        self.show_toast("LOOK: " + STYLE["name"].upper())
+        self.request_redraw()
+
     def font(self, px, bold=False):
         key = (int(px * self.scale * 10), bold)
         f = self.fonts.get(key)
@@ -1028,12 +1074,20 @@ class App:
         X, Y, s = self.X, self.Y, self.scale
         x0, y0, x1, y1 = X(x), Y(y), X(x + w), Y(y + h)
         r = min(r * s, (x1 - x0) / 2, (y1 - y0) / 2)
+        r *= STYLE["round"]                      # the look: rounder or squarer keys
+        edge = max(1, round(STYLE["edge"] * s)) if STYLE["edge"] else 1
+        if not outline and STYLE["edge"]:        # the look: every key gets an outline
+            outline = T["line"]
+        if r < 0.5:
+            self.cv.create_rectangle(x0, y0, x1, y1, fill=fill, outline=outline, width=edge if outline else 0)
+            return
         pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1, x1 - r, y1,
                x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
-        self.cv.create_polygon(pts, smooth=True, fill=fill, outline=outline)
+        self.cv.create_polygon(pts, smooth=True, fill=fill, outline=outline, width=edge if outline else 1)
 
     def rect(self, x, y, w, h, fill="", outline=""):
-        self.cv.create_rectangle(self.X(x), self.Y(y), self.X(x + w), self.Y(y + h), fill=fill, outline=outline)
+        width = max(1, round(STYLE["frame"] * self.scale)) if outline else 1
+        self.cv.create_rectangle(self.X(x), self.Y(y), self.X(x + w), self.Y(y + h), fill=fill, outline=outline, width=width)
 
     def text(self, x, y, s, px, color, bold=False, anchor="center"):
         self.cv.create_text(self.X(x), self.Y(y), text=s, font=self.font(px, bold), fill=color, anchor=anchor)
@@ -1208,7 +1262,7 @@ class App:
 
     def draw_header(self):
         self.rect(0, 0, W, 90, fill=T["bg"])
-        self.text(24, 34, "POTENTIALBOX", 30, T["accent"], True, "w")
+        self.text(24, 34, APP, 30, T["accent"], True, "w")
         rec = self.audio.engine.recorder
         if rec is not None:
             sec = int(rec.seconds())
@@ -2804,8 +2858,15 @@ class App:
         self.button(380, 670, 220, 80, "FACTORY CCs", self.factory_ccs, px=20)
         self.text(520, 640, "KNOB MODE", 12, T["ink_dim"], False, "w")
         self.seg(520, 656, 140, 44, ["absolute", "relative"], self.state.knob_mode, self.pick_knob_mode, vertical=False)
-        self.button(940, 670, 220, 80, "ALL NOTES OFF", self.panic, px=18)
-        self.button(1160, 670, 170, 80, "PAD ACTIONS", lambda: self.open_overlay(("actions",)), accent=True, px=16)
+        self.button(906, 670, 172, 80, "ALL NOTES OFF", self.panic, px=17)
+        self.button(1070, 670, 140, 80, "PAD ACTIONS", lambda: self.open_overlay(("actions",)), accent=True, px=15)
+        # the look: one key steps through the three (it shows at once)
+        self.rrect(1150, 630, 106, 80, 12, T["btn_bg"])
+        self.text(1203, 650, "LOOK", 12, T["ink_dim"], True)
+        first, _, rest = STYLE["name"].upper().partition(" ")
+        self.text(1203, 672, first, 14, T["btn_text"], True)
+        self.text(1203, 692, rest, 14, T["btn_text"], True)
+        self.hit(1150, 630, 106, 80, self.cycle_look)
 
     # ---------------------------------------------------------------- input
     def to_design(self, e):

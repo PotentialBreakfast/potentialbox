@@ -43,6 +43,7 @@ It's pre-wired for the BeatStep Pro's factory settings, so you can plug it in an
 - **16 performance macros**: S1 Sweep, S2 Sweep, Acid, Wobble, Bright, Pluck, Glide, Wide, Dub Throw, Space, DJ Filter, Build-Up, Lo-Fi, Drum Smash, Tighten, Glue. Turn one back to zero and your sound is exactly as it was
 - **Effects**: tempo-synced ping-pong delay, reverb, DJ filter and lo-fi crusher
 - **Save slots**: 8 sounds per synth, plus Init sounds and Reset All to start fresh
+- **Three looks**: Print Plate (the default), Night Rack and Colour Block. Tap LOOK on the Setup tab; it changes at once and is remembered
 - **Low lag**: ASIO support (your interface's own driver is chosen first), WASAPI exclusive and WASAPI
 - Follows the BeatStep Pro's tempo, and Stop sends All Notes Off
 

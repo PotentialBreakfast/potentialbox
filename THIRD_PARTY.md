@@ -17,7 +17,7 @@ under their own licences.
 ## Fonts and theme
 
 The app uses the fonts already on your PC (Bahnschrift on Windows 10/11). The manual is set in Barlow Semi Condensed
-(SIL Open Font License 1.1). The colour theme is the shared Potential theme (`potentialbox/potential-theme.conf`).
+(SIL Open Font License 1.1). The three looks are the PotentialSuite looks, defined in `potentialbox/app.py`.
 
 ## Sounds
 

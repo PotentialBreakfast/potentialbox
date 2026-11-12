@@ -72,6 +72,10 @@ SYNTH PAGES: MAIN, OSC+, MOD (new in 1.5)
     OSC+ page: INIT OSC+ PAGE.  MAIN page: INIT SYNTH 1 / 2 = the whole synth.
   UNDO INIT shows for a few seconds afterwards if you change your mind.
 
+NEW IN 1.9.0
+  THREE LOOKS: Print Plate (new, the default), Night Rack and Colour Block. Setup tab > tap the LOOK key
+  to step through them. It changes at once and is remembered.
+
 NEW IN 1.8.1
   Beats are 2 bars (LENGTH: 1/2/4) with an ending that leads back to the start; NEW ENDING.
   SIMPLER / BUSIER now add or take away a layer each tap.
@@ -135,4 +139,4 @@ Everything saves by itself. Running the installer again updates the app and keep
 Problems? %APPDATA%\PotentialBox\log.txt says what went wrong.
 Uninstall: right-click uninstall.ps1 in %LOCALAPPDATA%\PotentialBox > Run with PowerShell.
 
-The look uses the shared Potential* dark theme (potential-theme.conf).
+The three looks (Print Plate, Night Rack, Colour Block) are in potentialbox/app.py (LOOKS).

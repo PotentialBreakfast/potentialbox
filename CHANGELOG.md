@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.0
+- **Three looks.** PotentialBox has a new default look, **Print Plate** (a warm printed panel), plus **Night Rack** (dark rack unit) and **Colour Block** (flat and bold), all in PotentialBox's own colour, emerald. Tap the **LOOK** key on the Setup tab to step through them. The change shows at once and is remembered.
+- The name at the top now reads **PotentialBox**, as it is written everywhere else.
+- Sounds, settings and everything saved carry over unchanged.
+
 ## 1.8.1
 - Beats are now **2 bars** by default (LENGTH: 1, 2 or 4 bars), and the last bar **ends with a change that leads back to the start**: snare roll or pickup, tom run, open hat, kick run, kick skip or a drop-out with a crash back in. NEW ENDING picks another.
 - **SIMPLER / BUSIER** now change the beat itself, one layer per tap (16th hats, ghost snares, extra kick, shaker, congas / no percussion, no maybe-hits, no ghosts, 8th hats), shown in the grid and sent to the BeatStep. The knob is now called Random hits.
