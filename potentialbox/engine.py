@@ -20,7 +20,7 @@ from scipy.signal import sosfilt, lfilter
 TWO_PI = 2.0 * math.pi
 DIVISIONS = [("1/16", 0.25), ("1/8T", 1 / 3), ("1/8", 0.5), ("3/16", 0.75), ("1/4", 1.0), ("3/8", 1.5)]
 BASE_TABLES = ["Analog", "Vowel", "Harmonic", "PWM", "FM Bell", "Digital"]
-LFO_SHAPES = ["Sine", "Triangle", "Saw up", "Saw down", "Square", "Random", "Smooth random"]
+LFO_SHAPES = ["Sine", "Triangle", "Saw up", "Saw down", "Square", "Random", "Smooth random", "Step"]
 LFO_SYNC = [("Free", None), ("4 bars", 16), ("2 bars", 8), ("1 bar", 4), ("1/2", 2), ("1/4", 1), ("1/8", 0.5),
             ("1/16", 0.25), ("1/32", 0.125), ("1/4T", 2 / 3), ("1/8T", 1 / 3), ("1/16T", 1 / 6)]
 MOD_SOURCES = ["Off", "LFO 1", "LFO 2", "Mod env", "Amp env", "Velocity", "Note", "Random"]
@@ -285,6 +285,8 @@ def _build_specs():
             a(Param(f"{pre}.l{L}shape", f"LFO {L} shape", 0, len(LFO_SHAPES) - 1, shape, step=1, choices=LFO_SHAPES))
             a(Param(f"{pre}.l{L}rate", f"LFO {L} speed", 0.05, 20, rate, "exp", unit="Hz"))
             a(Param(f"{pre}.l{L}sync", f"LFO {L} sync", 0, len(LFO_SYNC) - 1, 0, step=1, choices=[x[0] for x in LFO_SYNC]))
+            for st in range(16):
+                a(Param(f"{pre}.l{L}step{st}", f"LFO {L} step {st + 1}", -1, 1, 0.0, unit="+-%"))
         a(Param(pre + ".mea", "Mod env attack", 0.001, 2, 0.005, "exp", unit="s"))
         a(Param(pre + ".med", "Mod env decay", 0.01, 4, 0.3, "exp", unit="s"))
         for j, (src, dst) in enumerate(DEFAULT_ROUTES[pre]):
@@ -393,10 +395,14 @@ PAGES = collections.OrderedDict([
                      "s1.arpacc", "dk.s1", "eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "s1.pan", "fx.s1", "rv.s1", "s1.vol"]),
     ("Synth 1 Env", ["s1.attack", "s1.decay", "s1.sustain", "s1.decay2", "s1.sustain2", "s1.release", "s1.fdecay", "s1.envamt",
                     "s1.mea", "s1.med", "s1.penv", "s1.pdec", "s1.glide", "s1.drift", "s1.vol", "s1.vol"]),
+    ("Synth 1 LFO1 Steps", [f"s1.l1step{i}" for i in range(16)]),
+    ("Synth 1 LFO2 Steps", [f"s1.l2step{i}" for i in range(16)]),
     ("Synth 2 Arp", ["s2.arp", "s2.arprate", "s2.arpoct", "s2.arpgate", "s2.arpswing", "s2.arphold", "s2.arpchance",
                      "s2.arpacc", "dk.s2", "eq.s2.lo", "eq.s2.mid", "eq.s2.hi", "s2.pan", "fx.s2", "rv.s2", "s2.vol"]),
     ("Synth 2 Env", ["s2.attack", "s2.decay", "s2.sustain", "s2.decay2", "s2.sustain2", "s2.release", "s2.fdecay", "s2.envamt",
                     "s2.mea", "s2.med", "s2.penv", "s2.pdec", "s2.glide", "s2.drift", "s2.vol", "s2.vol"]),
+    ("Synth 2 LFO1 Steps", [f"s2.l1step{i}" for i in range(16)]),
+    ("Synth 2 LFO2 Steps", [f"s2.l2step{i}" for i in range(16)]),
     ("Drums 1-8", [f"dr.p{i}.tune" for i in range(1, 9)] + [f"dr.p{i}.decay" for i in range(1, 9)]),
     ("Drums 1-8 Mix", [f"dr.p{i}.level" for i in range(1, 9)] + [f"dr.p{i}.pan" for i in range(1, 9)]),
     ("Drums 1-8 Groove", [f"dr.p{i}.chance" for i in range(1, 9)] + [f"dr.p{i}.cond" for i in range(1, 9)]),
@@ -466,8 +472,10 @@ PRESETS = {
 
 # tab -> [(sub-page button, page)]; tapping a tab again goes to its next sub-page
 SUBPAGES = {
-    "Synth 1": [("Main", "Synth 1"), ("Osc+", "Synth 1 Osc+"), ("Mod", "Synth 1 Mod"), ("Arp+", "Synth 1 Arp"), ("Env", "Synth 1 Env")],
-    "Synth 2": [("Main", "Synth 2"), ("Osc+", "Synth 2 Osc+"), ("Mod", "Synth 2 Mod"), ("Arp+", "Synth 2 Arp"), ("Env", "Synth 2 Env")],
+    "Synth 1": [("Main", "Synth 1"), ("Osc+", "Synth 1 Osc+"), ("Mod", "Synth 1 Mod"), ("Arp+", "Synth 1 Arp"), ("Env", "Synth 1 Env"),
+                ("LFO1 Steps", "Synth 1 LFO1 Steps"), ("LFO2 Steps", "Synth 1 LFO2 Steps")],
+    "Synth 2": [("Main", "Synth 2"), ("Osc+", "Synth 2 Osc+"), ("Mod", "Synth 2 Mod"), ("Arp+", "Synth 2 Arp"), ("Env", "Synth 2 Env"),
+                ("LFO1 Steps", "Synth 2 LFO1 Steps"), ("LFO2 Steps", "Synth 2 LFO2 Steps")],
     "Drums 1-8": [("Main", "Drums 1-8"), ("Mix", "Drums 1-8 Mix"), ("Groove", "Drums 1-8 Groove")],
     "Drums 9-16": [("Main", "Drums 9-16"), ("Mix", "Drums 9-16 Mix"), ("Groove", "Drums 9-16 Groove")],
     "Mix": [("Main", "Mix"), ("EQ", "Mix EQ")],
@@ -1136,9 +1144,16 @@ class MonoSynth:
             name = MOD_SOURCES[si]
             if name.startswith("LFO"):
                 L = int(name[-1]) - 1
-                if lfo[L] is None:
-                    lfo[L] = self.lfos[L].render(n, self.sr, self.lfo_hz(L + 1), int(v[f"{pre}.l{L+1}shape"]))
-                s = lfo[L]
+                sh = int(v[f"{pre}.l{L+1}shape"])
+                if sh == LFO_SHAPES.index("Step"):
+                    step = self.eng.step if getattr(self.eng, "step", None) is not None else 0
+                    step = step % 16
+                    val = v[f"{pre}.l{L+1}step{step}"]
+                    s = np.full(n, val, dtype=float)
+                else:
+                    if lfo[L] is None:
+                        lfo[L] = self.lfos[L].render(n, self.sr, self.lfo_hz(L + 1), sh)
+                    s = lfo[L]
             elif name == "Mod env":
                 s = me
             elif name == "Amp env":
