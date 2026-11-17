@@ -257,6 +257,8 @@ def _build_specs():
         a(Param(pre + ".attack", "Attack", 0.001, 2, 0.002, "exp", unit="s"))
         a(Param(pre + ".decay", "Decay", 0.01, 4, 0.4 if pre == "s1" else 0.6, "exp", unit="s"))
         a(Param(pre + ".sustain", "Sustain", 0, 1, 0.6 if pre == "s1" else 0.5, unit="%"))
+        a(Param(pre + ".decay2", "Decay 2", 0, 4, 0.0, unit="s"))
+        a(Param(pre + ".sustain2", "Sustain 2", 0, 1, 0.0, unit="%"))
         a(Param(pre + ".release", "Release", 0.005, 3, 0.15 if pre == "s1" else 0.4, "exp", unit="s"))
         a(Param(pre + ".glide", "Glide (slides)", 0.005, 1, 0.06, "exp", unit="s"))
         a(Param(pre + ".vol", name + " volume", 0, 1, 0.7, unit="%"))
@@ -389,8 +391,12 @@ PAGES = collections.OrderedDict([
                     + [f"s2.m{j}amt" for j in range(1, 13)]),
     ("Synth 1 Arp", ["s1.arp", "s1.arprate", "s1.arpoct", "s1.arpgate", "s1.arpswing", "s1.arphold", "s1.arpchance",
                      "s1.arpacc", "dk.s1", "eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "s1.pan", "fx.s1", "rv.s1", "s1.vol"]),
+    ("Synth 1 Env", ["s1.attack", "s1.decay", "s1.sustain", "s1.decay2", "s1.sustain2", "s1.release", "s1.fdecay", "s1.envamt",
+                    "s1.mea", "s1.med", "s1.penv", "s1.pdec", "s1.glide", "s1.drift", "s1.vol", "s1.vol"]),
     ("Synth 2 Arp", ["s2.arp", "s2.arprate", "s2.arpoct", "s2.arpgate", "s2.arpswing", "s2.arphold", "s2.arpchance",
                      "s2.arpacc", "dk.s2", "eq.s2.lo", "eq.s2.mid", "eq.s2.hi", "s2.pan", "fx.s2", "rv.s2", "s2.vol"]),
+    ("Synth 2 Env", ["s2.attack", "s2.decay", "s2.sustain", "s2.decay2", "s2.sustain2", "s2.release", "s2.fdecay", "s2.envamt",
+                    "s2.mea", "s2.med", "s2.penv", "s2.pdec", "s2.glide", "s2.drift", "s2.vol", "s2.vol"]),
     ("Drums 1-8", [f"dr.p{i}.tune" for i in range(1, 9)] + [f"dr.p{i}.decay" for i in range(1, 9)]),
     ("Drums 1-8 Mix", [f"dr.p{i}.level" for i in range(1, 9)] + [f"dr.p{i}.pan" for i in range(1, 9)]),
     ("Drums 1-8 Groove", [f"dr.p{i}.chance" for i in range(1, 9)] + [f"dr.p{i}.cond" for i in range(1, 9)]),
@@ -460,8 +466,8 @@ PRESETS = {
 
 # tab -> [(sub-page button, page)]; tapping a tab again goes to its next sub-page
 SUBPAGES = {
-    "Synth 1": [("Main", "Synth 1"), ("Osc+", "Synth 1 Osc+"), ("Mod", "Synth 1 Mod"), ("Arp+", "Synth 1 Arp")],
-    "Synth 2": [("Main", "Synth 2"), ("Osc+", "Synth 2 Osc+"), ("Mod", "Synth 2 Mod"), ("Arp+", "Synth 2 Arp")],
+    "Synth 1": [("Main", "Synth 1"), ("Osc+", "Synth 1 Osc+"), ("Mod", "Synth 1 Mod"), ("Arp+", "Synth 1 Arp"), ("Env", "Synth 1 Env")],
+    "Synth 2": [("Main", "Synth 2"), ("Osc+", "Synth 2 Osc+"), ("Mod", "Synth 2 Mod"), ("Arp+", "Synth 2 Arp"), ("Env", "Synth 2 Env")],
     "Drums 1-8": [("Main", "Drums 1-8"), ("Mix", "Drums 1-8 Mix"), ("Groove", "Drums 1-8 Groove")],
     "Drums 9-16": [("Main", "Drums 9-16"), ("Mix", "Drums 9-16 Mix"), ("Groove", "Drums 9-16 Groove")],
     "Mix": [("Main", "Mix"), ("EQ", "Mix EQ")],
@@ -659,42 +665,92 @@ class ADSR:
 
     def gate_off(self):
         if self.stage:
-            self.stage = 3
+            self.stage = 5
+            self.t = 0
 
-    def render(self, n, a, d, s, r):
+    def render(self, n, a, d, s, r, d2=None, s2=None):
         out = np.empty(n)
         i, sr = 0, self.sr
+        multi = d2 is not None and d2 > 1e-6
+        if not multi:
+            s2 = s
+            d2 = d
         while i < n:
             if self.stage == 0:
                 out[i:] = 0.0
                 self.v = 0.0
+                self.t = 0
                 break
-            if self.stage == 1:
+            if self.stage == 1:   # attack
                 inc = 1.0 / max(a * sr, 1.0)
                 m = min(int(math.ceil((1.0 - self.v) / inc)), n - i)
                 if m <= 0:
-                    self.v, self.stage = 1.0, 2
+                    self.v, self.stage, self.t = 1.0, 2, 0
                     continue
                 seg = np.minimum(self.v + inc * np.arange(1, m + 1), 1.0)
                 out[i:i + m] = seg
                 self.v = float(seg[-1])
                 i += m
                 if self.v >= 1.0 - 1e-9:
-                    self.v, self.stage = 1.0, 2
-            elif self.stage == 2:
+                    self.v, self.stage, self.t = 1.0, 2, 0
+            elif self.stage == 2:   # decay 1 -> s
+                dur = max(1, int(d * sr))
+                left = dur - self.t
+                if left <= 0:
+                    self.v = float(s)
+                    self.stage = 3 if multi else 4
+                    self.t = 0
+                    continue
+                m = min(left, n - i)
                 k = math.exp(-4.6 / max(d * sr, 1.0))
-                seg = s + (self.v - s) * k ** np.arange(1, n - i + 1)
-                out[i:] = seg
+                seg = s + (self.v - s) * k ** np.arange(1, m + 1)
+                out[i:i + m] = seg
                 self.v = float(seg[-1])
+                i += m
+                self.t += m
+                if self.t >= dur:
+                    self.v = float(s)
+                    self.stage = 3 if multi else 4
+                    self.t = 0
+            elif self.stage == 3:   # decay 2 -> s2 (multi) or sustain (single, unused)
+                if not multi:
+                    self.stage = 4
+                    continue
+                dur = max(1, int(d2 * sr))
+                left = dur - self.t
+                if left <= 0:
+                    self.v = float(s2)
+                    self.stage = 4
+                    self.t = 0
+                    continue
+                m = min(left, n - i)
+                k = math.exp(-4.6 / max(d2 * sr, 1.0))
+                seg = s2 + (self.v - s2) * k ** np.arange(1, m + 1)
+                out[i:i + m] = seg
+                self.v = float(seg[-1])
+                i += m
+                self.t += m
+                if self.t >= dur:
+                    self.v = float(s2)
+                    self.stage = 4
+                    self.t = 0
+            elif self.stage == 4:   # sustain (hold)
+                out[i:] = self.v if (multi and s2 is not None) else s
+                # single-stage sustain level is s
+                if not multi:
+                    out[i:] = s if abs(s - self.v) < 1e-9 else self.v
                 break
-            else:
+            else:   # release
                 k = math.exp(-4.6 / max(r * sr, 1.0))
                 seg = self.v * k ** np.arange(1, n - i + 1)
                 out[i:] = seg
                 self.v = float(seg[-1])
                 if self.v < 1e-5:
-                    self.v, self.stage = 0.0, 0
+                    self.v, self.stage, self.t = 0.0, 0, 0
                 break
+        # sustain hold value consistency
+        if self.stage == 4 and i < n:
+            out[i:] = (s2 if multi else s)
         return out
 
 
@@ -1178,7 +1234,8 @@ else:
         v = self.eng.p.val
         pre = self.pre
         a = v[pre + ".attack"]
-        ae = self.amp.render(n, a, v[pre + ".decay"], v[pre + ".sustain"], v[pre + ".release"])
+        ae = self.amp.render(n, a, v[pre + ".decay"], v[pre + ".sustain"],
+                             v[pre + ".release"], v[pre + ".decay2"], v[pre + ".sustain2"])
         fe = self.fenv.render(n, a, fdecay, 0.0, fdecay)
         me = self.menv.render(n, v[pre + ".mea"], v[pre + ".med"], 0.0, v[pre + ".med"])
         return ae, fe, me
