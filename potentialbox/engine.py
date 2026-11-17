@@ -10,6 +10,9 @@ import math
 import time
 import os
 import collections
+APP = "PotentialBox"
+CFG_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.config"), APP)
+CFG_FILE = os.path.join(CFG_DIR, "state.json")
 
 import numpy as np
 from scipy.signal import sosfilt, lfilter
@@ -59,7 +62,56 @@ def _load_akwf():
 
 
 AKWF_NAMES, AKWF_SPECTRA = _load_akwf()
-TABLE_NAMES = BASE_TABLES + AKWF_NAMES  # 6 built-in + 24 AKWF (CC0) tables
+
+
+def _load_user_wavetables():
+    """Append single-cycle WAVs from %APPDATA%\\PotentialBox\\Wavetables (or state.json's wavetable_dir)."""
+    global AKWF_NAMES, AKWF_SPECTRA
+    try:
+        import json
+        folder = os.path.join(CFG_DIR, "Wavetables")
+        if os.path.isfile(CFG_FILE):
+            try:
+                d = json.load(open(CFG_FILE))
+                if isinstance(d, dict) and d.get("wavetable_dir"):
+                    folder = d["wavetable_dir"]
+            except Exception:
+                pass
+        if not folder or not os.path.isdir(folder):
+            return
+        names, spectra = [], []
+        for fn in sorted(os.listdir(folder)):
+            if not fn.lower().endswith(".wav"):
+                continue
+            try:
+                from scipy.io import wavfile
+                sr, data = wavfile.read(os.path.join(folder, fn))
+                if isinstance(data, np.ndarray) and data.ndim > 1:
+                    data = data.mean(axis=1)
+                data = np.asarray(data, dtype=float)
+                if data.size < 8:
+                    continue
+                data = data / max(float(np.max(np.abs(data))), 1e-9)
+                X = np.fft.rfft(data, n=2048)
+                X[0] = 0.0
+                names.append(os.path.splitext(fn)[0])
+                spectra.append(X[np.newaxis, :])
+            except Exception:
+                continue
+        if not names:
+            return
+        AKWF_NAMES = list(AKWF_NAMES) + names
+        arr = np.array(spectra)
+        if AKWF_SPECTRA is None:
+            AKWF_SPECTRA = arr
+        else:
+            AKWF_SPECTRA = np.concatenate([AKWF_SPECTRA, arr], axis=0)
+    except Exception:
+        pass
+
+
+_load_user_wavetables()
+TABLE_NAMES = BASE_TABLES + AKWF_NAMES  # 6 built-in + 24 AKWF (CC0) + user tables
 
 KIT_NAMES = ["Kick", "808", "Snare", "Clap", "Closed Hat", "Open Hat", "Low Tom", "Mid Tom",
              "High Tom", "Rim", "Cowbell", "Clave", "Shaker", "Crash", "Zap", "Conga"]
