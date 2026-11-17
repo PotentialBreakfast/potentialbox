@@ -240,6 +240,7 @@ class State:
         self.beat = None          # Beat.to_json()
         self.beat_kit = True      # picking a genre also loads its kit
         self.arrangement = []      # list of beat dicts (pattern chain)
+        self.locked_pads = set()  # pads kept when randomising a kit
         self.beat_mutes = []
         self.beat_bars = 2
         self.clock_master = False   # PotentialBox sends clock + Start/Stop to the BeatStep
@@ -387,6 +388,7 @@ class State:
         self.loop_cfg = d.get("loop_cfg", {}) if isinstance(d.get("loop_cfg"), dict) else {}
         self.beat = d.get("beat") if isinstance(d.get("beat"), dict) else None
         self.arrangement = [x for x in d.get("arrangement", []) if isinstance(x, dict)] if isinstance(d.get("arrangement"), list) else []
+        self.locked_pads = set(x for x in d.get("locked_pads", []) if isinstance(x, int) and 0 <= x < 16)
         self.beat_kit = bool(d.get("beat_kit", True))
         self.beat_mutes = [g for g in d.get("beat_mutes", []) if g in GROUP_NAMES]
         self.beat_bars = int(d.get("beat_bars", 2)) if int(d.get("beat_bars", 2)) in BAR_CHOICES else 2
@@ -407,7 +409,7 @@ class State:
                      locks=self.locks_json(), scenes=self.params.scenes, rec_stems=self.rec_stems, last_tab=self.last_tab,
                      loop_input=self.loop_input, loop_cfg=self.loop_cfg, beat=self.beat, beat_kit=self.beat_kit,
                      beat_mutes=self.beat_mutes, beat_bars=self.beat_bars,
-                     arrangement=self.arrangement,
+                     arrangement=self.arrangement, locked_pads=sorted(self.locked_pads),
                      clock_master=self.clock_master, look=self.look)
             tmp = CFG_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -1722,6 +1724,9 @@ class App:
         rx = 1100
         self.button(rx, 240, 300, 64, f"RANDOM {self.pe['group'].upper()}", self.pe_random, accent=True, px=17)
         self.button(rx, 318, 300, 56, "PLAY PAD", lambda: self.test_pad(p), px=17)
+        locked = p in self.state.locked_pads
+        self.button(rx, 382, 300, 56, "UNLOCK PAD" if locked else "LOCK PAD",
+                    lambda pp=p: self.toggle_pad_lock(pp), accent=locked, px=17)
         scope_m = (self.state.kit.get("library") or [None])[0]
         self.seg(950, 366, 150, 44, ["all", "machine"], self.pe["scope"], self.pe_scope, vertical=False)
         self.text(rx, 422, ("ONLY " + scope_m.upper())[:30] if scope_m else "LOAD A MACHINE KIT TO USE 'MACHINE'", 10, T["ink_dim"])
@@ -1729,6 +1734,15 @@ class App:
         self.button(rx, 540, 300, 52, "SAVE AS MY KIT", lambda: self.open_overlay(("mykits",)), px=16)
         self.text(rx, 590, f"NOW: {where.upper()[:28]}", 10, T["ink_dim"])
         self.button(rx, 650, 300, 60, "DONE", self.close_overlay, px=18)
+
+    def toggle_pad_lock(self, pad):
+        if pad in self.state.locked_pads:
+            self.state.locked_pads.discard(pad)
+            self.show_toast(f"PAD {pad + 1} UNLOCKED")
+        else:
+            self.state.locked_pads.add(pad)
+            self.show_toast(f"PAD {pad + 1} LOCKED")
+        self.state.dirty = True
 
     def pe_pick_pad(self, i):
         self.sel_pad = i
@@ -1894,12 +1908,16 @@ class App:
             self.preset_step(pre, 1)
             self.show_toast(f"SYNTH {pre[1]}: {self.state.preset_name[pre].upper()}", 1.2)
         elif aid == "rand_kit":
+            locked = self._locked_pad_data()
             if self.audio.library().ok():
                 self.random_machine()
             else:
                 import random as _r
                 self.select_kit("factory", _r.randrange(len(kits.KITS)))
                 self.show_toast(self.audio.engine.drums.kit_name.upper(), 1.2)
+            self._restore_locked_pads(locked)
+            if locked:
+                self.show_toast("RANDOM KIT (LOCKED PADS KEPT)", 1.2)
         elif aid in ("next_kit", "prev_kit"):
             self.kit_step(1 if aid == "next_kit" else -1)
             self.show_toast(self.audio.engine.drums.kit_name.upper()[:34], 1.2)
@@ -3456,6 +3474,20 @@ class App:
 
     def back_to_machines(self):
         self.lib_machine = None
+
+    def _locked_pad_data(self):
+        eng = self.audio.engine
+        out = {}
+        for p in self.state.locked_pads:
+            out[p] = (list(eng.drums.samples[p]), eng.drums.names[p], dict(eng.drums.sources[p]))
+        return out
+
+    def _restore_locked_pads(self, data):
+        eng = self.audio.engine
+        for p, (s, n, src) in data.items():
+            eng.drums.samples[p] = s
+            eng.drums.names[p] = n
+            eng.drums.sources[p] = src
 
     def random_machine(self):
         lib = self.audio.library()
