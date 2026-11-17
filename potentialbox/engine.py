@@ -865,9 +865,9 @@ class MonoSynth:
         self.comb_idx = 0
         self.comb_delay = 1
         if getattr(self, "channels", 1) > 1:
-    self.formant_zi = [np.zeros((1, 2, self.channels)) for _ in range(3)]
-else:
-    self.formant_zi = [np.zeros((1, 2)) for _ in range(3)]
+            self.formant_zi = [np.zeros((1, 2, self.channels)) for _ in range(3)]
+        else:
+            self.formant_zi = [np.zeros((1, 2)) for _ in range(3)]
         self.ptime = 10 ** 9
         self.drift_val = np.zeros(self.MAXV)
         self.drift_tgt = self.rng.uniform(-1, 1, self.MAXV)
@@ -1169,9 +1169,9 @@ else:
                 self.comb_delay = 1
             if ftype == 6:
                 if getattr(self, "channels", 1) > 1:
-    self.formant_zi = [np.zeros((1, 2, self.channels)) for _ in range(3)]
-else:
-    self.formant_zi = [np.zeros((1, 2)) for _ in range(3)]
+                    self.formant_zi = [np.zeros((1, 2, self.channels)) for _ in range(3)]
+                else:
+                    self.formant_zi = [np.zeros((1, 2)) for _ in range(3)]
         reso0 = v[pre + ".reso"]
         base = v[pre + ".cutoff"] * 2.0 ** ((self.cur - 60.0) / 12.0 * v[pre + ".keytrk"])
         amt = v[pre + ".envamt"] * 7.0
