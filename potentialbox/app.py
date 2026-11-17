@@ -984,7 +984,7 @@ class App:
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         s = min(1.0, sw * 0.92 / W, sh * 0.86 / H)
         self.root.geometry(f"{int(W*s)}x{int(H*s)}")
-        self.root.minsize(640, 400)
+        self.root.minsize(900, 800)
         self.cv = tk.Canvas(self.root, bg=T["bg"], highlightthickness=0, bd=0)
         self.cv.pack(fill="both", expand=True)
         self.scale, self.ox, self.oy = s, 0, 0
