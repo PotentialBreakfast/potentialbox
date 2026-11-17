@@ -1729,6 +1729,12 @@ class App:
         locked = p in self.state.locked_pads
         self.button(rx, 382, 300, 56, "UNLOCK PAD" if locked else "LOCK PAD",
                     lambda pp=p: self.toggle_pad_lock(pp), accent=locked, px=17)
+        self.button(rx, 446, 300, 44, "TRIM", self.sample_trim, px=16)
+        self.button(rx, 494, 300, 44, "NORMALIZE", self.sample_normalize, px=14)
+        self.button(rx, 542, 148, 44, "FADE IN", self.sample_fade_in, px=13)
+        self.button(rx + 152, 542, 148, 44, "FADE OUT", self.sample_fade_out, px=13)
+        self.button(rx, 590, 148, 44, "PITCH -1", lambda: self.sample_pitch(-1), px=13)
+        self.button(rx + 152, 590, 148, 44, "PITCH +1", lambda: self.sample_pitch(1), px=13)
         scope_m = (self.state.kit.get("library") or [None])[0]
         self.seg(950, 366, 150, 44, ["all", "machine"], self.pe["scope"], self.pe_scope, vertical=False)
         self.text(rx, 422, ("ONLY " + scope_m.upper())[:30] if scope_m else "LOAD A MACHINE KIT TO USE 'MACHINE'", 10, T["ink_dim"])
@@ -1745,6 +1751,76 @@ class App:
             self.state.locked_pads.add(pad)
             self.show_toast(f"PAD {pad + 1} LOCKED")
         self.state.dirty = True
+
+    def _edit_pad_sample(self, fn):
+        eng = self.audio.engine
+        p = self.sel_pad
+        layers = eng.drums.samples[p]
+        if not layers:
+            self.show_toast("NO SAMPLE")
+            return
+        x = np.asarray(layers[0], dtype=np.float64).copy()
+        x = fn(x, eng.sr)
+        if x is None or len(x) < 2:
+            self.show_toast("FAILED")
+            return
+        layers[0] = np.append(x, 0.0).astype(np.float32)
+        self.state.dirty = True
+
+    def sample_trim(self):
+        def fn(x, sr):
+            thr = max(1e-4, 0.01 * float(np.max(np.abs(x))))
+            idx = np.where(np.abs(x) > thr)[0]
+            if len(idx) == 0:
+                return x
+            start = max(0, int(idx[0]) - int(0.001 * sr))
+            end = min(len(x), int(idx[-1]) + int(0.001 * sr))
+            return x[start:end]
+        self._edit_pad_sample(fn)
+        self.show_toast(f"PAD {self.sel_pad + 1} TRIMMED")
+
+    def sample_normalize(self):
+        def fn(x, sr):
+            peak = float(np.max(np.abs(x))) if x.size else 0.0
+            if peak <= 1e-6:
+                return x
+            return x / peak * 0.99
+        self._edit_pad_sample(fn)
+        self.show_toast(f"PAD {self.sel_pad + 1} NORMALIZED")
+
+    def sample_fade_in(self):
+        def fn(x, sr):
+            n = len(x)
+            f = min(n, int(0.05 * sr))
+            if f < 2:
+                return x
+            x = x.copy()
+            x[:f] *= np.linspace(0.0, 1.0, f)
+            return x
+        self._edit_pad_sample(fn)
+        self.show_toast(f"PAD {self.sel_pad + 1} FADE IN")
+
+    def sample_fade_out(self):
+        def fn(x, sr):
+            n = len(x)
+            f = min(n, int(0.05 * sr))
+            if f < 2:
+                return x
+            x = x.copy()
+            x[-f:] *= np.linspace(1.0, 0.0, f)
+            return x
+        self._edit_pad_sample(fn)
+        self.show_toast(f"PAD {self.sel_pad + 1} FADE OUT")
+
+    def sample_pitch(self, semis):
+        def fn(x, sr):
+            if len(x) < 2:
+                return x
+            factor = 2.0 ** (semis / 12.0)
+            new_n = max(2, int(len(x) / factor))
+            return np.interp(np.linspace(0, len(x) - 1, new_n), np.arange(len(x)), x)
+        self._edit_pad_sample(fn)
+        self.show_toast(f"PAD {self.sel_pad + 1} PITCH {semis:+d} ST")
 
     def pe_pick_pad(self, i):
         self.sel_pad = i
