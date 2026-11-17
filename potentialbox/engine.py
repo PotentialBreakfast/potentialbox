@@ -372,6 +372,7 @@ def _build_specs():
     a(Param("m.chorus", "Chorus", 0, 1, 0.0, unit="%"))
     a(Param("m.phaser", "Phaser", 0, 1, 0.0, unit="%"))
     a(Param("m.distortion", "Distortion", 0, 1, 0.0, unit="%"))
+    a(Param("m.limiter", "Limiter", 0, 1, 0.0, unit="%"))
     for i, mc in enumerate(MACROS):
         a(Param(f"mc.{i+1}", mc[0], 0, 1, 0.5 if mc[2] == "bip" else 0.0, unit="djm" if mc[2] == "bip" else "%"))
     return {p.key: p for p in S}
@@ -429,7 +430,9 @@ PAGES = collections.OrderedDict([
     ("Track Mute/Solo", ["s1.mute", "s1.solo", "s2.mute", "s2.solo", "dr.mute", "dr.solo", "s1.vol", "s2.vol",
                         "dr.vol", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master"]),
     ("FX", ["fx.s1", "fx.s2", "fx.dr", "fx.time", "fx.fb", "fx.tone", "m.filter", "m.crush",
-            "rv.s1", "rv.s2", "rv.dr", "rv.size", "rv.tone", "rv.level", "dr.filter", "m.distortion"]),
+            "rv.s1", "rv.s2", "rv.dr", "rv.size", "rv.tone", "rv.level", "dr.filter", "m.limiter"]),
+    ("Master FX", ["m.chorus", "m.distortion", "m.limiter", "m.drive", "m.filter", "m.crush", "m.glue", "m.gluespd",
+                   "m.width", "m.master", "rv.level", "rv.size", "rv.tone", "dr.filter", "dr.drive", "dr.vol"]),
 ])
 
 PRESETS = {
@@ -2436,6 +2439,10 @@ class Engine:
             drive = 1.0 + amt * 9.0
             out = np.tanh(out * drive) / np.tanh(drive)
         out = self.master.process(out, v["m.filter"], v["m.crush"])
+        amt = v["m.limiter"]
+        if amt > 0.005:
+            thr = 1.0 - amt * 0.9
+            out = np.clip(out, -thr, thr)
         out = self.eqs["m"].process(out, v["eq.m.lo"], v["eq.m.mid"], v["eq.m.hi"], lof, hif)
         out = self.glue.process(out, v["m.glue"], v["m.gluespd"])
         w = v["m.width"]
