@@ -314,6 +314,7 @@ def _build_specs():
         a(Param(f"dr.p{i+1}.pan", "Pan", -1, 1, 0.0, unit="pan"))
         a(Param(f"dr.p{i+1}.chance", "Chance", 0, 1, 1.0, unit="%"))
         a(Param(f"dr.p{i+1}.cond", "Plays", 0, len(DRUM_CONDS) - 1, 0, step=1, choices=DRUM_CONDS))
+        a(Param(f"dr.p{i+1}.choke", "Choke group", 0, 8, 0, step=1, choices=["Off"] + [str(g) for g in range(1, 9)]))
     for band, lab in (("lo", "Low"), ("mid", "Mid"), ("hi", "High")):
         a(Param(f"eq.dr.{band}", f"Drums {lab}", -12, 12, 0.0, unit="dB"))
     for band, lab in (("lo", "Low"), ("mid", "Mid"), ("hi", "High")):
@@ -416,6 +417,7 @@ PAGES = collections.OrderedDict([
     ("Drums 9-16", [f"dr.p{i}.tune" for i in range(9, 17)] + [f"dr.p{i}.decay" for i in range(9, 17)]),
     ("Drums 9-16 Mix", [f"dr.p{i}.level" for i in range(9, 17)] + [f"dr.p{i}.pan" for i in range(9, 17)]),
     ("Drums 9-16 Groove", [f"dr.p{i}.chance" for i in range(9, 17)] + [f"dr.p{i}.cond" for i in range(9, 17)]),
+    ("Drums Choke", [f"dr.p{i}.choke" for i in range(1, 17)]),
     ("Mix", ["s1.vol", "s2.vol", "dr.vol", "m.master", "dr.filter", "dr.drive", "m.drive", "m.filter",
              "dk.s1", "dk.s2", "dk.fx", "dk.src", "dk.rel", "m.glue", "m.gluespd", "m.width"]),
     ("Mix EQ", ["eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "eq.s2.lo", "eq.s2.mid", "eq.s2.hi", "eq.lof", "eq.hif",
@@ -486,8 +488,8 @@ SUBPAGES = {
                 ("LFO1 Steps", "Synth 1 LFO1 Steps"), ("LFO2 Steps", "Synth 1 LFO2 Steps")],
     "Synth 2": [("Main", "Synth 2"), ("Osc+", "Synth 2 Osc+"), ("Mod", "Synth 2 Mod"), ("Arp+", "Synth 2 Arp"), ("Env", "Synth 2 Env"),
                 ("LFO1 Steps", "Synth 2 LFO1 Steps"), ("LFO2 Steps", "Synth 2 LFO2 Steps")],
-    "Drums 1-8": [("Main", "Drums 1-8"), ("Mix", "Drums 1-8 Mix"), ("Groove", "Drums 1-8 Groove")],
-    "Drums 9-16": [("Main", "Drums 9-16"), ("Mix", "Drums 9-16 Mix"), ("Groove", "Drums 9-16 Groove")],
+    "Drums 1-8": [("Main", "Drums 1-8"), ("Mix", "Drums 1-8 Mix"), ("Groove", "Drums 1-8 Groove"), ("Choke", "Drums Choke")],
+    "Drums 9-16": [("Main", "Drums 9-16"), ("Mix", "Drums 9-16 Mix"), ("Groove", "Drums 9-16 Groove"), ("Choke", "Drums Choke")],
     "Mix": [("Main", "Mix"), ("EQ", "Mix EQ"), ("Mute/Solo", "Track Mute/Solo")],
 }
 HIDDEN_PAGES = {p for subs in SUBPAGES.values() for _, p in subs[1:]}
@@ -1689,6 +1691,15 @@ class Drums:
                 if v[0] == c:
                     v[5] = True
         val = self.eng.p.val
+        grp = int(val[f"dr.p{pad+1}.choke"])
+        if grp > 0:
+            for j in range(16):
+                if j == pad:
+                    continue
+                if int(val[f"dr.p{j+1}.choke"]) == grp:
+                    for v in self.voices:
+                        if v[0] == j:
+                            v[5] = True
         rate = 2.0 ** (val[f"dr.p{pad+1}.tune"] / 12.0)
         dec = val[f"dr.p{pad+1}.decay"]
         M = len(self.samples[pad])
