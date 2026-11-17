@@ -163,8 +163,14 @@ LOOKS = {
         accent="0e1f1b", accent_hi="0e1f1b", knob_face="0e1f1b", knob_ring="0e1f1b", knob_dot="f2ecdd",
         seg_active="ffe14a", seg_inactive="f2ecdd", seg_active_tx="0e1f1b", btn_text="0e1f1b", btn_bg="f2ecdd",
         btn_on="ffe14a", tab_on="0e1f1b", tab_on_tx="f2ecdd", lcd="f2ecdd", well="f2ecdd", chrome_ink="0e1f1b"),
+    "vintage": dict(  # warm grey panel, cream keys, amber display, emerald as the plugin's own colour
+        name="Vintage", round=0.5, edge=1.0, frame=1.0, narrow=False,
+        bg="b8b0a0", panel="c0b8a8", line="3a3428", ink="3a3428", ink_dim="5a5244", ink_faint="8a8070",
+        accent="0f6534", accent_hi="0f6534", knob_face="3a3428", knob_ring="3a3428", knob_dot="f0e8d8",
+        seg_active="f2c879", seg_inactive="d8d0c0", seg_active_tx="3a3428", btn_text="3a3428", btn_bg="d8d0c0",
+        btn_on="f2c879", tab_on="3a3428", tab_on_tx="f0e8d8", lcd="f2c879", well="d8d0c0", chrome_ink="3a3428"),
 }
-LOOK_ORDER = ["print", "rack", "block"]
+LOOK_ORDER = ["print", "rack", "block", "vintage"]
 T = {}        # the current look's colours, "#rrggbb"
 STYLE = {}    # the current look's name and shape numbers
 
