@@ -290,8 +290,8 @@ class State:
 
     def load_scenes(self, d):
         p = self.params
-        p.scenes = {"A": None, "B": None}
-        for w in ("A", "B"):
+        p.scenes = {str(i): None for i in range(1, 9)}
+        for w in (str(i) for i in range(1, 9)):
             sc = (d or {}).get(w)
             if isinstance(sc, dict):
                 p.scenes[w] = {k: float(n) for k, n in sc.items() if k in SPECS}
@@ -1868,8 +1868,36 @@ class App:
             self.midi.scene_hold = None
         self.state.dirty = True
 
-    def save_scene(self, which):
-        self.state.params.save_scene(which)
+    def save_scene(self, slot):
+        self.state.params.save_scene(slot)
+        self.state.dirty = True
+
+    def load_scene(self, slot):
+        sc = self.state.params.scenes.get(str(slot))
+        if not isinstance(sc, dict):
+            self.show_toast(f"SCENE {slot} EMPTY")
+            return
+        for k, n in sc.items():
+            if k in SPECS:
+                self.state.params.set_norm(k, n)
+        self.state.dirty = True
+        self.show_toast(f"LOADED SCENE {slot}")
+
+    def cycle_scene_src(self):
+        p = self.state.params
+        cur = int(round(SPECS["sc.src"].to_val(p.norm.get("sc.src", 0.0))))
+        cur = cur + 1 if cur < 8 else 1
+        p.set_norm("sc.src", SPECS["sc.src"].to_norm(cur))
+        p._scene_keys()
+        self.state.dirty = True
+
+    def cycle_scene_dst(self):
+        p = self.state.params
+        cur = int(round(SPECS["sc.dst"].to_val(p.norm.get("sc.dst", 0.0))))
+        cur = cur + 1 if cur < 8 else 1
+        p.set_norm("sc.dst", SPECS["sc.dst"].to_norm(cur))
+        p._scene_keys()
+        self.state.dirty = True
         p = self.state.params
         self.state.dirty = True
         n = len(p.scene_keys)
@@ -1923,30 +1951,37 @@ class App:
                 self.text(x0 + 72, 362, rest.upper(), 18, T["btn_text"], True)
             self.text(x0 + 72, 430, f"PAD {i + 1}", 11, T["btn_text"] if on else T["ink_dim"], True)
             self.hit(x0, 276, 143, 180, lambda on, j=i: self.live_pad(j, on), "hold")
-        # scenes
+        # scenes (8 snapshots, morph between src and dst)
         y = 482
-        self.frame(14, y, 626, 250, "Scenes", "SAVE A · CHANGE THINGS · SAVE B · THEN MORPH")
-        A, B = p.scenes.get("A"), p.scenes.get("B")
-        self.button(92, y + 82, 130, 56, "SAVE A", lambda: self.save_scene("A"), accent=not A, px=17)
-        self.button(562, y + 82, 130, 56, "SAVE B", lambda: self.save_scene("B"), accent=not B, px=17)
-        x0, x1 = 172, 482
-        self.rect(x0, y + 72, x1 - x0, 20, fill=T["well"], outline=T["line"])
+        self.frame(14, y, 626, 250, "Scenes", "8 SNAPSHOTS · MORPH BETWEEN ANY TWO")
+        src = int(round(SPECS["sc.src"].to_val(p.norm.get("sc.src", 0.0))))
+        dst = int(round(SPECS["sc.dst"].to_val(p.norm.get("sc.dst", 0.0))))
+        self.button(40, y + 40, 90, 34, f"FROM {src}", lambda: self.cycle_scene_src(), px=12)
+        self.button(140, y + 40, 90, 34, f"TO {dst}", lambda: self.cycle_scene_dst(), px=12)
+        x0, x1 = 260, 600
+        self.rect(x0, y + 46, x1 - x0, 14, fill=T["well"], outline=T["line"])
         m = p.norm["sc.morph"]
-        self.rect(x0, y + 72, (x1 - x0) * m, 20, fill=T["accent"])
+        self.rect(x0, y + 46, (x1 - x0) * m, 14, fill=T["accent"])
         hx = x0 + (x1 - x0) * m
-        self.rrect(hx - 9, y + 62, 18, 40, 5, T["knob_dot"])
-        self.text((x0 + x1) / 2, y + 120, f"MORPH {m * 100:.0f}%  ·  BEATSTEP KNOB 1", 12, T["ink_dim"], True)
-        self.hit(x0 - 10, y + 52, x1 - x0 + 20, 60, self.set_morph, "slider")
-        if A and B:
-            k = len(p.scene_keys)
-            info = f"{k} setting{'' if k == 1 else 's'} differ{'s' if k == 1 else ''} between A and B"
-        else:
-            info = "A: " + ("saved" if A else "empty") + "   ·   B: " + ("saved" if B else "empty")
-        self.text(327, y + 152, info, 13, T["ink_dim"])
+        self.rrect(hx - 7, y + 40, 14, 26, 4, T["knob_dot"])
+        self.text((x0 + x1) / 2, y + 72, f"MORPH {m * 100:.0f}%", 11, T["ink_dim"], True)
+        self.hit(x0 - 10, y + 36, x1 - x0 + 20, 34, self.set_morph, "slider")
+        # save row
+        for i in range(1, 9):
+            xx = 40 + (i - 1) * 74
+            has = p.scenes.get(str(i)) is not None
+            self.button(xx, y + 92, 66, 40, f"SAVE {i}", lambda sl=i: self.save_scene(sl), accent=not has, px=11)
+        # recall row
+        for i in range(1, 9):
+            xx = 40 + (i - 1) * 74
+            has = p.scenes.get(str(i)) is not None
+            self.button(xx, y + 140, 66, 40, f"LOAD {i}", lambda sl=i: self.load_scene(sl), accent=has, px=11)
+        info = "Empty slots are dim. LOAD replaces current settings."
+        self.text(327, y + 196, info, 12, T["ink_dim"], True)
         on = self.midi.scene_hold is not None
-        self.rrect(40, y + 176, 560, 60, 12, T["btn_on"] if on else T["btn_bg"])
-        self.text(320, y + 206, "HOLD FOR SCENE B  ·  PAD 10", 17, T["btn_text"], True)
-        self.hit(40, y + 176, 560, 60, self.scene_hold, "hold")
+        self.rrect(40, y + 206, 560, 34, 10, T["btn_on"] if on else T["btn_bg"])
+        self.text(320, y + 223, "HOLD FOR SCENE B  ·  PAD 10", 13, T["btn_text"], True)
+        self.hit(40, y + 206, 560, 34, self.scene_hold, "hold")
         # record
         rec = eng.recorder
         self.frame(650, y, 300, 250, "Record", "")
@@ -3170,7 +3205,7 @@ class App:
         p = self.state.params
         self.lock_off()
         p.clear_locks()
-        p.scenes = {"A": None, "B": None}
+        p.scenes = {str(i): None for i in range(1, 9)}
         p._scene_keys()
         for k, spec in SPECS.items():
             p.set_val(k, spec.default)

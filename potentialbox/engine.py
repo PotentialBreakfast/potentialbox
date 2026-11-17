@@ -327,6 +327,8 @@ def _build_specs():
     a(Param("m.gluespd", "Glue speed", 0, len(GLUE_SPEEDS) - 1, 1, step=1, choices=[g[0] for g in GLUE_SPEEDS]))
     a(Param("m.width", "Stereo width", 0, 2, 1.0, unit="%"))
     a(Param("sc.morph", "Scene morph", 0, 1, 0.0, unit="%"))
+    a(Param("sc.src", "Scene from", 1, 8, 1, step=1, choices=[str(i) for i in range(1, 9)]))
+    a(Param("sc.dst", "Scene to", 1, 8, 2, step=1, choices=[str(i) for i in range(1, 9)]))
     # ---- looper (v1.7)
     for t in range(1, 6):
         a(Param(f"lp.t{t}.vol", f"Track {t} level", 0, 1.2, 0.85, unit="%"))
@@ -506,7 +508,7 @@ class ParamStore:
         self.lock_step = None
         self._locked_now = set()
         # scenes: two snapshots of every setting; the Scene morph knob blends the ones that differ
-        self.scenes = {"A": None, "B": None}
+        self.scenes = {str(i): None for i in range(1, 9)}
         self.scene_keys = []
         for k, p in SPECS.items():
             self.set_val(k, p.default)
@@ -548,18 +550,29 @@ class ParamStore:
             if key in self.norm:
                 self._apply(key)
 
-    def save_scene(self, which):
-        self.scenes[which] = {k: n for k, n in self.norm.items() if self.lockable(k)}
+    def save_scene(self, slot):
+        slot = str(slot)
+        self.scenes[slot] = {k: n for k, n in self.norm.items() if self.lockable(k)}
         self._scene_keys()
-        self.norm["sc.morph"] = 0.0 if which == "A" else 1.0
-        self._apply("sc.morph")
 
     def _scene_keys(self):
-        A, B = self.scenes.get("A"), self.scenes.get("B")
+        v = self.eng.p.val if hasattr(self, "eng") else None
+        # fallback: use stored src/dst indices
+        try:
+            src = str(int(self.norm["sc.src"]))
+            dst = str(int(self.norm["sc.dst"]))
+        except Exception:
+            src, dst = "1", "2"
+        A, B = self.scenes.get(src), self.scenes.get(dst)
         self.scene_keys = [k for k in A if k in B and k in self.norm and abs(A[k] - B[k]) > 1e-6] if A and B else []
 
     def apply_morph(self):
-        A, B = self.scenes.get("A"), self.scenes.get("B")
+        try:
+            src = str(int(self.norm["sc.src"]))
+            dst = str(int(self.norm["sc.dst"]))
+        except Exception:
+            src, dst = "1", "2"
+        A, B = self.scenes.get(src), self.scenes.get(dst)
         if not (A and B):
             return
         x = self.norm["sc.morph"]
