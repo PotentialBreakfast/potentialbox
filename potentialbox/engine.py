@@ -420,6 +420,7 @@ PAGES = collections.OrderedDict([
              "dk.s1", "dk.s2", "dk.fx", "dk.src", "dk.rel", "m.glue", "m.gluespd", "m.width"]),
     ("Mix EQ", ["eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "eq.s2.lo", "eq.s2.mid", "eq.s2.hi", "eq.lof", "eq.hif",
                 "eq.dr.lo", "eq.dr.mid", "eq.dr.hi", "eq.m.lo", "eq.m.mid", "eq.m.hi", "s1.pan", "s2.pan"]),
+    ("Arrangement", ["m.master"] * 16),
     ("Track Mute/Solo", ["s1.mute", "s1.solo", "s2.mute", "s2.solo", "dr.mute", "dr.solo", "s1.vol", "s2.vol",
                         "dr.vol", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master"]),
     ("FX", ["fx.s1", "fx.s2", "fx.dr", "fx.time", "fx.fb", "fx.tone", "m.filter", "m.crush",

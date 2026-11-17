@@ -239,6 +239,7 @@ class State:
         self.loop_cfg = {}
         self.beat = None          # Beat.to_json()
         self.beat_kit = True      # picking a genre also loads its kit
+        self.arrangement = []      # list of beat dicts (pattern chain)
         self.beat_mutes = []
         self.beat_bars = 2
         self.clock_master = False   # PotentialBox sends clock + Start/Stop to the BeatStep
@@ -385,6 +386,7 @@ class State:
         self.loop_input = [int(c) for c in li][:2] if isinstance(li, list) and li else None
         self.loop_cfg = d.get("loop_cfg", {}) if isinstance(d.get("loop_cfg"), dict) else {}
         self.beat = d.get("beat") if isinstance(d.get("beat"), dict) else None
+        self.arrangement = [x for x in d.get("arrangement", []) if isinstance(x, dict)] if isinstance(d.get("arrangement"), list) else []
         self.beat_kit = bool(d.get("beat_kit", True))
         self.beat_mutes = [g for g in d.get("beat_mutes", []) if g in GROUP_NAMES]
         self.beat_bars = int(d.get("beat_bars", 2)) if int(d.get("beat_bars", 2)) in BAR_CHOICES else 2
@@ -405,6 +407,7 @@ class State:
                      locks=self.locks_json(), scenes=self.params.scenes, rec_stems=self.rec_stems, last_tab=self.last_tab,
                      loop_input=self.loop_input, loop_cfg=self.loop_cfg, beat=self.beat, beat_kit=self.beat_kit,
                      beat_mutes=self.beat_mutes, beat_bars=self.beat_bars,
+                     arrangement=self.arrangement,
                      clock_master=self.clock_master, look=self.look)
             tmp = CFG_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -1258,12 +1261,85 @@ class App:
             self.draw_loop()
         elif self.state.page == "Beats":
             self.draw_beats()
+        elif self.state.page == "Arrangement":
+            self.draw_arrangement()
         else:
             self.draw_knobs()
             if self.lock_mode:
                 self.draw_locks()
             else:
                 self.draw_instruments()
+    def draw_arrangement(self):
+        self.frame(40, 80, 1200, 640, "Arrangement", "CHAIN BEATS · EXPORT MIDI")
+        arr = self.state.arrangement
+        y = 160
+        self.text(80, y, f"{len(arr)} pattern(s) in chain", 16, T["ink"], True)
+        y += 40
+        for i, bt in enumerate(arr[:12]):
+            self.text(80, y, f"{i+1}. genre {bt.get('genre')}  bars {bt.get('bars')}  steps {bt.get('steps')}", 13, T["ink_dim"])
+            y += 24
+        self.button(80, 600, 200, 50, "ADD CURRENT BEAT", self.arr_add, accent=True, px=14)
+        self.button(300, 600, 200, 50, "CLEAR CHAIN", self.arr_clear, px=14)
+        self.button(520, 600, 200, 50, "EXPORT CHAIN MIDI", self.arr_export_midi, px=14)
+
+    def arr_add(self):
+        b = self.audio.engine.beats.beat
+        if b is None:
+            self.show_toast("NO BEAT")
+            return
+        self.state.arrangement.append(b.to_json() if hasattr(b, "to_json") else {"genre": b.genre, "bars": b.bars, "steps": b.steps, "grid": b.grid})
+        self.state.dirty = True
+        self.show_toast(f"ADDED ({len(self.state.arrangement)})")
+
+    def arr_clear(self):
+        self.state.arrangement = []
+        self.state.dirty = True
+        self.show_toast("CHAIN CLEARED")
+
+    def arr_export_midi(self):
+        if mido is None:
+            self.show_toast("MIDO NOT AVAILABLE")
+            return
+        arr = self.state.arrangement
+        if not arr:
+            self.show_toast("CHAIN EMPTY")
+            return
+        notes = {"K": 36, "B": 36, "S": 38, "C": 39, "H": 42, "O": 46, "R": 37, "Y": 49, "W": 45, "T": 45, "P": 54, "G": 49}
+        velmap = {"X": 120, "x": 90, ";": 50, "g": 40}
+        mid = mido.MidiFile(ticks_per_beat=480)
+        track = mido.MidiTrack()
+        mid.tracks.append(track)
+        track.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(self.audio.engine.bpm), time=0))
+        cur = 0
+        for bt in arr:
+            grid = bt.get("grid", {})
+            steps = bt.get("steps", 16)
+            events = [[] for _ in range(steps)]
+            for role, row in grid.items():
+                row = (row + "." * steps)[:steps]
+                for step, ch in enumerate(row):
+                    if ch == ".":
+                        continue
+                    events[step].append((notes.get(role, 38), velmap.get(ch, 80)))
+            for step in range(steps):
+                tick = step * 120
+                delta = tick - cur
+                cur = tick
+                for note, vel in events[step]:
+                    if delta > 0:
+                        track.append(mido.Message("note_on", note=note, velocity=vel, time=delta))
+                        delta = 0
+                    else:
+                        track.append(mido.Message("note_on", note=note, velocity=vel, time=0))
+                    track.append(mido.Message("note_off", note=note, velocity=0, time=60))
+                    cur = tick + 60
+        out_dir = os.path.join(CFG_DIR, "Recordings")
+        os.makedirs(out_dir, exist_ok=True)
+        import time as _t
+        path = os.path.join(out_dir, f"PotentialBox-arrangement-{int(_t.time())}.mid")
+        mid.save(path)
+        self.show_toast(f"EXPORTED: {os.path.basename(path)}")
+
         self.draw_tabs()
         if self.overlay and self.overlay[0] == "sounds":
             self.draw_sounds(self.overlay[1])
