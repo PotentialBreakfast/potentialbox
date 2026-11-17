@@ -170,13 +170,36 @@ LOOKS = {
         seg_active="f2c879", seg_inactive="d8d0c0", seg_active_tx="3a3428", btn_text="3a3428", btn_bg="d8d0c0",
         btn_on="f2c879", tab_on="3a3428", tab_on_tx="f0e8d8", lcd="f2c879", well="d8d0c0", chrome_ink="3a3428"),
 }
-LOOK_ORDER = ["print", "rack", "block", "vintage"]
+USER_LOOK_FILE = os.path.join(CFG_DIR, "user-look.json")
+LOOK_ORDER = ["print", "rack", "block", "vintage"] + (["user"] if os.path.isfile(USER_LOOK_FILE) else [])
 T = {}        # the current look's colours, "#rrggbb"
 STYLE = {}    # the current look's name and shape numbers
 
 
+def _load_user_look():
+    try:
+        import json
+        with open(USER_LOOK_FILE) as f:
+            d = json.load(f)
+        if isinstance(d, dict) and "name" in d:
+            # fill any missing keys from Print Plate so a partial file still works
+            base = LOOKS["print"]
+            out = dict(base)
+            out.update(d)
+            return out
+    except Exception:
+        pass
+    return None
+
+
 def apply_look(look):
     """Make `look` the current one (in place: every drawing call reads T and STYLE)."""
+    if look == "user":
+        d = _load_user_look()
+        if d is None:
+            look = "print"
+        else:
+            LOOKS["user"] = d
     d = LOOKS[look if look in LOOKS else "print"]
     T.clear()
     STYLE.clear()
