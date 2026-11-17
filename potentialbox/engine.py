@@ -510,6 +510,9 @@ class ParamStore:
         self.locks = {}
         self.lock_step = None
         self._locked_now = set()
+        self._undo = []
+        self._redo = []
+        self._undoing = False
         # scenes: two snapshots of every setting; the Scene morph knob blends the ones that differ
         self.scenes = {str(i): None for i in range(1, 9)}
         self.scene_keys = []
@@ -598,12 +601,45 @@ class ParamStore:
             self.locks.setdefault(key, {})[self.lock_step] = n
             self.val[key] = SPECS[key].to_val(min(max(n + self.mod.get(key, 0.0), 0.0), 1.0))  # hear it
             return
+        if not self._undoing and key in self.norm and abs(self.norm[key] - n) > 1e-9:
+            self._undo.append(dict(self.norm))
+            if len(self._undo) > 50:
+                self._undo.pop(0)
+            self._redo.clear()
         self.norm[key] = n
         self._apply(key)
         if key.startswith("mc."):
             self.recompute_macros()
         elif key == "sc.morph":
             self.apply_morph()
+
+    def undo(self):
+        if not self._undo:
+            return False
+        self._undoing = True
+        self._redo.append(dict(self.norm))
+        snap = self._undo.pop()
+        self.norm.clear()
+        self.norm.update(snap)
+        for k in list(self.norm):
+            self._apply(k)
+        self.recompute_macros()
+        self._undoing = False
+        return True
+
+    def redo(self):
+        if not self._redo:
+            return False
+        self._undoing = True
+        self._undo.append(dict(self.norm))
+        snap = self._redo.pop()
+        self.norm.clear()
+        self.norm.update(snap)
+        for k in list(self.norm):
+            self._apply(k)
+        self.recompute_macros()
+        self._undoing = False
+        return True
 
     def recompute_macros(self):
         mod = {}

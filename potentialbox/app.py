@@ -1000,6 +1000,8 @@ class App:
         self.cv.bind("<B1-Motion>", self.on_motion)
         self.cv.bind("<ButtonRelease-1>", self.on_release)
         self.cv.bind("<MouseWheel>", self.on_wheel)
+        self.root.bind("<Control-z>", lambda e: self.do_undo())
+        self.root.bind("<Control-y>", lambda e: self.do_redo())
         self.cv.bind("<Button-4>", lambda e: self.on_wheel(e, 120))
         self.cv.bind("<Button-5>", lambda e: self.on_wheel(e, -120))
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
@@ -1966,6 +1968,18 @@ class App:
         self.state.params.save_scene(slot)
         self.state.dirty = True
 
+    def do_undo(self):
+        if self.state.params.undo():
+            self.state.dirty = True
+            self.show_toast("UNDO", 0.8)
+        self.request_redraw()
+
+    def do_redo(self):
+        if self.state.params.redo():
+            self.state.dirty = True
+            self.show_toast("REDO", 0.8)
+        self.request_redraw()
+
     def load_scene(self, slot):
         sc = self.state.params.scenes.get(str(slot))
         if not isinstance(sc, dict):
@@ -2790,7 +2804,7 @@ class App:
         self.root.after(300, lambda: self.save_loop_cfg())
 
     # ---------------------------------------------------------------- resample
-    RS_SOURCES = {"Synth 1": "s1", "Synth 2": "s2", "Both synths": "synths", "Everything": "all"}
+    RS_SOURCES = {"Synth 1": "s1", "Synth 2": "s2", "Both synths": "synths", "FX returns": "fx", "Everything": "all"}
     RS_LENGTHS = {"1/2 bar": 0.5, "1 bar": 1, "2 bars": 2, "4 bars": 4}
 
     def draw_resample(self):
