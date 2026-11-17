@@ -53,7 +53,7 @@ from potentialbox import kits  # noqa: E402
 from potentialbox.library import Library, map_kit, brand_of, build_index, filter_index, GROUPS, PAD_GROUP  # noqa: E402
 
 APP = "PotentialBox"
-VERSION = "1.9.0"
+VERSION = "1.9.1"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
