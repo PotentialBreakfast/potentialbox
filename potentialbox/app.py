@@ -2291,6 +2291,7 @@ class App:
                     on=self.state.beat_kit, px=13)
         self.button(1130, cy2, 240, 44, "CLOCK OUT TO BEATSTEP: ON" if self.state.clock_master else "CLOCK OUT TO BEATSTEP: OFF",
                     self.toggle_clock_master, on=self.state.clock_master, px=13)
+        self.button(916, cy2 + 52, 176, 44, "EXPORT MIDI", self.export_beat_midi, px=13)
         if bp.send:
             if self.state.clock_master:
                 msg = ("PRESS REC ON THE BEATSTEP (EMPTY DRUM PATTERN). POTENTIALBOX STARTS IT AND SENDS THE BEAT ONCE, FROM STEP 1."
@@ -2324,6 +2325,58 @@ class App:
         bp.beat.new_ending()
         self.beat_save()
         self.show_toast("NEW ENDING: " + bp.beat.turn_text().upper())
+
+    def export_beat_midi(self):
+        if mido is None:
+            self.show_toast("MIDO NOT AVAILABLE")
+            return
+        b = self.state.beat
+        if not isinstance(b, dict) or "grid" not in b:
+            # build from current beat object
+            b = self.audio.engine.beats.beat
+        if b is None:
+            self.show_toast("NO BEAT")
+            return
+        grid = getattr(b, "grid", None)
+        steps = getattr(b, "steps", 16)
+        bpm = getattr(self.audio.engine, "bpm", 120.0)
+        if not isinstance(grid, dict):
+            self.show_toast("NO BEAT")
+            return
+        notes = {"K": 36, "B": 36, "S": 38, "C": 39, "H": 42, "O": 46, "R": 37, "Y": 49, "W": 45, "T": 45, "P": 54, "G": 49}
+        velmap = {"X": 120, "x": 90, ";": 50, "g": 40}
+        mid = mido.MidiFile(ticks_per_beat=480)
+        track = mido.MidiTrack()
+        mid.tracks.append(track)
+        track.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(bpm), time=0))
+        events = [[] for _ in range(steps)]
+        for role, row in grid.items():
+            row = (row + "." * steps)[:steps]
+            for step, ch in enumerate(row):
+                if ch == ".":
+                    continue
+                note = notes.get(role, 38)
+                vel = velmap.get(ch, 80)
+                events[step].append((note, vel))
+        cur = 0
+        for step in range(steps):
+            tick = step * 120
+            delta = tick - cur
+            cur = tick
+            for note, vel in events[step]:
+                if delta > 0:
+                    track.append(mido.Message("note_on", note=note, velocity=vel, time=delta))
+                    delta = 0
+                else:
+                    track.append(mido.Message("note_on", note=note, velocity=vel, time=0))
+                track.append(mido.Message("note_off", note=note, velocity=0, time=60))
+                cur = tick + 60
+        out_dir = os.path.join(CFG_DIR, "Recordings")
+        os.makedirs(out_dir, exist_ok=True)
+        import time as _t
+        path = os.path.join(out_dir, f"PotentialBox-beat-{int(_t.time())}.mid")
+        mid.save(path)
+        self.show_toast(f"EXPORTED MIDI: {os.path.basename(path)}")
 
     def toggle_beat_kit(self):
         self.state.beat_kit = not self.state.beat_kit
