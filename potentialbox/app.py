@@ -1273,6 +1273,28 @@ class App:
                 self.draw_locks()
             else:
                 self.draw_instruments()
+        self.draw_tabs()
+        if self.overlay and self.overlay[0] == "sounds":
+            self.draw_sounds(self.overlay[1])
+        elif self.overlay and self.overlay[0] == "kits":
+            self.draw_kits()
+        elif self.overlay and self.overlay[0] == "machines":
+            self.draw_machines()
+        elif self.overlay and self.overlay[0] == "pad":
+            self.draw_pad_editor()
+        elif self.overlay and self.overlay[0] == "mykits":
+            self.draw_mykits()
+        elif self.overlay and self.overlay[0] == "actions":
+            self.draw_actions()
+        elif self.overlay and self.overlay[0] == "route":
+            self.draw_route(self.overlay[1], self.overlay[2])
+        elif self.overlay and self.overlay[0] == "resample":
+            self.draw_resample()
+        elif self.overlay and self.overlay[0] == "loop_input":
+            self.draw_loop_input()
+        elif self.overlay and self.overlay[0] == "my_loops":
+            self.draw_my_loops()
+
     def draw_arrangement(self):
         self.frame(40, 80, 1200, 640, "Arrangement", "CHAIN BEATS · EXPORT MIDI")
         arr = self.state.arrangement
@@ -1353,6 +1375,18 @@ class App:
             self.draw_machines()
         elif self.overlay and self.overlay[0] == "pad":
             self.draw_pad_editor()
+        elif self.overlay and self.overlay[0] == "mykits":
+            self.draw_mykits()
+        elif self.overlay and self.overlay[0] == "actions":
+            self.draw_actions()
+        elif self.overlay and self.overlay[0] == "route":
+            self.draw_route(self.overlay[1], self.overlay[2])
+        elif self.overlay and self.overlay[0] == "resample":
+            self.draw_resample()
+        elif self.overlay and self.overlay[0] == "loop_input":
+            self.draw_loop_input()
+        elif self.overlay and self.overlay[0] == "my_loops":
+            self.draw_my_loops()
         elif self.overlay and self.overlay[0] == "mykits":
             self.draw_mykits()
         elif self.overlay and self.overlay[0] == "actions":
