@@ -33,7 +33,8 @@ CHORDS = [("Off", (0,)), ("Octave", (0, 12)), ("Fifth", (0, 7)), ("Fifth + octav
           ("Minor", (0, 3, 7)), ("Sus2", (0, 2, 7)), ("Sus4", (0, 5, 7)), ("Major 7", (0, 4, 7, 11)),
           ("Minor 7", (0, 3, 7, 10)), ("Dominant 7", (0, 4, 7, 10)), ("Minor 9", (0, 3, 10, 14)), ("Stack", (0, 7, 12, 19))]
 VOICINGS = ["Close", "Open", "Wide"]
-FTYPES = ["LP 24", "LP 12", "HP 12", "Band-pass", "Notch"]
+FTYPES = ["LP 24", "LP 12", "HP 12", "Band-pass", "Notch", "Comb", "Formant"]
+VOWELS = [(730, 1090, 2440), (530, 1840, 2480), (270, 2290, 3010), (570, 840, 2410), (300, 870, 2240)]
 GLIDE_MODES = ["Slides only", "Always"]
 # ---- v1.6
 ARP_MODES = ["Off", "Up", "Down", "Up-down", "Random", "As played"]
@@ -750,6 +751,13 @@ class MonoSynth:
         self.channels = channels
         self.zi = np.zeros((2, 2, channels)) if channels > 1 else np.zeros((2, 2))
         self.ftype = 0
+        self.comb_buf = np.zeros(1)
+        self.comb_idx = 0
+        self.comb_delay = 1
+        if getattr(self, "channels", 1) > 1:
+    self.formant_zi = [np.zeros((1, 2, self.channels)) for _ in range(3)]
+else:
+    self.formant_zi = [np.zeros((1, 2)) for _ in range(3)]
         self.ptime = 10 ** 9
         self.drift_val = np.zeros(self.MAXV)
         self.drift_tgt = self.rng.uniform(-1, 1, self.MAXV)
@@ -1045,13 +1053,60 @@ class MonoSynth:
         if ftype != self.ftype:
             self.zi = np.zeros_like(self.zi)
             self.ftype = ftype
+            if ftype == 5:
+                self.comb_buf = np.zeros(1)
+                self.comb_idx = 0
+                self.comb_delay = 1
+            if ftype == 6:
+                if getattr(self, "channels", 1) > 1:
+    self.formant_zi = [np.zeros((1, 2, self.channels)) for _ in range(3)]
+else:
+    self.formant_zi = [np.zeros((1, 2)) for _ in range(3)]
         reso0 = v[pre + ".reso"]
         base = v[pre + ".cutoff"] * 2.0 ** ((self.cur - 60.0) / 12.0 * v[pre + ".keytrk"])
         amt = v[pre + ".envamt"] * 7.0
         mc = mods.get("Cutoff", 0.0)
         mr = mods.get("Resonance", 0.0)
-        y = np.empty_like(x)
         n = len(x)
+        # ---- Comb: feedback delay tuned to the cutoff (resonator) ----
+        if ftype == 5:
+            delay = int(self.sr / max(base, 40.0))
+            delay = min(max(delay, 1), 2000)
+            if self.comb_buf.shape[0] != delay:
+                self.comb_buf = np.zeros(delay)
+                self.comb_idx = 0
+                self.comb_delay = delay
+            fb = min(max(reso0, 0.0), 0.95)
+            buf = self.comb_buf
+            idx = self.comb_idx
+            y = np.empty_like(x)
+            for i in range(n):
+                dly = buf[idx]
+                y[i] = x[i] + fb * dly
+                buf[idx] = x[i] + fb * dly
+                idx += 1
+                if idx >= delay:
+                    idx = 0
+            self.comb_buf = buf
+            self.comb_idx = idx
+            return y * (1.0 - 0.5 * fb)
+        # ---- Formant: three band-pass peaks (vowel selected by cutoff) ----
+        if ftype == 6:
+            vi = int((base - 40.0) / (16000.0 - 40.0) * (len(VOWELS) - 1))
+            vi = min(max(vi, 0), len(VOWELS) - 1)
+            f1, f2, f3 = VOWELS[vi]
+            q = 0.6 + reso0 * 6.0
+            secs = [bp_coeffs(f1, q, self.sr), bp_coeffs(f2, q, self.sr), bp_coeffs(f3, q, self.sr)]
+            y = np.zeros_like(x)
+            for i in range(3):
+                yi, self.formant_zi[i] = sosfilt(np.array([secs[i]]), x if i == 0 else y, axis=0, zi=self.formant_zi[i])
+                if i == 0:
+                    y = yi.copy()
+                else:
+                    y = y + yi
+            return y * 0.33
+        # ---- standard SOS filters ----
+        y = np.empty_like(x)
         for j in range(0, n, self.SUB):
             e = j + self.SUB
             m = min(j + self.SUB // 2, n - 1)
