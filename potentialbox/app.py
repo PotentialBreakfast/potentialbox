@@ -1002,6 +1002,8 @@ class App:
         self.cv.bind("<MouseWheel>", self.on_wheel)
         self.root.bind("<Control-z>", lambda e: self.do_undo())
         self.root.bind("<Control-y>", lambda e: self.do_redo())
+        for i in range(min(9, len(TABS))):
+            self.root.bind(f"<Control-Key-{i+1}>", lambda e, idx=i: self.set_page(TABS[idx]))
         self.cv.bind("<Button-4>", lambda e: self.on_wheel(e, 120))
         self.cv.bind("<Button-5>", lambda e: self.on_wheel(e, -120))
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
