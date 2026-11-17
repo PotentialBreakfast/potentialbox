@@ -26,9 +26,11 @@ MOD_DESTS = {"s1": ["Pitch", "Osc 2 pitch", "Cutoff", "Resonance", "Saw > Square
              "s2": ["Pitch", "Cutoff", "Resonance", "Wave position", "Unison", "Sub osc", "Noise", "Volume", "Pan"]}
 DEFAULT_ROUTES = {
     "s1": [("LFO 1", "Pitch"), ("LFO 1", "Cutoff"), ("LFO 2", "Pulse width"), ("Mod env", "Cutoff"),
-           ("Velocity", "Cutoff"), ("LFO 2", "Pan"), ("Mod env", "Pitch"), ("LFO 2", "Volume")],
+           ("Velocity", "Cutoff"), ("LFO 2", "Pan"), ("Mod env", "Pitch"), ("LFO 2", "Volume"),
+           ("Off", "Pitch"), ("Off", "Cutoff"), ("Off", "Volume"), ("Off", "Pan")],
     "s2": [("LFO 1", "Pitch"), ("LFO 1", "Cutoff"), ("LFO 2", "Wave position"), ("Mod env", "Wave position"),
-           ("Velocity", "Cutoff"), ("LFO 2", "Pan"), ("Mod env", "Pitch"), ("LFO 2", "Volume")]}
+           ("Velocity", "Cutoff"), ("LFO 2", "Pan"), ("Mod env", "Pitch"), ("LFO 2", "Volume"),
+           ("Off", "Pitch"), ("Off", "Cutoff"), ("Off", "Volume"), ("Off", "Pan")]}
 CHORDS = [("Off", (0,)), ("Octave", (0, 12)), ("Fifth", (0, 7)), ("Fifth + octave", (0, 7, 12)), ("Major", (0, 4, 7)),
           ("Minor", (0, 3, 7)), ("Sus2", (0, 2, 7)), ("Sus4", (0, 5, 7)), ("Major 7", (0, 4, 7, 11)),
           ("Minor 7", (0, 3, 7, 10)), ("Dominant 7", (0, 4, 7, 10)), ("Minor 9", (0, 3, 10, 14)), ("Stack", (0, 7, 12, 19))]
@@ -326,13 +328,13 @@ PAGES = collections.OrderedDict([
     ("Synth 1 Osc+", ["s1.osc2", "s1.fm", "s1.ring", "s1.sync", "s1.noise", "s1.chord", "s1.voicing", "s1.pan",
                       "s1.ftype", "s1.keytrk", "s1.velamp", "s1.drift", "s1.penv", "s1.pdec", "s1.glmode", "s1.vol"]),
     ("Synth 1 Mod", ["s1.l1shape", "s1.l1rate", "s1.l1sync", "s1.l2shape", "s1.l2rate", "s1.l2sync", "s1.mea", "s1.med"]
-                    + [f"s1.m{j}amt" for j in range(1, 9)]),
+                    + [f"s1.m{j}amt" for j in range(1, 13)]),
     ("Synth 2", ["s2.pos", "s2.posenv", "s2.lforate", "s2.lfoamt", "s2.cutoff", "s2.reso", "s2.envamt", "s2.table",
                  "s2.attack", "s2.decay", "s2.sustain", "s2.release", "s2.glide", "s2.octave", "s2.detune", "s2.vol"]),
     ("Synth 2 Osc+", ["s2.chord", "s2.voicing", "s2.sub", "s2.noise", "s2.pan", "s2.drift", "s2.penv", "s2.pdec",
                       "s2.ftype", "s2.keytrk", "s2.velamp", "s2.glmode", "s2.table", "s2.pos", "s2.cutoff", "s2.vol"]),
     ("Synth 2 Mod", ["s2.l1shape", "s2.l1rate", "s2.l1sync", "s2.l2shape", "s2.l2rate", "s2.l2sync", "s2.mea", "s2.med"]
-                    + [f"s2.m{j}amt" for j in range(1, 9)]),
+                    + [f"s2.m{j}amt" for j in range(1, 13)]),
     ("Synth 1 Arp", ["s1.arp", "s1.arprate", "s1.arpoct", "s1.arpgate", "s1.arpswing", "s1.arphold", "s1.arpchance",
                      "s1.arpacc", "dk.s1", "eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "s1.pan", "fx.s1", "rv.s1", "s1.vol"]),
     ("Synth 2 Arp", ["s2.arp", "s2.arprate", "s2.arpoct", "s2.arpgate", "s2.arpswing", "s2.arphold", "s2.arpchance",
@@ -1018,7 +1020,7 @@ else:
         pre = self.pre
         lfo = [None, None]
         out = {}
-        for j in range(1, 9):
+        for j in range(1, 13):
             amt = v[f"{pre}.m{j}amt"]
             si = int(v[f"{pre}.m{j}src"])
             if si == 0 or abs(amt) < 1e-4:

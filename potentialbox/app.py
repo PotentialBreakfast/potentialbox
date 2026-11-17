@@ -1212,8 +1212,11 @@ class App:
 
     @staticmethod
     def mod_slot(key):
-        if len(key) == 8 and key[2:4] == ".m" and key.endswith("amt"):
-            return key[:2], int(key[4])
+        if key[:2] in ("s1", "s2") and key[2:4] == ".m" and key.endswith("amt"):
+            try:
+                return key[:2], int(key[4:-3])
+            except ValueError:
+                return None
         return None
 
     def route_text(self, pre, j):
