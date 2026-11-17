@@ -369,6 +369,7 @@ def _build_specs():
     a(Param("rv.level", "Reverb level", 0, 1, 0.8, unit="%"))
     a(Param("m.filter", "DJ filter", -1, 1, 0.0, unit="bip"))
     a(Param("m.crush", "Lo-fi crush", 0, 1, 0.0, unit="%"))
+    a(Param("m.chorus", "Chorus", 0, 1, 0.0, unit="%"))
     for i, mc in enumerate(MACROS):
         a(Param(f"mc.{i+1}", mc[0], 0, 1, 0.5 if mc[2] == "bip" else 0.0, unit="djm" if mc[2] == "bip" else "%"))
     return {p.key: p for p in S}
@@ -426,7 +427,7 @@ PAGES = collections.OrderedDict([
     ("Track Mute/Solo", ["s1.mute", "s1.solo", "s2.mute", "s2.solo", "dr.mute", "dr.solo", "s1.vol", "s2.vol",
                         "dr.vol", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master"]),
     ("FX", ["fx.s1", "fx.s2", "fx.dr", "fx.time", "fx.fb", "fx.tone", "m.filter", "m.crush",
-            "rv.s1", "rv.s2", "rv.dr", "rv.size", "rv.tone", "rv.level", "dr.filter", "m.drive"]),
+            "rv.s1", "rv.s2", "rv.dr", "rv.size", "rv.tone", "rv.level", "dr.filter", "m.chorus"]),
 ])
 
 PRESETS = {
@@ -1890,6 +1891,38 @@ def hp_coeffs(fc, q, sr):
     return [(1 + c) / 2 / a0, -(1 + c) / a0, (1 + c) / 2 / a0, 1.0, -2 * c / a0, (1 - alpha) / a0]
 
 
+class Chorus:
+    """Simple stereo chorus: modulated short delay."""
+    def __init__(self, sr):
+        self.sr = sr
+        self.buf = np.zeros((int(sr * 0.03), 2))
+        self.wi = 0
+        self.ph = 0.0
+
+    def process(self, x, amt):
+        if amt <= 0.005 or x is None:
+            return x
+        n = x.shape[0]
+        out = np.zeros_like(x)
+        depth = 0.003 * self.sr  # up to 3 ms
+        rate = 0.5 + amt * 1.5
+        for i in range(n):
+            self.ph = (self.ph + rate / self.sr) % 1.0
+            mod = 0.5 + 0.5 * math.sin(TWO_PI * self.ph)
+            delay = 0.012 * self.sr + mod * depth * amt
+            ri = int(delay)
+            frac = delay - ri
+            ridx = (self.wi - ri) % len(self.buf)
+            ridx2 = (ridx - 1) % len(self.buf)
+            d0 = self.buf[ridx]
+            d1 = self.buf[ridx2]
+            dly = d0 * (1 - frac) + d1 * frac
+            out[i] = x[i] + dly * amt * 0.5
+            self.buf[self.wi] = x[i]
+            self.wi = (self.wi + 1) % len(self.buf)
+        return out.astype(np.float32) if x.dtype != np.float64 else out
+
+
 class MasterFX:
     """DJ filter (centre off, left low-pass, right high-pass) and lo-fi crusher on the whole mix."""
 
@@ -2136,6 +2169,7 @@ class Engine:
         self.delay = Delay(self.sr)
         self.reverb = Reverb(self.sr)
         self.master = MasterFX(self.sr)
+        self.chorus = Chorus(self.sr)
         self.eqs = {k: EQ3(self.sr) for k in ("s1", "s2", "dr", "m")}
         self.glue = Glue(self.sr)
         self.punch = PunchFX(self.sr)
@@ -2363,6 +2397,7 @@ class Engine:
                 stems["lp"] = loops
         if inp is not None and v["lp.mon"] > 0.005:
             out = out + inp * (v["lp.in"] * v["lp.mon"])
+        out = self.chorus.process(out, v["m.chorus"])
         out = self.master.process(out, v["m.filter"], v["m.crush"])
         out = self.eqs["m"].process(out, v["eq.m.lo"], v["eq.m.mid"], v["eq.m.hi"], lof, hif)
         out = self.glue.process(out, v["m.glue"], v["m.gluespd"])
