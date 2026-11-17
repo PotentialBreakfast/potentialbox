@@ -1649,6 +1649,7 @@ class Drums:
         self.voices = []
         self.zi = np.zeros((1, 2, 2))
         self.active = [0.0] * 16
+        self.rr = [0] * 16
         self.kit_index = 0
         self.kit_name = ""
         self.load_factory(0)
@@ -1660,7 +1661,7 @@ class Drums:
         names, samples = kits.build(index, self.sr)
         self.kit_index = int(index) % len(kits.KITS)
         self.kit_name = kits.NAMES[self.kit_index]
-        self.samples, self.names = list(samples), list(names)
+        self.samples, self.names = [[s] for s in samples], list(names)
         self.sources = [{"factory": self.kit_index, "pad": i} for i in range(16)]
 
     def use_builtin(self):
@@ -1680,7 +1681,7 @@ class Drums:
             src = sources[i] if i < len(sources) and isinstance(sources[i], dict) else {"factory": 0, "pad": i}
             if "file" in src:
                 try:
-                    samples.append(self._read(src["file"]))
+                    samples.append([self._read(src["file"])])
                     names.append(src.get("label") or os.path.splitext(os.path.basename(src["file"]))[0][:14])
                     srcs.append(dict(src))
                     n += 1
@@ -1689,7 +1690,7 @@ class Drums:
                     src = {"factory": 0, "pad": i}
             k, p = int(src.get("factory", 0)), int(src.get("pad", i)) % 16
             fn, fs = kits.build(k, self.sr)
-            samples.append(fs[p])
+            samples.append([fs[p]])
             names.append(fn[p])
             srcs.append({"factory": k, "pad": p})
         self.samples, self.names, self.sources, self.kit_name = samples, names, srcs, name
@@ -1699,8 +1700,9 @@ class Drums:
         """Put one WAV on one pad. Raises if the file can't be read."""
         x = self._read(path)
         pad %= 16
-        samples, names, sources = list(self.samples), list(self.names), list(self.sources)
-        samples[pad], names[pad] = x, label
+        samples, names, sources = [list(s) for s in self.samples], list(self.names), list(self.sources)
+        samples[pad] = [x]
+        names[pad] = label
         sources[pad] = {"file": path, "label": label}
         self.samples, self.names, self.sources = samples, names, sources
 
@@ -1738,7 +1740,16 @@ class Drums:
                             v[5] = True
         rate = 2.0 ** (val[f"dr.p{pad+1}.tune"] / 12.0)
         dec = val[f"dr.p{pad+1}.decay"]
-        M = len(self.samples[pad])
+        layers = self.samples[pad] if isinstance(self.samples[pad], list) else [self.samples[pad]]
+        if not layers:
+            layers = [np.zeros(2)]
+        if len(layers) > 1:
+            idx = self.rr[pad] % len(layers)
+            self.rr[pad] += 1
+        else:
+            idx = 0
+        sample = layers[idx]
+        M = len(sample) - 1
         if dec >= 0.99:
             k = 1.0
         else:
@@ -1749,7 +1760,7 @@ class Drums:
         # [pad, pos, rate, gain, env, choking, k, left, right]
         # a negative position = starts `offset` samples into the next block
         self.voices.append([pad, -float(offset) * rate, rate, gain, 1.0, False, k,
-                            math.cos(th) * math.sqrt(2.0), math.sin(th) * math.sqrt(2.0)])
+                            math.cos(th) * math.sqrt(2.0), math.sin(th) * math.sqrt(2.0), sample])
         if len(self.voices) > 32:
             self.voices.pop(0)
         self.active[pad] = 1.0
@@ -1761,8 +1772,8 @@ class Drums:
         ar = np.arange(n)
         alive = []
         for v in self.voices:
-            pad, pos, rate, gain, e, choking, k, gl, gr = v
-            s = self.samples[pad]
+            pad, pos, rate, gain, e, choking, k, gl, gr, sample = v
+            s = sample
             M = len(s) - 1
             st = 0
             if pos < 0:
