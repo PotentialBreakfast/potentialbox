@@ -22,7 +22,7 @@ LFO_SYNC = [("Free", None), ("4 bars", 16), ("2 bars", 8), ("1 bar", 4), ("1/2",
             ("1/16", 0.25), ("1/32", 0.125), ("1/4T", 2 / 3), ("1/8T", 1 / 3), ("1/16T", 1 / 6)]
 MOD_SOURCES = ["Off", "LFO 1", "LFO 2", "Mod env", "Amp env", "Velocity", "Note", "Random"]
 MOD_DESTS = {"s1": ["Pitch", "Osc 2 pitch", "Cutoff", "Resonance", "Saw > Square", "Pulse width", "FM", "Ring mod",
-                    "Noise", "Volume", "Pan", "Drive"],
+                    "Noise", "Volume", "Pan", "Drive", "Supersaw"],
              "s2": ["Pitch", "Cutoff", "Resonance", "Wave position", "Unison", "Sub osc", "Noise", "Volume", "Pan"]}
 DEFAULT_ROUTES = {
     "s1": [("LFO 1", "Pitch"), ("LFO 1", "Cutoff"), ("LFO 2", "Pulse width"), ("Mod env", "Cutoff"),
@@ -180,6 +180,7 @@ def _build_specs():
     for pre, name in (("s1", "Synth 1"), ("s2", "Synth 2")):
         if pre == "s1":
             a(Param("s1.wave", "Saw > Square", 0, 1, 0.0, unit="%"))
+            a(Param("s1.supersaw", "Supersaw", 0, 1, 0.0, unit="%"))
             a(Param("s1.pw", "Pulse width", 0.05, 0.5, 0.5, unit="%"))
             a(Param("s1.detune", "Detune", 0, 50, 8, unit="ct"))
             a(Param("s1.sub", "Sub osc", 0, 1, 0.3, unit="%"))
@@ -319,7 +320,7 @@ PAGES = collections.OrderedDict([
     ("Loop", ["lp.t1.vol", "lp.t2.vol", "lp.t3.vol", "lp.t4.vol", "lp.t5.vol", "lp.in", "lp.mon", "lp.vol",
               "lp.t1.fx", "lp.t2.fx", "lp.t3.fx", "lp.t4.fx", "lp.t5.fx", "lp.fb", "lp.filter", "lp.duck"]),
     ("Macros", [f"mc.{i}" for i in range(1, 17)]),
-    ("Synth 1", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s1.wave", "s1.pw", "s1.detune", "s1.sub",
+    ("Synth 1", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s1.wave", "s1.supersaw", "s1.pw", "s1.detune", "s1.sub",
                  "s1.attack", "s1.decay", "s1.sustain", "s1.release", "s1.glide", "s1.octave", "s1.drive", "s1.vol"]),
     ("Synth 1 Osc+", ["s1.osc2", "s1.fm", "s1.ring", "s1.sync", "s1.noise", "s1.chord", "s1.voicing", "s1.pan",
                       "s1.ftype", "s1.keytrk", "s1.velamp", "s1.drift", "s1.penv", "s1.pdec", "s1.glmode", "s1.vol"]),
@@ -1119,6 +1120,8 @@ class OscSynth(MonoSynth):
             sem = sem + 12.0 * mods["Pitch"]
         wave = v["s1.wave"] + mods.get("Saw > Square", 0.0)
         wave = np.clip(wave, 0.0, 1.0) if isinstance(wave, np.ndarray) else min(max(wave, 0.0), 1.0)
+        ss = v["s1.supersaw"] + mods.get("Supersaw", 0.0)
+        ss = np.clip(ss, 0.0, 1.0) if isinstance(ss, np.ndarray) else min(max(ss, 0.0), 1.0)
         pw = v["s1.pw"] + 0.45 * mods.get("Pulse width", 0.0)
         pw = np.clip(pw, 0.05, 0.5) if isinstance(pw, np.ndarray) else min(max(pw, 0.05), 0.5)
         fm = mods.get("FM", 0.0) + v["s1.fm"]
@@ -1148,6 +1151,14 @@ class OscSynth(MonoSynth):
             o2 = _osc(t2, dt2, wave, pw)
             t1m = (t1 + fm * 0.5 * np.sin(TWO_PI * t2)) % 1.0 if use_fm else t1
             o1 = _osc(t1m, dt1, wave, pw)
+            if isinstance(ss, np.ndarray) or ss > 0.001:
+                det = 0.07 * ss
+                ss_voices = []
+                for off in (-2.0 * det, -det, 0.0, det, 2.0 * det):
+                    td = (t1 + off) % 1.0
+                    ss_voices.append(_osc(td, dt1, 0.0, 0.5))
+                ss_mix = np.mean(ss_voices, axis=0)
+                o1 = (1.0 - ss) * o1 + ss * ss_mix
             mix = (o1 + o2) * 0.5
             if use_ring:
                 mix = mix * (1.0 - ring) + o1 * o2 * ring
