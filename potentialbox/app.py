@@ -1298,15 +1298,17 @@ class App:
     def draw_arrangement(self):
         self.frame(40, 80, 1200, 640, "Arrangement", "CHAIN BEATS · EXPORT MIDI")
         arr = self.state.arrangement
-        y = 160
-        self.text(80, y, f"{len(arr)} pattern(s) in chain", 16, T["ink"], True)
-        y += 40
-        for i, bt in enumerate(arr[:12]):
-            self.text(80, y, f"{i+1}. genre {bt.get('genre')}  bars {bt.get('bars')}  steps {bt.get('steps')}", 13, T["ink_dim"])
-            y += 24
-        self.button(80, 600, 200, 50, "ADD CURRENT BEAT", self.arr_add, accent=True, px=14)
-        self.button(300, 600, 200, 50, "CLEAR CHAIN", self.arr_clear, px=14)
-        self.button(520, 600, 200, 50, "EXPORT CHAIN MIDI", self.arr_export_midi, px=14)
+        self.text(640, 160, f"{len(arr)} pattern(s) in chain", 16, T["ink"], True)
+        y = 200
+        for i, bt in enumerate(arr[:14]):
+            self.text(120, y, f"{i + 1}.", 13, T["accent"], True, "w")
+            self.text(160, y, f"genre {bt.get('genre')}   bars {bt.get('bars')}   steps {bt.get('steps')}", 13, T["ink_dim"], False, "w")
+            y += 26
+        if not arr:
+            self.text(640, 320, "Chain is empty. Add the current beat.", 16, T["ink_dim"], True)
+        self.button(260, 620, 220, 54, "ADD CURRENT BEAT", self.arr_add, accent=True, px=14)
+        self.button(640, 620, 220, 54, "CLEAR CHAIN", self.arr_clear, px=14)
+        self.button(1020, 620, 220, 54, "EXPORT CHAIN MIDI", self.arr_export_midi, px=14)
 
     def arr_add(self):
         b = self.audio.engine.beats.beat
