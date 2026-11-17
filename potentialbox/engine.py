@@ -347,6 +347,11 @@ def _build_specs():
     a(Param("dr.vol", "Drums volume", 0, 1, 0.8, unit="%"))
     a(Param("m.master", "Master", 0, 1, 0.8, unit="%"))
     a(Param("m.drive", "Master drive", 0, 1, 0.0, unit="%"))
+    for pre, name in (("s1", "Synth 1"), ("s2", "Synth 2")):
+        a(Param(f"{pre}.mute", f"{name} mute", 0, 1, 0, step=1, choices=["Off", "On"]))
+        a(Param(f"{pre}.solo", f"{name} solo", 0, 1, 0, step=1, choices=["Off", "On"]))
+    a(Param("dr.mute", "Drums mute", 0, 1, 0, step=1, choices=["Off", "On"]))
+    a(Param("dr.solo", "Drums solo", 0, 1, 0, step=1, choices=["Off", "On"]))
     a(Param("fx.s1", "Delay: Synth 1", 0, 1, 0.0, unit="%"))
     a(Param("fx.s2", "Delay: Synth 2", 0, 1, 0.2, unit="%"))
     a(Param("fx.dr", "Delay: Drums", 0, 1, 0.0, unit="%"))
@@ -413,6 +418,8 @@ PAGES = collections.OrderedDict([
              "dk.s1", "dk.s2", "dk.fx", "dk.src", "dk.rel", "m.glue", "m.gluespd", "m.width"]),
     ("Mix EQ", ["eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "eq.s2.lo", "eq.s2.mid", "eq.s2.hi", "eq.lof", "eq.hif",
                 "eq.dr.lo", "eq.dr.mid", "eq.dr.hi", "eq.m.lo", "eq.m.mid", "eq.m.hi", "s1.pan", "s2.pan"]),
+    ("Track Mute/Solo", ["s1.mute", "s1.solo", "s2.mute", "s2.solo", "dr.mute", "dr.solo", "s1.vol", "s2.vol",
+                        "dr.vol", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master"]),
     ("FX", ["fx.s1", "fx.s2", "fx.dr", "fx.time", "fx.fb", "fx.tone", "m.filter", "m.crush",
             "rv.s1", "rv.s2", "rv.dr", "rv.size", "rv.tone", "rv.level", "dr.filter", "m.drive"]),
 ])
@@ -478,7 +485,7 @@ SUBPAGES = {
                 ("LFO1 Steps", "Synth 2 LFO1 Steps"), ("LFO2 Steps", "Synth 2 LFO2 Steps")],
     "Drums 1-8": [("Main", "Drums 1-8"), ("Mix", "Drums 1-8 Mix"), ("Groove", "Drums 1-8 Groove")],
     "Drums 9-16": [("Main", "Drums 9-16"), ("Mix", "Drums 9-16 Mix"), ("Groove", "Drums 9-16 Groove")],
-    "Mix": [("Main", "Mix"), ("EQ", "Mix EQ")],
+    "Mix": [("Main", "Mix"), ("EQ", "Mix EQ"), ("Mute/Solo", "Track Mute/Solo")],
 }
 HIDDEN_PAGES = {p for subs in SUBPAGES.values() for _, p in subs[1:]}
 NOT_LOCKABLE = ("mc.", "sc.", "m.master")
@@ -2236,7 +2243,14 @@ class Engine:
         duck = self.duck_env(n)
         lof, hif = v["eq.lof"], v["eq.hif"]
         stems = {} if (self.recorder or self.capture) else None
+        solo_active = (v["s1.solo"] >= 0.5 or v["s2.solo"] >= 0.5 or v["dr.solo"] >= 0.5)
+        def track_plays(mute, solo):
+            if solo_active:
+                return solo >= 0.5
+            return mute < 0.5
         for key, syn in (("s1", self.s1), ("s2", self.s2)):
+            if not track_plays(v[f"{key}.mute"], v[f"{key}.solo"]):
+                continue
             a = syn.render_block(n)
             if a is None:
                 continue
@@ -2249,14 +2263,15 @@ class Engine:
             if stems is not None:
                 stems[key] = a
         self.beats.render_hits(n)
-        c = self.drums.render(n)
-        if c is not None:
-            c = self.eqs["dr"].process(c, v["eq.dr.lo"], v["eq.dr.mid"], v["eq.dr.hi"], lof, hif)
-            out += c
-            send += c * v["fx.dr"]
-            rsend += c * v["rv.dr"]
-            if stems is not None:
-                stems["dr"] = c
+        if track_plays(v["dr.mute"], v["dr.solo"]):
+            c = self.drums.render(n)
+            if c is not None:
+                c = self.eqs["dr"].process(c, v["eq.dr.lo"], v["eq.dr.mid"], v["eq.dr.hi"], lof, hif)
+                out += c
+                send += c * v["fx.dr"]
+                rsend += c * v["rv.dr"]
+                if stems is not None:
+                    stems["dr"] = c
         secs = DIVISIONS[int(v["fx.time"])][1] * 60.0 / max(self.bpm, 30.0)
         d = self.delay.process(send, secs, v["fx.fb"], v["fx.tone"])
         rsend += d * 0.3
