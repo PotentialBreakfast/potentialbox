@@ -373,6 +373,7 @@ def _build_specs():
     a(Param("m.phaser", "Phaser", 0, 1, 0.0, unit="%"))
     a(Param("m.distortion", "Distortion", 0, 1, 0.0, unit="%"))
     a(Param("m.limiter", "Limiter", 0, 1, 0.0, unit="%"))
+    a(Param("m.flanger", "Flanger", 0, 1, 0.0, unit="%"))
     for i, mc in enumerate(MACROS):
         a(Param(f"mc.{i+1}", mc[0], 0, 1, 0.5 if mc[2] == "bip" else 0.0, unit="djm" if mc[2] == "bip" else "%"))
     return {p.key: p for p in S}
@@ -431,8 +432,8 @@ PAGES = collections.OrderedDict([
                         "dr.vol", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master"]),
     ("FX", ["fx.s1", "fx.s2", "fx.dr", "fx.time", "fx.fb", "fx.tone", "m.filter", "m.crush",
             "rv.s1", "rv.s2", "rv.dr", "rv.size", "rv.tone", "rv.level", "dr.filter", "m.limiter"]),
-    ("Master FX", ["m.chorus", "m.distortion", "m.limiter", "m.drive", "m.filter", "m.crush", "m.glue", "m.gluespd",
-                   "m.width", "m.master", "rv.level", "rv.size", "rv.tone", "dr.filter", "dr.drive", "dr.vol"]),
+    ("Master FX", ["m.chorus", "m.flanger", "m.distortion", "m.limiter", "m.drive", "m.filter", "m.crush", "m.glue",
+                   "m.gluespd", "m.width", "m.master", "rv.level", "rv.size", "rv.tone", "dr.filter", "dr.drive"]),
 ])
 
 PRESETS = {
@@ -1959,6 +1960,37 @@ class Phaser:
         return x
 
 
+class Flanger:
+    """Simple flanger: modulated short delay with feedback."""
+    def __init__(self, sr):
+        self.sr = sr
+        self.buf = np.zeros((int(sr * 0.02), 2))
+        self.wi = 0
+        self.ph = 0.0
+
+    def process(self, x, amt):
+        if amt <= 0.005 or x is None:
+            return x
+        n = x.shape[0]
+        out = np.zeros_like(x)
+        rate = 0.1 + amt * 1.0
+        depth = 0.005 * self.sr
+        fb = amt * 0.7
+        for i in range(n):
+            self.ph = (self.ph + rate / self.sr) % 1.0
+            mod = 0.5 + 0.5 * math.sin(TWO_PI * self.ph)
+            delay = 0.005 * self.sr + mod * depth
+            ri = int(delay)
+            frac = delay - ri
+            ridx = (self.wi - ri) % len(self.buf)
+            ridx2 = (ridx - 1) % len(self.buf)
+            dly = self.buf[ridx] * (1 - frac) + self.buf[ridx2] * frac
+            out[i] = x[i] + dly * amt
+            self.buf[self.wi] = x[i] + dly * fb
+            self.wi = (self.wi + 1) % len(self.buf)
+        return out.astype(np.float32) if x.dtype != np.float64 else out
+
+
 class MasterFX:
     """DJ filter (centre off, left low-pass, right high-pass) and lo-fi crusher on the whole mix."""
 
@@ -2206,6 +2238,7 @@ class Engine:
         self.reverb = Reverb(self.sr)
         self.master = MasterFX(self.sr)
         self.chorus = Chorus(self.sr)
+        self.flanger = Flanger(self.sr)
         self.eqs = {k: EQ3(self.sr) for k in ("s1", "s2", "dr", "m")}
         self.glue = Glue(self.sr)
         self.punch = PunchFX(self.sr)
@@ -2434,6 +2467,7 @@ class Engine:
         if inp is not None and v["lp.mon"] > 0.005:
             out = out + inp * (v["lp.in"] * v["lp.mon"])
         out = self.chorus.process(out, v["m.chorus"])
+        out = self.flanger.process(out, v["m.flanger"])
         amt = v["m.distortion"]
         if amt > 0.005:
             drive = 1.0 + amt * 9.0
