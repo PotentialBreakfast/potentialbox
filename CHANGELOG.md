@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.2
+- Fixed: 1.10.1 showed a blank window icon and Python's icon on the taskbar. The window now uses a small plain .ico of the PB logo.
+
 ## 1.10.1
 - The window and taskbar show the PotentialBox (PB) icon instead of Python's feather, and PotentialBox gets its own taskbar button.
 - The desktop shortcut uses the new PB icon.

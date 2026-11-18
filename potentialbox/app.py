@@ -58,7 +58,7 @@ from potentialbox import kitmaker  # noqa: E402
 from potentialbox.mpcsync import MpcSync  # noqa: E402
 
 APP = "PotentialBox"
-VERSION = "1.10.1"
+VERSION = "1.10.2"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
@@ -1043,17 +1043,16 @@ class App:
                 pass
         self.root = tk.Tk()
         self.root.title(f"{APP} {VERSION}")
-        ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "potentialbox.ico")
+        here = os.path.dirname(os.path.abspath(__file__))
         try:  # the PotentialBox icon instead of Tk's feather (title bar, taskbar, dialogs)
             if sys.platform == "win32":
-                self.root.iconbitmap(default=ico)
+                # a small plain-bitmap .ico (16-64 px): Windows' title bar and taskbar take it as it is
+                self.root.iconbitmap(default=os.path.join(here, "window.ico"))
+            else:
+                self._icon = tk.PhotoImage(file=os.path.join(here, "potentialbox.png"))
+                self.root.iconphoto(True, self._icon)
         except Exception:
-            pass
-        try:
-            self._icon = tk.PhotoImage(file=os.path.splitext(ico)[0] + ".png")
-            self.root.iconphoto(True, self._icon)
-        except Exception:
-            pass
+            log("icon", traceback.format_exc())
         self.root.configure(bg=T["bg"])
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         s = min(1.0, sw * 0.92 / W, sh * 0.86 / H)
