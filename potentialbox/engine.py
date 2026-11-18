@@ -374,6 +374,7 @@ def _build_specs():
     a(Param("m.distortion", "Distortion", 0, 1, 0.0, unit="%"))
     a(Param("m.limiter", "Limiter", 0, 1, 0.0, unit="%"))
     a(Param("m.flanger", "Flanger", 0, 1, 0.0, unit="%"))
+    a(Param("m.phaser", "Phaser", 0, 1, 0.0, unit="%"))
     a(Param("m.compressor", "Compressor", 0, 1, 0.0, unit="%"))
     for i, mc in enumerate(MACROS):
         a(Param(f"mc.{i+1}", mc[0], 0, 1, 0.5 if mc[2] == "bip" else 0.0, unit="djm" if mc[2] == "bip" else "%"))
@@ -433,8 +434,8 @@ PAGES = collections.OrderedDict([
                         "dr.vol", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master"]),
     ("FX", ["fx.s1", "fx.s2", "fx.dr", "fx.time", "fx.fb", "fx.tone", "m.filter", "m.crush",
             "rv.s1", "rv.s2", "rv.dr", "rv.size", "rv.tone", "rv.level", "dr.filter", "m.limiter"]),
-    ("Master FX", ["m.chorus", "m.flanger", "m.distortion", "m.limiter", "m.compressor", "m.drive", "m.filter", "m.crush",
-                   "m.glue", "m.gluespd", "m.width", "m.master", "rv.level", "rv.size", "rv.tone", "dr.filter"]),
+    ("Master FX", ["m.chorus", "m.flanger", "m.phaser", "m.distortion", "m.limiter", "m.compressor", "m.drive", "m.filter",
+                   "m.crush", "m.glue", "m.gluespd", "m.width", "m.master", "rv.level", "rv.size", "rv.tone"]),
 ])
 
 PRESETS = {
@@ -1931,10 +1932,11 @@ class Chorus:
 
 
 class Phaser:
-    """Simple phaser: modulated allpass cascade."""
+    """Simple phaser: modulated first-order allpass."""
     def __init__(self, sr):
         self.sr = sr
-        self.zi = np.zeros((4, 2, 2))
+        self.xp = np.zeros(2)
+        self.yp = np.zeros(2)
         self.ph = 0.0
 
     def process(self, x, amt):
@@ -1942,23 +1944,18 @@ class Phaser:
             return x
         n = x.shape[0]
         out = np.zeros_like(x)
-        rate = 0.2 + amt * 1.8
+        rate = 0.15 + amt * 1.5
+        mix = amt
         for i in range(n):
             self.ph = (self.ph + rate / self.sr) % 1.0
-            mod = 0.5 + 0.5 * math.sin(TWO_PI * self.ph)
-            # allpass coefficient
-            a = 0.5 + 0.45 * mod * amt
-            # process 4 allpass stages per channel
-            y = x[i].copy()
+            a = 0.3 + 0.6 * (0.5 + 0.5 * math.sin(TWO_PI * self.ph)) * amt
             for ch in range(2):
-                s = x[i, ch]
-                for st in range(4):
-                    # allpass: y = a + x? simplified
-                    pass
-            out[i] = x[i]
-        # simpler: apply a single modulated allpass per channel using lfilter
-        # fallback: just return x with slight modulation (no-op-ish) to avoid bugs
-        return x
+                xi = x[i, ch]
+                yi = a * xi + self.xp[ch] - a * self.yp[ch]
+                self.xp[ch] = xi
+                self.yp[ch] = yi
+                out[i, ch] = (1.0 - mix) * xi + mix * yi
+        return out.astype(np.float32) if x.dtype != np.float64 else out
 
 
 class Flanger:
@@ -2240,6 +2237,7 @@ class Engine:
         self.master = MasterFX(self.sr)
         self.chorus = Chorus(self.sr)
         self.flanger = Flanger(self.sr)
+        self.phaser = Phaser(self.sr)
         self.eqs = {k: EQ3(self.sr) for k in ("s1", "s2", "dr", "m")}
         self.glue = Glue(self.sr)
         self.punch = PunchFX(self.sr)
@@ -2469,6 +2467,7 @@ class Engine:
             out = out + inp * (v["lp.in"] * v["lp.mon"])
         out = self.chorus.process(out, v["m.chorus"])
         out = self.flanger.process(out, v["m.flanger"])
+        out = self.phaser.process(out, v["m.phaser"])
         amt = v["m.compressor"]
         if amt > 0.005:
             # simple feed-forward compressor
