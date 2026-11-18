@@ -1008,6 +1008,7 @@ class App:
         self.cv.bind("<Button-5>", lambda e: self.on_wheel(e, -120))
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
         self.root.bind("<Escape>", lambda e: self.close_overlay())
+        self.root.bind("<F11>", lambda e: self.toggle_fullscreen())
         self.overlay = None  # None, ("sounds", "s1"/"s2") or ("kits",)
         self.armed = None  # (pre, slot, time) for "tap again to replace"
         self.lib_brand = None
@@ -2093,6 +2094,9 @@ class App:
             self.state.dirty = True
             self.show_toast("REDO", 0.8)
         self.request_redraw()
+
+    def toggle_fullscreen(self):
+        self.root.attributes("-fullscreen", not self.root.attributes("-fullscreen"))
 
     def load_scene(self, slot):
         sc = self.state.params.scenes.get(str(slot))
