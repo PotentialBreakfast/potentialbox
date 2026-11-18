@@ -1915,23 +1915,22 @@ class Chorus:
         if amt <= 0.005 or x is None:
             return x
         n = x.shape[0]
-        out = np.zeros_like(x)
-        depth = 0.003 * self.sr  # up to 3 ms
-        rate = 0.5 + amt * 1.5
-        for i in range(n):
-            self.ph = (self.ph + rate / self.sr) % 1.0
-            mod = 0.5 + 0.5 * math.sin(TWO_PI * self.ph)
-            delay = 0.012 * self.sr + mod * depth * amt
-            ri = int(delay)
-            frac = delay - ri
-            ridx = (self.wi - ri) % len(self.buf)
-            ridx2 = (ridx - 1) % len(self.buf)
-            d0 = self.buf[ridx]
-            d1 = self.buf[ridx2]
-            dly = d0 * (1 - frac) + d1 * frac
-            out[i] = x[i] + dly * amt * 0.5
-            self.buf[self.wi] = x[i]
-            self.wi = (self.wi + 1) % len(self.buf)
+        L = len(self.buf)
+        wi = self.wi
+        wi_arr = (wi + np.arange(n)) % L
+        phase = (self.ph + (np.arange(1, n + 1) * (0.5 + amt * 1.5) / self.sr)) % 1.0
+        mod = 0.5 + 0.5 * np.sin(TWO_PI * phase)
+        depth = 0.003 * self.sr
+        delay = 0.012 * self.sr + mod * depth * amt
+        ri = np.floor(delay).astype(np.int64)
+        frac = delay - ri
+        ridx = (wi_arr - ri) % L
+        ridx2 = (ridx - 1) % L
+        dly = self.buf[ridx] * (1.0 - frac)[:, None] + self.buf[ridx2] * frac[:, None]
+        out = x + dly * amt * 0.5
+        self.buf[wi_arr] = x
+        self.wi = int((wi + n) % L)
+        self.ph = float(phase[-1])
         return out.astype(np.float32) if x.dtype != np.float64 else out
 
 
@@ -1947,18 +1946,20 @@ class Phaser:
         if amt <= 0.005 or x is None:
             return x
         n = x.shape[0]
-        out = np.zeros_like(x)
         rate = 0.15 + amt * 1.5
+        phase = (self.ph + (np.arange(1, n + 1) * rate / self.sr)) % 1.0
+        a = 0.3 + 0.6 * (0.5 + 0.5 * np.sin(TWO_PI * phase)) * amt
+        a_mean = float(np.mean(a))
+        # allpass per channel with fixed coefficient a_mean
+        out = np.zeros_like(x)
+        for ch in range(2):
+            # y[n] = a*x[n] + x[n-1] - a*y[n-1]
+            # use lfilter: b=[a,1], a=[1,a]? Actually allpass H=(a+z^-1)/(1+a*z^-1)
+            # lfilter b=[a,1], a=[1,a]
+            out[:, ch] = lfilter([a_mean, 1.0], [1.0, a_mean], x[:, ch])
         mix = amt
-        for i in range(n):
-            self.ph = (self.ph + rate / self.sr) % 1.0
-            a = 0.3 + 0.6 * (0.5 + 0.5 * math.sin(TWO_PI * self.ph)) * amt
-            for ch in range(2):
-                xi = x[i, ch]
-                yi = a * xi + self.xp[ch] - a * self.yp[ch]
-                self.xp[ch] = xi
-                self.yp[ch] = yi
-                out[i, ch] = (1.0 - mix) * xi + mix * yi
+        out = (1.0 - mix) * x + mix * out
+        self.ph = float(phase[-1])
         return out.astype(np.float32) if x.dtype != np.float64 else out
 
 
@@ -1974,22 +1975,23 @@ class Flanger:
         if amt <= 0.005 or x is None:
             return x
         n = x.shape[0]
-        out = np.zeros_like(x)
+        L = len(self.buf)
+        wi = self.wi
+        wi_arr = (wi + np.arange(n)) % L
         rate = 0.1 + amt * 1.0
+        phase = (self.ph + (np.arange(1, n + 1) * rate / self.sr)) % 1.0
+        mod = 0.5 + 0.5 * np.sin(TWO_PI * phase)
         depth = 0.005 * self.sr
-        fb = amt * 0.7
-        for i in range(n):
-            self.ph = (self.ph + rate / self.sr) % 1.0
-            mod = 0.5 + 0.5 * math.sin(TWO_PI * self.ph)
-            delay = 0.005 * self.sr + mod * depth
-            ri = int(delay)
-            frac = delay - ri
-            ridx = (self.wi - ri) % len(self.buf)
-            ridx2 = (ridx - 1) % len(self.buf)
-            dly = self.buf[ridx] * (1 - frac) + self.buf[ridx2] * frac
-            out[i] = x[i] + dly * amt
-            self.buf[self.wi] = x[i] + dly * fb
-            self.wi = (self.wi + 1) % len(self.buf)
+        delay = 0.005 * self.sr + mod * depth
+        ri = np.floor(delay).astype(np.int64)
+        frac = delay - ri
+        ridx = (wi_arr - ri) % L
+        ridx2 = (ridx - 1) % L
+        dly = self.buf[ridx] * (1.0 - frac)[:, None] + self.buf[ridx2] * frac[:, None]
+        out = x + dly * amt
+        self.buf[wi_arr] = x + dly * (amt * 0.7)
+        self.wi = int((wi + n) % L)
+        self.ph = float(phase[-1])
         return out.astype(np.float32) if x.dtype != np.float64 else out
 
 
@@ -2479,13 +2481,8 @@ class Engine:
             ratio = 2.0 + amt * 8.0
             # compute gain reduction per sample based on peak envelope
             env = np.abs(out).max(axis=1)
-            # smooth envelope
             a = 0.01 + amt * 0.1
-            env_s = np.zeros_like(env)
-            e = 0.0
-            for i in range(len(env)):
-                e = e + a * (env[i] - e)
-                env_s[i] = e
+            env_s = lfilter([a], [1.0, -(1.0 - a)], env)
             gain = np.ones_like(env_s)
             over = env_s > thr
             gain[over] = (thr + (env_s[over] - thr) / ratio) / (env_s[over] + 1e-9)
