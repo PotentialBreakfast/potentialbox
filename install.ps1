@@ -52,7 +52,7 @@ if (-not (Test-Path $vpy)) {
     & $py -m venv $venv
     if ($LASTEXITCODE -ne 0) { throw "Could not create the Python environment." }
 }
-Say "Installing audio + MIDI libraries (numpy, scipy, sounddevice with ASIO, mido, python-rtmidi)..."
+Say "Installing audio + MIDI libraries (numpy, scipy, sounddevice with ASIO, mido, python-rtmidi, pillow)..."
 & $vpy -m pip install --disable-pip-version-check --quiet --upgrade pip
 & $vpy -m pip install --disable-pip-version-check --quiet --upgrade -r (Join-Path $src 'requirements.txt')
 if ($LASTEXITCODE -ne 0) { throw "Library install failed. Check your internet connection and run the installer again." }
