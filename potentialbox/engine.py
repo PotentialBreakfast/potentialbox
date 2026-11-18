@@ -374,6 +374,7 @@ def _build_specs():
     a(Param("m.distortion", "Distortion", 0, 1, 0.0, unit="%"))
     a(Param("m.limiter", "Limiter", 0, 1, 0.0, unit="%"))
     a(Param("m.flanger", "Flanger", 0, 1, 0.0, unit="%"))
+    a(Param("m.compressor", "Compressor", 0, 1, 0.0, unit="%"))
     for i, mc in enumerate(MACROS):
         a(Param(f"mc.{i+1}", mc[0], 0, 1, 0.5 if mc[2] == "bip" else 0.0, unit="djm" if mc[2] == "bip" else "%"))
     return {p.key: p for p in S}
@@ -432,8 +433,8 @@ PAGES = collections.OrderedDict([
                         "dr.vol", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master"]),
     ("FX", ["fx.s1", "fx.s2", "fx.dr", "fx.time", "fx.fb", "fx.tone", "m.filter", "m.crush",
             "rv.s1", "rv.s2", "rv.dr", "rv.size", "rv.tone", "rv.level", "dr.filter", "m.limiter"]),
-    ("Master FX", ["m.chorus", "m.flanger", "m.distortion", "m.limiter", "m.drive", "m.filter", "m.crush", "m.glue",
-                   "m.gluespd", "m.width", "m.master", "rv.level", "rv.size", "rv.tone", "dr.filter", "dr.drive"]),
+    ("Master FX", ["m.chorus", "m.flanger", "m.distortion", "m.limiter", "m.compressor", "m.drive", "m.filter", "m.crush",
+                   "m.glue", "m.gluespd", "m.width", "m.master", "rv.level", "rv.size", "rv.tone", "dr.filter"]),
 ])
 
 PRESETS = {
@@ -2468,6 +2469,24 @@ class Engine:
             out = out + inp * (v["lp.in"] * v["lp.mon"])
         out = self.chorus.process(out, v["m.chorus"])
         out = self.flanger.process(out, v["m.flanger"])
+        amt = v["m.compressor"]
+        if amt > 0.005:
+            # simple feed-forward compressor
+            thr = 0.6 - amt * 0.5
+            ratio = 2.0 + amt * 8.0
+            # compute gain reduction per sample based on peak envelope
+            env = np.abs(out).max(axis=1)
+            # smooth envelope
+            a = 0.01 + amt * 0.1
+            env_s = np.zeros_like(env)
+            e = 0.0
+            for i in range(len(env)):
+                e = e + a * (env[i] - e)
+                env_s[i] = e
+            gain = np.ones_like(env_s)
+            over = env_s > thr
+            gain[over] = (thr + (env_s[over] - thr) / ratio) / (env_s[over] + 1e-9)
+            out = out * gain[:, None]
         amt = v["m.distortion"]
         if amt > 0.005:
             drive = 1.0 + amt * 9.0
