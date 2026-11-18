@@ -231,8 +231,8 @@ p("PotentialBox finds the BeatStep Pro by itself and listens to every port it of
   "(factory: Synth 1 = 1, Synth 2 = 2, Drums = 10).")
 h2("Look")
 p("The <b>LOOK</b> key (bottom right) steps through the looks: <b>Print Plate</b> (the default), <b>Night Rack</b>, "
-  "<b>Colour Block</b> and <b>Vintage</b> (used for the pictures in this manual). The change shows at once and is remembered. "
-  "If you make a file called <code>user-look.json</code> in <code>%APPDATA%\\PotentialBox</code>, it becomes a fifth "
+  "<b>Colour Block</b>, <b>Vintage</b> (used for the pictures in this manual) and <b>Hi-Fi</b>. The change shows at once and is remembered. "
+  "If you make a file called <code>user-look.json</code> in <code>%APPDATA%\\PotentialBox</code>, it becomes a sixth "
   "look the next time PotentialBox starts; any colour it leaves out comes from Print Plate.")
 end()
 

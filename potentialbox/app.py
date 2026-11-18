@@ -193,14 +193,21 @@ LOOKS = {
         accent="0e1f1b", accent_hi="0e1f1b", knob_face="0e1f1b", knob_ring="0e1f1b", knob_dot="f2ecdd",
         seg_active="ffe14a", seg_inactive="f2ecdd", seg_active_tx="0e1f1b", btn_text="0e1f1b", btn_bg="f2ecdd",
         btn_on="ffe14a", tab_on="0e1f1b", tab_on_tx="f2ecdd", lcd="f2ecdd", well="f2ecdd", chrome_ink="0e1f1b"),
-    "vintage": dict(  # BeatStep-style dark panel, walnut cabinet, cream keys, amber LEDs, green display.
+    "vintage": dict(  # a late-80s drum machine, like the MPC plugins' Vintage: warm grey panel, beige keys, amber display
+        name="Vintage", round=0.5, edge=2.0, frame=2.0, narrow=False,
+        bg="bdb6a6", panel="b1aa99", line="2a2723", ink="2a2723", ink_dim="3a352e", ink_faint="6f675a",
+        accent="0f6534", accent_hi="2a2723", knob_face="2a2723", knob_ring="2a2723", knob_dot="f2a33a",
+        seg_active="2a2723", seg_inactive="e6dcc6", seg_active_tx="f2a33a", btn_text="2a2723", btn_bg="e6dcc6",
+        btn_on="f2a33a", tab_on="2a2723", tab_on_tx="f2a33a", lcd="171411", well="a39b8a", chrome_ink="2a2723",
+        screen="171411", lcd_ink="f2a33a", title="2a2723", logo="2a2723", key_dim="6f675a"),
+    "hifi": dict(  # a hi-fi deck in BeatStep colours: dark panel, walnut cabinet, cream keys, amber LEDs, green display.
         # Optional keys read with T.get() so a look only needs them if it wants them:
         #   wood     - width of the walnut cabinet border drawn round the window (0 = none)
         #   screen   - display glass behind readouts (falls back to well)
         #   lcd_ink  - text on the display glass (falls back to accent)
         #   logo     - the app name in the header (falls back to accent)
         #   title    - frame headings (falls back to accent)
-        name="Vintage", round=0.42, edge=1.0, frame=1.0, narrow=False, wood=15, plate=True, pointer=True, dome=True,
+        name="Hi-Fi", round=0.42, edge=1.0, frame=1.0, narrow=False, wood=15, plate=True, pointer=True, dome=True,
         bevel=True, glass=True, serif=True, screw=True,
         bg="17181b", panel="202127", line="5d5a50", ink="ece6d6", ink_dim="8f8a7d", ink_faint="746f63",
         accent="e0803c", accent_hi="ffab63", knob_face="24252a", knob_ring="4b4942", knob_dot="f4efe0",
@@ -210,7 +217,7 @@ LOOKS = {
         screen="0b140e", lcd_ink="8cffb0", logo="f4efe0", title="f4efe0", key_dim="8b8272"),
 }
 USER_LOOK_FILE = os.path.join(CFG_DIR, "user-look.json")
-LOOK_ORDER = ["print", "rack", "block", "vintage"] + (["user"] if os.path.isfile(USER_LOOK_FILE) else [])
+LOOK_ORDER = ["print", "rack", "block", "vintage", "hifi"] + (["user"] if os.path.isfile(USER_LOOK_FILE) else [])
 T = {}        # the current look's colours, "#rrggbb"
 STYLE = {}    # the current look's name and shape numbers
 
@@ -2566,17 +2573,17 @@ class App:
         hit_now = eng.drums.active[i] > 0.05
         fill = T["btn_on"] if hit_now else (T["seg_active"] if on else T["btn_bg"])
         self.rrect(x0, y0, 98, 132, 10, fill, outline=T["accent"] if on else "")
-        tx = T["btn_text"] if hit_now else (T["accent"] if on else T["btn_text"])
+        tx = T["btn_text"] if hit_now else (T["seg_active_tx"] if on else T["btn_text"])
         t = (c or {}).get("type") or ("BUILT-IN" if c is None else "?")
         self.text(x0 + 10, y0 + 16, str(i + 1), 14, tx, True, "w")
-        self.text_fit(x0 + 90, y0 + 16, SHORT_TYPE.get(t, t).upper(), 11, 56, T["ink_dim"] if not hit_now else tx,
+        self.text_fit(x0 + 90, y0 + 16, SHORT_TYPE.get(t, t).upper(), 11, 56, tx if (hit_now or on) else T["ink_dim"],
                       True, "e")
         name = (c or {}).get("label") or eng.drums.names[i]
         a, b = self.split2(name.upper(), 11)
         self.text_fit(x0 + 49, y0 + 42, a, 12, 90, tx, True)
         if b:
             self.text_fit(x0 + 49, y0 + 58, b, 12, 90, tx, True)
-        self.text_fit(x0 + 49, y0 + 80, ((c or {}).get("src") or "built-in")[:22], 11, 90, T["ink_dim"])
+        self.text_fit(x0 + 49, y0 + 80, ((c or {}).get("src") or "built-in")[:22], 11, 90, tx if on else T["ink_dim"])
         self.hit(x0, y0, 98, 96, lambda j=i: self.km_select(j))
         self.rrect(x0 + 6, y0 + 98, 86, 28, 8, T["btn_on"] if locked else T["well"])
         self.text(x0 + 49, y0 + 112, "LOCKED" if locked else "LOCK", 11, T["btn_text"] if locked else T["ink_dim"], True)
