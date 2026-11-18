@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.1
+- The window and taskbar show the PotentialBox (PB) icon instead of Python's feather, and PotentialBox gets its own taskbar button.
+- The desktop shortcut uses the new PB icon.
+
 ## 1.10.0
 More drums: the **Kit Maker** builds kits from all your own one-shots, PotentialKits-style.
 
