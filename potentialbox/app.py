@@ -53,10 +53,11 @@ from potentialbox import kits  # noqa: E402
 from potentialbox.library import Library, map_kit, brand_of, build_index, filter_index, GROUPS, PAD_GROUP  # noqa: E402
 
 APP = "PotentialBox"
-VERSION = "1.9.1"
+VERSION = "1.9.2"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
+TAB_LABEL = {"Arrangement": "Arrange"}  # tab bar only (the page itself says Arrangement)
 SHORT_DEST = {"Wave position": "Wave pos", "Saw > Square": "Wave", "Pulse width": "Pulse w.", "Osc 2 pitch": "Osc 2",
               "Resonance": "Reso", "Velocity": "Vel", "Smooth random": "Smooth"}
 CFG_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.config"), APP)
@@ -88,7 +89,7 @@ ACTION_NAMES = dict(ACTIONS)
 PAD_ACTIONS = [aid for aid, _ in ACTIONS[:16]]
 HOLD_ACTIONS = {"fill"}
 # On the Live tab the 16 BeatStep pads (the ones set to pad actions 1-16) play these instead
-LIVE_PADS = [f"Hold: {n}" for n in PUNCH_FX] + ["Hold: Fill", "Hold: Scene B", "Record on/off", "Random Synth 1",
+LIVE_PADS = [f"Hold: {n}" for n in PUNCH_FX] + ["Hold: Fill", "Hold: Scene morph", "Record on/off", "Random Synth 1",
                                                  "Random Synth 2", "Random Drum Kit", "Next Kit", "Back to last tab"]
 
 
@@ -124,7 +125,24 @@ KNOB_GROUPS = {
     "Drums 1-8 Groove": [(0, 8, "Chance · pads 1-8"), (8, 16, "Plays when · pads 1-8")],
     "Drums 9-16 Groove": [(0, 8, "Chance · pads 9-16"), (8, 16, "Plays when · pads 9-16")],
     "FX": [(0, 3, "Delay sends"), (3, 6, "Delay"), (6, 8, "DJ filter & lo-fi"), (8, 11, "Reverb sends"),
-           (11, 14, "Reverb"), (14, 16, "Bus")],
+           (11, 14, "Reverb"), (14, 15, "Bus"), (15, 16, "Limiter")],
+    "Master FX": [(0, 3, "Modulation"), (3, 4, "Drive"), (4, 6, "Dynamics"), (6, 8, "Drive & DJ filter"),
+                  (8, 9, "Lo-fi"), (9, 11, "Glue"), (11, 13, "Width & level"), (13, 16, "Reverb")],
+    "Synth 1 Mod 2": [(0, 4, "Mod slots 9-12 · tap a name to change it"), (4, 8, "LFO 1 & mod env attack"),
+                      (8, 12, "LFO 2 & mod env decay"), (12, 16, "Feel & pan")],
+    "Synth 2 Mod 2": [(0, 4, "Mod slots 9-12 · tap a name to change it"), (4, 8, "LFO 1 & mod env attack"),
+                      (8, 12, "LFO 2 & mod env decay"), (12, 16, "Feel & pan")],
+    "Synth 1 Env": [(0, 4, "Amp envelope"), (4, 6, "Decay 2 (0 = off)"), (6, 8, "Filter envelope"), (8, 10, "Mod env"),
+                    (10, 12, "Pitch env"), (12, 16, "Glide, velocity & level")],
+    "Synth 2 Env": [(0, 4, "Amp envelope"), (4, 6, "Decay 2 (0 = off)"), (6, 8, "Envelope amounts"), (8, 10, "Mod env"),
+                    (10, 12, "Pitch env"), (12, 16, "Glide, velocity & level")],
+    "Synth 1 LFO1 Steps": [(0, 8, "LFO 1 steps 1-8 · set LFO 1 shape to Step"), (8, 16, "Steps 9-16")],
+    "Synth 1 LFO2 Steps": [(0, 8, "LFO 2 steps 1-8 · set LFO 2 shape to Step"), (8, 16, "Steps 9-16")],
+    "Synth 2 LFO1 Steps": [(0, 8, "LFO 1 steps 1-8 · set LFO 1 shape to Step"), (8, 16, "Steps 9-16")],
+    "Synth 2 LFO2 Steps": [(0, 8, "LFO 2 steps 1-8 · set LFO 2 shape to Step"), (8, 16, "Steps 9-16")],
+    "Drums Choke": [(0, 8, "Choke group · pads 1-8 (a pad cuts off the others in its group)"), (8, 16, "Pads 9-16")],
+    "Track Mute/Solo": [(0, 3, "Mute"), (3, 6, "Solo"), (6, 8, "Looper & master"), (8, 11, "Levels"),
+                        (11, 13, "Pan"), (13, 16, "Master bus")],
 }
 LIBRARY_GUESSES = [os.path.join(os.path.expanduser("~"), sub, "Drum Machine Collection")
                    for sub in ("Downloads", "Documents", "Music", "Desktop")]
@@ -293,10 +311,14 @@ class State:
     def load_scenes(self, d):
         p = self.params
         p.scenes = {str(i): None for i in range(1, 9)}
+        d = dict(d or {})
+        for old, slot in (("A", "1"), ("B", "2")):  # scenes saved by 1.9.0 and earlier
+            if isinstance(d.get(old), dict) and not isinstance(d.get(slot), dict):
+                d[slot] = d[old]
         for w in (str(i) for i in range(1, 9)):
-            sc = (d or {}).get(w)
+            sc = d.get(w)
             if isinstance(sc, dict):
-                p.scenes[w] = {k: float(n) for k, n in sc.items() if k in SPECS}
+                p.scenes[w] = {k: float(n) for k, n in sc.items() if k in SPECS and not k.startswith("sc.")}
         p._scene_keys()
 
     def load_kits(self):
@@ -434,6 +456,7 @@ class Audio:
         self.in_chans = None
         self.in_error = ""
         self.max_in = 0
+        self.underruns = 0   # buffers the sound card had to play without fresh audio (= a crackle)
 
     def devices(self):
         out = []
@@ -480,14 +503,25 @@ class Audio:
     def busy(self):
         return getattr(self, "_worker", None) is not None and self._worker.is_alive()
 
+    def render_failed(self, outdata):
+        """A render error must never stall the audio thread: silence this block, log at most every 5 s."""
+        outdata.fill(0)
+        now = time.monotonic()
+        if now - getattr(self, "_err_t", 0.0) > 5.0:
+            self._err_t = now
+            log("render error", traceback.format_exc())
+
     def callback(self, outdata, frames, t, status):
+        if status.output_underflow:
+            self.underruns += 1
         try:
             outdata[:] = self.engine.render(frames)
         except Exception:
-            outdata.fill(0)
-            log("render error", traceback.format_exc())
+            self.render_failed(outdata)
 
     def duplex_callback(self, indata, outdata, frames, t, status):
+        if status.output_underflow or status.input_overflow:
+            self.underruns += 1
         try:
             ch = self.in_chans
             x = indata[:, ch]
@@ -495,8 +529,7 @@ class Audio:
                 x = np.repeat(x, 2, axis=1)
             outdata[:] = self.engine.render(frames, x)
         except Exception:
-            outdata.fill(0)
-            log("render error", traceback.format_exc())
+            self.render_failed(outdata)
 
     def stop(self):
         if self.stream is not None:
@@ -510,6 +543,7 @@ class Audio:
     def start(self, dev=None):
         self.stop()
         self.error = ""
+        self.underruns = 0
         if sd is None:
             self.error = "Audio library missing - run the installer again"
             self.label = "NO AUDIO"
@@ -984,7 +1018,7 @@ class App:
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         s = min(1.0, sw * 0.92 / W, sh * 0.86 / H)
         self.root.geometry(f"{int(W*s)}x{int(H*s)}")
-        self.root.minsize(900, 800)
+        self.root.minsize(640, 400)  # everything scales; a big minimum pushed the tabs off small screens
         self.cv = tk.Canvas(self.root, bg=T["bg"], highlightthickness=0, bd=0)
         self.cv.pack(fill="both", expand=True)
         self.scale, self.ox, self.oy = s, 0, 0
@@ -1086,6 +1120,7 @@ class App:
         self.fam = next((f for f in base if f in fams), "TkDefaultFont")
         self.fam_b = next((f for f in bold if f in fams), self.fam)
         self.fonts = {}
+        self._fit = {}
 
     def cycle_look(self):
         """Setup tab: the LOOK key steps Print Plate > Night Rack > Colour Block. Shows at once and is saved."""
@@ -1131,6 +1166,19 @@ class App:
     def text(self, x, y, s, px, color, bold=False, anchor="center"):
         self.cv.create_text(self.X(x), self.Y(y), text=s, font=self.font(px, bold), fill=color, anchor=anchor)
 
+    def text_fit(self, x, y, s, px, maxw, color, bold=False, anchor="center", minpx=8):
+        """Text that shrinks (down to `minpx`) to fit `maxw` design pixels instead of running into its neighbours."""
+        key = (s, px, maxw, bold, round(self.scale, 3), self.fam)
+        fit = self._fit.get(key)
+        if fit is None:
+            fit = px
+            while fit > minpx and self.font(fit, bold).measure(s) / self.scale > maxw:
+                fit -= 1
+            if len(self._fit) > 4000:
+                self._fit.clear()
+            self._fit[key] = fit
+        self.text(x, y, s, fit, color, bold, anchor)
+
     def hit(self, x, y, w, h, fn, kind="tap"):
         self.hits.append((x, y, x + w, y + h, fn, kind))
 
@@ -1170,13 +1218,32 @@ class App:
                 bx, by, bw, bh = x + i * w, y, w, h
             on = opt == current
             self.rect(bx + 1, by + 1, bw - 2, bh - 2, fill=T["seg_active"] if on else T["seg_inactive"])
-            self.text(bx + bw / 2, by + bh / 2, str(opt).upper(), 13, T["seg_active_tx"] if on else T["ink_dim"], on)
+            self.text_fit(bx + bw / 2, by + bh / 2, str(opt).upper(), 13, bw - 8, T["seg_active_tx"] if on else T["ink_dim"], on)
             self.hit(bx, by, bw, bh, lambda o=opt: fn(o))
 
     def led(self, cx, cy, lit):
         r = 6
         self.cv.create_oval(self.X(cx - r), self.Y(cy - r), self.X(cx + r), self.Y(cy + r),
                             fill=T["accent"] if lit else T["well"], outline=T["line"])
+
+    @staticmethod
+    def is_toggle(key):
+        sp = SPECS[key]
+        return bool(sp.choices) and len(sp.choices) == 2 and sp.step == 1
+
+    def toggle_param(self, key):
+        p = self.state.params
+        sp = SPECS[key]
+        cur = int(round(sp.to_val(p.cur_norm(key))))
+        p.set_val(key, 1 - cur) if p.lock_step is None else p.set_norm(key, sp.to_norm(1 - cur))
+        self.state.dirty = True
+
+    def arc(self, cx, cy, r, start, extent, color, width):
+        if abs(extent) < 0.5:
+            return
+        X, Y = self.X, self.Y
+        self.cv.create_arc(X(cx - r), Y(cy - r), X(cx + r), Y(cy + r), start=start, extent=extent, style="arc",
+                           outline=color, width=max(1, round(width * self.scale)))
 
     def knob(self, idx, cx, cy, r, key):
         spec = SPECS[key]
@@ -1186,15 +1253,27 @@ class App:
         moved = p.lock_step is None and abs(n - p.norm[key]) > 0.004
         hot = time.time() - self.midi.flash[idx] < 0.35
         X, Y, s = self.X, self.Y, self.scale
-        # dotted ring
-        dots = 31
-        for i in range(dots):
-            a = math.radians(225 - 270 * i / (dots - 1))
-            rx, ry = cx + (r + 11) * math.cos(a), cy - (r + 11) * math.sin(a)
-            lit = hot and i / (dots - 1) <= n + 1e-6
-            d = 2.2 if lit else 1.8
-            self.cv.create_oval(X(rx - d), Y(ry - d), X(rx + d), Y(ry + d), outline="",
-                                fill=T["accent"] if lit else T["ink_faint"])
+        if self.is_toggle(key):  # on/off settings are one-tap keys, not knobs (the BeatStep knob still works)
+            on = int(round(spec.to_val(n))) == 1
+            self.rrect(cx - 62, cy - 30, 124, 60, 12, T["btn_on"] if on else T["btn_bg"],
+                       outline=T["accent"] if hot else "")
+            self.text(cx, cy, spec.choices[1 if on else 0].upper(), 18 if len(spec.choices[1]) < 6 else 13,
+                      T["btn_text"], True)
+            self.text_fit(cx, cy + r + 24, self.knob_label(key), 13, 150, T["ink"], True)
+            self.text(cx, cy + r + 46, "TAP TO SWITCH", 11, T["ink_faint"])
+            self.text(cx - r - 30, cy - r - 2, str(idx + 1), 10, T["ink_faint"], False, "e")
+            self.hit(cx - 62, cy - 30, 124, 60, lambda k=key: self.toggle_param(k))
+            return
+        # value ring: a track arc and the value arc (bipolar settings fill from the top)
+        rr = r + 10
+        self.arc(cx, cy, rr, 225, -270, T["ink_faint"], 3)
+        bip = spec.lo < 0 < spec.hi or spec.unit in ("djm", "sw")
+        if bip:
+            zero = spec.to_norm(0.0) if spec.lo < 0 < spec.hi else 0.5
+            a0, a1 = 225 - 270 * zero, 225 - 270 * n
+            self.arc(cx, cy, rr, a0, a1 - a0, T["accent"], 5)
+        else:
+            self.arc(cx, cy, rr, 225, -270 * n, T["accent"], 5)
         self.cv.create_oval(X(cx - r), Y(cy - r), X(cx + r), Y(cy + r), fill=T["knob_face"],
                             outline=T["accent"] if hot else T["knob_ring"], width=max(1, int(2 * s)))
         if moved:  # where your own setting is, while a macro pushes the knob
@@ -1204,7 +1283,7 @@ class App:
         a = math.radians(225 - 270 * n)
         dx, dy = cx + (r - 12) * math.cos(a), cy - (r - 12) * math.sin(a)
         self.cv.create_oval(X(dx - 7), Y(dy - 7), X(dx + 7), Y(dy + 7), fill=T["knob_dot"], outline="")
-        self.text(cx, cy + r + 24, self.knob_label(key), 13, T["ink"], True)
+        self.text_fit(cx, cy + r + 24, self.knob_label(key), 13, 150, T["ink"], True)
         shown = spec.fmt(spec.to_val(n) if p.lock_step is not None else p.val[key])
         if key[2:5] in (".l1", ".l2") and key.endswith("rate") and p.val[key[:5] + "sync"] >= 0.5:
             shown = "Synced"
@@ -1246,7 +1325,7 @@ class App:
             name = self.audio.engine.drums.names[pad]
             return f"{name} {SPECS[key].label}"[:18]
         lab = SPECS[key].label
-        if self.page_name() in ("Perform", "Mix", "Mix EQ", "FX") and key[:2] in ("s1", "s2") and "Synth" not in lab:
+        if self.page_name() in ("Perform", "Mix", "Mix EQ", "FX", "Track Mute/Solo", "Master FX") and key[:2] in ("s1", "s2") and "Synth" not in lab:
             lab = key[:2].upper() + " " + lab
         return lab
 
@@ -1277,139 +1356,200 @@ class App:
             else:
                 self.draw_instruments()
         self.draw_tabs()
-        if self.overlay and self.overlay[0] == "sounds":
-            self.draw_sounds(self.overlay[1])
-        elif self.overlay and self.overlay[0] == "kits":
-            self.draw_kits()
-        elif self.overlay and self.overlay[0] == "machines":
-            self.draw_machines()
-        elif self.overlay and self.overlay[0] == "pad":
-            self.draw_pad_editor()
-        elif self.overlay and self.overlay[0] == "mykits":
-            self.draw_mykits()
-        elif self.overlay and self.overlay[0] == "actions":
-            self.draw_actions()
-        elif self.overlay and self.overlay[0] == "route":
-            self.draw_route(self.overlay[1], self.overlay[2])
-        elif self.overlay and self.overlay[0] == "resample":
-            self.draw_resample()
-        elif self.overlay and self.overlay[0] == "loop_input":
-            self.draw_loop_input()
-        elif self.overlay and self.overlay[0] == "my_loops":
-            self.draw_my_loops()
-
-    def draw_arrangement(self):
-        self.frame(40, 80, 1200, 640, "Arrangement", "CHAIN BEATS · EXPORT MIDI")
-        arr = self.state.arrangement
-        self.text(640, 160, f"{len(arr)} pattern(s) in chain", 16, T["ink"], True)
-        y = 200
-        for i, bt in enumerate(arr[:14]):
-            self.text(120, y, f"{i + 1}.", 13, T["accent"], True, "w")
-            self.text(160, y, f"genre {bt.get('genre')}   bars {bt.get('bars')}   steps {bt.get('steps')}", 13, T["ink_dim"], False, "w")
-            y += 26
-        if not arr:
-            self.text(640, 320, "Chain is empty. Add the current beat.", 16, T["ink_dim"], True)
-        self.button(260, 620, 220, 54, "ADD CURRENT BEAT", self.arr_add, accent=True, px=14)
-        self.button(640, 620, 220, 54, "CLEAR CHAIN", self.arr_clear, px=14)
-        self.button(1020, 620, 220, 54, "EXPORT CHAIN MIDI", self.arr_export_midi, px=14)
-
-    def arr_add(self):
-        b = self.audio.engine.beats.beat
-        if b is None:
-            self.show_toast("NO BEAT")
-            return
-        self.state.arrangement.append(b.to_json() if hasattr(b, "to_json") else {"genre": b.genre, "bars": b.bars, "steps": b.steps, "grid": b.grid})
-        self.state.dirty = True
-        self.show_toast(f"ADDED ({len(self.state.arrangement)})")
-
-    def arr_clear(self):
-        self.state.arrangement = []
-        self.state.dirty = True
-        self.show_toast("CHAIN CLEARED")
-
-    def arr_export_midi(self):
-        if mido is None:
-            self.show_toast("MIDO NOT AVAILABLE")
-            return
-        arr = self.state.arrangement
-        if not arr:
-            self.show_toast("CHAIN EMPTY")
-            return
-        notes = {"K": 36, "B": 36, "S": 38, "C": 39, "H": 42, "O": 46, "R": 37, "Y": 49, "W": 45, "T": 45, "P": 54, "G": 49}
-        velmap = {"X": 120, "x": 90, ";": 50, "g": 40}
-        mid = mido.MidiFile(ticks_per_beat=480)
-        track = mido.MidiTrack()
-        mid.tracks.append(track)
-        track.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(self.audio.engine.bpm), time=0))
-        cur = 0
-        for bt in arr:
-            grid = bt.get("grid", {})
-            steps = bt.get("steps", 16)
-            events = [[] for _ in range(steps)]
-            for role, row in grid.items():
-                row = (row + "." * steps)[:steps]
-                for step, ch in enumerate(row):
-                    if ch == ".":
-                        continue
-                    events[step].append((notes.get(role, 38), velmap.get(ch, 80)))
-            for step in range(steps):
-                tick = step * 120
-                delta = tick - cur
-                cur = tick
-                for note, vel in events[step]:
-                    if delta > 0:
-                        track.append(mido.Message("note_on", note=note, velocity=vel, time=delta))
-                        delta = 0
-                    else:
-                        track.append(mido.Message("note_on", note=note, velocity=vel, time=0))
-                    track.append(mido.Message("note_off", note=note, velocity=0, time=60))
-                    cur = tick + 60
-        out_dir = os.path.join(CFG_DIR, "Recordings")
-        os.makedirs(out_dir, exist_ok=True)
-        import time as _t
-        path = os.path.join(out_dir, f"PotentialBox-arrangement-{int(_t.time())}.mid")
-        mid.save(path)
-        self.show_toast(f"EXPORTED: {os.path.basename(path)}")
-
-        self.draw_tabs()
-        if self.overlay and self.overlay[0] == "sounds":
-            self.draw_sounds(self.overlay[1])
-        elif self.overlay and self.overlay[0] == "kits":
-            self.draw_kits()
-        elif self.overlay and self.overlay[0] == "machines":
-            self.draw_machines()
-        elif self.overlay and self.overlay[0] == "pad":
-            self.draw_pad_editor()
-        elif self.overlay and self.overlay[0] == "mykits":
-            self.draw_mykits()
-        elif self.overlay and self.overlay[0] == "actions":
-            self.draw_actions()
-        elif self.overlay and self.overlay[0] == "route":
-            self.draw_route(self.overlay[1], self.overlay[2])
-        elif self.overlay and self.overlay[0] == "resample":
-            self.draw_resample()
-        elif self.overlay and self.overlay[0] == "loop_input":
-            self.draw_loop_input()
-        elif self.overlay and self.overlay[0] == "my_loops":
-            self.draw_my_loops()
-        elif self.overlay and self.overlay[0] == "mykits":
-            self.draw_mykits()
-        elif self.overlay and self.overlay[0] == "actions":
-            self.draw_actions()
-        elif self.overlay and self.overlay[0] == "route":
-            self.draw_route(self.overlay[1], self.overlay[2])
-        elif self.overlay and self.overlay[0] == "resample":
-            self.draw_resample()
-        elif self.overlay and self.overlay[0] == "setups":
-            self.draw_setups()
-        elif self.overlay and self.overlay[0] == "loopinput":
-            self.draw_loop_input()
-        elif self.overlay and self.overlay[0] == "myloops":
-            self.draw_my_loops()
+        ov = self.overlay[0] if self.overlay else None
+        draw_ov = {
+            "sounds": lambda: self.draw_sounds(self.overlay[1]),
+            "kits": self.draw_kits,
+            "machines": self.draw_machines,
+            "pad": self.draw_pad_editor,
+            "mykits": self.draw_mykits,
+            "actions": self.draw_actions,
+            "route": lambda: self.draw_route(self.overlay[1], self.overlay[2]),
+            "resample": self.draw_resample,
+            "setups": self.draw_setups,
+            "loopinput": self.draw_loop_input,
+            "myloops": self.draw_my_loops,
+        }.get(ov)
+        if draw_ov:
+            draw_ov()
         msg, until = self.toast
         if msg and time.time() < until:
             self.rrect(300, 30, 430, 48, 12, T["btn_on"])
-            self.text(515, 54, msg[:40], 16, T["btn_text"], True)
+            self.text(515, 54, msg[:44], 16 if len(msg) <= 36 else 13, T["btn_text"], True)
+
+    # ---------------------------------------------------------------- arrangement (a chain of beats = a song)
+    ARR_MAX = 16
+
+    def arr_sync(self, bp=None):
+        """Hand the chain to the beat player as Beat objects (it plays them in order, then round again)."""
+        bp = bp or self.audio.engine.beats
+        chain = []
+        for d in self.state.arrangement[:self.ARR_MAX]:
+            try:
+                chain.append(Beat.from_json(d))
+            except Exception:
+                pass
+        bp.chain = chain
+        if not chain:
+            bp.chain_on = False
+
+    def draw_arrangement(self):
+        eng = self.audio.engine
+        bp = eng.beats
+        arr = self.state.arrangement[:self.ARR_MAX]
+        self.frame(14, 100, 1252, 632, "Arrangement", "BEATS PLAY IN THIS ORDER, EACH FOR ITS OWN LENGTH, THEN ROUND AGAIN")
+        for i, key in enumerate(PAGES["Arrangement"]):
+            self.mini_knob(i, 14 + 39 + i * 77.5, 172, key)
+        playing = bp.chain_on and bool(bp.chain) and (bp.on or eng.playing)
+        for i in range(self.ARR_MAX):
+            r, c = divmod(i, 4)
+            x0, y0 = 30 + c * 222, 262 + r * 96
+            if i < len(arr):
+                d = arr[i]
+                g = int(d.get("genre", 0)) % len(GENRES)
+                bars = max(1, int(d.get("steps", 16)) // 16)
+                now = playing and i == bp.chain_i % max(len(bp.chain), 1)
+                self.rrect(x0, y0, 212, 86, 12, T["btn_on"] if now else T["btn_bg"])
+                self.text(x0 + 16, y0 + 22, str(i + 1), 13, T["accent"] if not now else T["btn_text"], True, "w")
+                self.text(x0 + 106, y0 + 40, GENRE_NAMES[g].upper(), 17, T["btn_text"], True)
+                self.text(x0 + 106, y0 + 64, f"{bars} BAR{'S' if bars > 1 else ''}" + ("  ·  PLAYING" if now else ""),
+                          11, T["btn_text"] if now else T["ink_dim"], now)
+                self.hit(x0, y0, 212, 86, lambda j=i: self.arr_pick(j))
+            else:
+                self.rect(x0, y0, 212, 86, outline=T["ink_faint"])
+                first = i == len(arr)
+                self.text(x0 + 106, y0 + 43, "+ ADD THE BEAT" if first else "", 13, T["ink_dim"], True)
+                if first:
+                    self.hit(x0, y0, 212, 86, self.arr_add)
+        rx = 1090
+        self.button(rx, 300, 300, 72, "■ STOP SONG" if playing else "▶ PLAY SONG", self.arr_play,
+                    accent=not playing, on=playing, px=20)
+        self.button(rx, 386, 300, 60, "ADD CURRENT BEAT", self.arr_add, px=16)
+        self.button(rx, 456, 300, 60, "REMOVE LAST", self.arr_remove_last, px=16)
+        armed = time.time() - getattr(self, "arr_clear_armed", 0) < 3
+        self.button(rx, 526, 300, 60, "TAP AGAIN TO CLEAR" if armed else "CLEAR SONG", self.arr_clear,
+                    accent=armed, px=16)
+        self.button(rx, 596, 300, 60, "SAVE SONG AS MIDI FILE", self.arr_export_midi, px=15)
+        bars = sum(max(1, int(d.get("steps", 16)) // 16) for d in arr)
+        secs = bars * 4 * 60.0 / max(eng.bpm, 30.0)
+        info = (f"{len(arr)} BEAT{'S' if len(arr) != 1 else ''} · {bars} BARS · {int(secs // 60)}:{int(secs % 60):02d} AT {eng.bpm:.0f} BPM"
+                if arr else "MAKE A BEAT ON THE BEATS TAB, THEN ADD IT HERE. TAP A BEAT TO JUMP TO IT OR HEAR IT.")
+        self.text(30, 714, info, 12, T["ink_dim"], False, "w")
+
+    def arr_add(self):
+        arr = self.state.arrangement
+        if len(arr) >= self.ARR_MAX:
+            self.show_toast(f"THE SONG IS FULL ({self.ARR_MAX} BEATS)")
+            return
+        arr.append(self.audio.engine.beats.beat.to_json())
+        self.state.dirty = True
+        self.arr_sync()
+        self.show_toast(f"ADDED AS BEAT {len(arr)}")
+
+    def arr_remove_last(self):
+        if self.state.arrangement:
+            self.state.arrangement.pop()
+            self.state.dirty = True
+            self.arr_sync()
+            self.show_toast("REMOVED THE LAST BEAT")
+
+    def arr_clear(self):
+        if time.time() - getattr(self, "arr_clear_armed", 0) >= 3:
+            self.arr_clear_armed = time.time()
+            return
+        self.arr_clear_armed = 0
+        self.state.arrangement = []
+        self.state.dirty = True
+        self.arr_sync()
+        self.show_toast("SONG CLEARED")
+
+    def arr_pick(self, i):
+        """Tap a beat: while the song plays, jump to it; otherwise put it on the Beats tab to hear and edit."""
+        bp = self.audio.engine.beats
+        if bp.chain_on and bp.on:
+            bp.chain_i, bp.chain_pos = i, 0
+            return
+        d = self.state.arrangement[i]
+        bp.beat = Beat.from_json(d)
+        self.beat_save()
+        self.show_toast(f"BEAT {i + 1} IS ON THE BEATS TAB")
+
+    def arr_play(self):
+        eng = self.audio.engine
+        bp = eng.beats
+        if bp.chain_on and (bp.on or eng.playing):
+            bp.chain_on = False
+            if self.state.clock_master and self.clockout.playing:
+                self.beat_transport()
+            else:
+                bp.on = False
+            return
+        self.arr_sync()
+        if not bp.chain:
+            self.show_toast("ADD A BEAT FIRST")
+            return
+        bp.chain_restart()
+        bp.chain_on = True
+        if self.state.clock_master:
+            if not self.clockout.playing:
+                self.beat_transport()
+        else:
+            bp.on = True
+            bp.auto = False
+            if not eng.playing:
+                bp.pos = 0.0
+
+    def arr_export_midi(self):
+        if not self.state.arrangement:
+            self.show_toast("THE SONG IS EMPTY")
+            return
+        self.save_midi(self.state.arrangement, "Song")
+
+    def save_midi(self, beats, what):
+        """Beats -> a .mid file in Music > PotentialBox Recordings. Pad n plays note 36 + n, like the BeatStep."""
+        if mido is None:
+            self.show_toast("MIDI FILES NEED MIDO - RUN THE INSTALLER AGAIN")
+            return
+        vel = {"X": 120, "x": 96, "g": 48, "?": 90, ";": 48, "r": 96, "t": 96}
+        hits = {"r": 2, "t": 3}
+        q = 120  # ticks per 16th at 480 per beat
+        events = []
+        t0 = 0
+        for d in beats:
+            steps = int(d.get("steps", 16))
+            for role, row in (d.get("grid") or {}).items():
+                if role not in ROLE_PAD:
+                    continue
+                note = 36 + ROLE_PAD[role]
+                for st, ch in enumerate(str(row)[:steps]):
+                    if ch not in vel:
+                        continue
+                    k = hits.get(ch, 1)
+                    for j in range(k):
+                        at = t0 + st * q + j * q // k
+                        events.append((at, 1, note, vel[ch] if j == 0 else int(vel[ch] * 0.85)))
+                        events.append((at + max(20, q // k // 2), 0, note, 0))
+            t0 += steps * q
+        events.sort(key=lambda e: (e[0], e[1]))
+        mid = mido.MidiFile(ticks_per_beat=480)
+        tr = mido.MidiTrack()
+        mid.tracks.append(tr)
+        tr.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(self.audio.engine.bpm), time=0))
+        ch = max(0, min(15, self.state.ch["dr"] - 1))
+        last = 0
+        for at, kind, note, v in events:
+            tr.append(mido.Message("note_on" if kind else "note_off", channel=ch, note=note, velocity=v, time=at - last))
+            last = at
+        try:
+            folder = recordings_dir()
+            os.makedirs(folder, exist_ok=True)
+            path = os.path.join(folder, f"PotentialBox {what} {time.strftime('%Y-%m-%d %H%M%S')}.mid")
+            mid.save(path)
+        except Exception as e:
+            log("midi save failed", e)
+            self.show_toast("COULDN'T SAVE THE MIDI FILE")
+            return
+        self.show_toast("SAVED IN MUSIC > POTENTIALBOX RECORDINGS", 2.5)
 
     def draw_header(self):
         self.rect(0, 0, W, 90, fill=T["bg"])
@@ -1444,21 +1584,25 @@ class App:
             i = getattr(self, "last_macro", None)
             sub = (f"{i + 1} {MACROS[i][0].upper()}: {MACROS[i][1].upper()}" if i is not None
                    else "EACH KNOB MOVES SEVERAL SETTINGS  ·  BACK TO ZERO = BACK TO YOUR SOUND")[:96]
-            self.button(560, 121, 220, 32, "ZERO ALL MACROS", self.zero_macros, px=13)
         tab = self.state.page
-        if tab in SUBPAGES:
-            names = [lab for lab, _ in SUBPAGES[tab]]
-            cur = names[self.state.subpage.get(tab, 0) % len(names)]
-            self.seg(270, 105, 96, 32, names, cur, self.pick_subpage, vertical=False)
-            if self.midi.learn is None and tab in ("Synth 1", "Synth 2"):
-                undo = getattr(self, "init_undo", None)
-                if undo and undo[0] == self.page_name() and time.time() < undo[2]:
-                    self.button(760, 121, 190, 32, "UNDO INIT", self.undo_init, px=14)
-                else:
-                    self.button(760, 121, 190, 32, self.init_label(), self.init_page, accent=True, px=14)
         if tab not in NO_LOCK_PAGES:
             sub = ""
         self.frame(14, 100, 1252, 372, tab, sub)
+        if tab == "Macros":
+            self.button(560, 121, 220, 32, "ZERO ALL MACROS", self.zero_macros, px=13)
+        if tab in SUBPAGES:
+            names = [lab for lab, _ in SUBPAGES[tab]]
+            cur = names[self.state.subpage.get(tab, 0) % len(names)]
+            x0 = 32 + self.font(22, True).measure(tab.upper()) / self.scale + 22
+            bw = min(100, (826 - x0) / len(names))
+            self.rect(x0 - 6, 103, bw * len(names) + 12, 36, fill=T["bg"])  # keeps the frame's rule out from behind
+            self.seg(x0, 105, bw, 32, names, cur, self.pick_subpage, vertical=False)
+            if self.midi.learn is None and tab in ("Synth 1", "Synth 2"):
+                undo = getattr(self, "init_undo", None)
+                if undo and undo[0] == self.page_name() and time.time() < undo[2]:
+                    self.button(945, 121, 200, 32, "UNDO INIT", self.undo_init, px=14)
+                else:
+                    self.button(945, 121, 200, 32, self.init_label(), self.init_page, accent=True, px=13)
         if tab not in NO_LOCK_PAGES and self.midi.learn is None:
             self.button(1160, 121, 180, 32, "LOCKS ON" if self.lock_mode else "STEP LOCKS", self.toggle_locks,
                         on=self.lock_mode, px=14)
@@ -1761,26 +1905,27 @@ class App:
             self.arrows(x0 + 40, x0 + 120, 700, "pe", len(lst), rows, page=rows)
             if lst:
                 self.text(x0 + 170, 700, f"{sc + 1}-{min(sc + rows, len(lst))} OF {len(lst)}", 13, T["ink_dim"], False, "w")
-        # actions
-        rx = 1100
-        self.button(rx, 240, 300, 64, f"RANDOM {self.pe['group'].upper()}", self.pe_random, accent=True, px=17)
-        self.button(rx, 318, 300, 56, "PLAY PAD", lambda: self.test_pad(p), px=17)
+        # actions (right column: 950-1250)
+        rx, lx, rx2 = 1100, 1024, 1176
+        self.button(rx, 236, 300, 52, f"RANDOM {self.pe['group'].upper()}", self.pe_random, accent=True, px=17)
         locked = p in self.state.locked_pads
-        self.button(rx, 382, 300, 56, "UNLOCK PAD" if locked else "LOCK PAD",
-                    lambda pp=p: self.toggle_pad_lock(pp), accent=locked, px=17)
-        self.button(rx, 446, 300, 44, "TRIM", self.sample_trim, px=16)
-        self.button(rx, 494, 300, 44, "NORMALIZE", self.sample_normalize, px=14)
-        self.button(rx, 542, 148, 44, "FADE IN", self.sample_fade_in, px=13)
-        self.button(rx + 152, 542, 148, 44, "FADE OUT", self.sample_fade_out, px=13)
-        self.button(rx, 590, 148, 44, "PITCH -1", lambda: self.sample_pitch(-1), px=13)
-        self.button(rx + 152, 590, 148, 44, "PITCH +1", lambda: self.sample_pitch(1), px=13)
+        self.button(lx, 290, 148, 48, "PLAY PAD", lambda: self.test_pad(p), px=15)
+        self.button(rx2, 290, 148, 48, "UNLOCK PAD" if locked else "LOCK PAD",
+                    lambda pp=p: self.toggle_pad_lock(pp), on=locked, px=14)
         scope_m = (self.state.kit.get("library") or [None])[0]
-        self.seg(950, 366, 150, 44, ["all", "machine"], self.pe["scope"], self.pe_scope, vertical=False)
-        self.text(rx, 422, ("ONLY " + scope_m.upper())[:30] if scope_m else "LOAD A MACHINE KIT TO USE 'MACHINE'", 10, T["ink_dim"])
-        self.button(rx, 476, 300, 52, "FROM FILE...", self.pe_from_file, px=16)
-        self.button(rx, 540, 300, 52, "SAVE AS MY KIT", lambda: self.open_overlay(("mykits",)), px=16)
-        self.text(rx, 590, f"NOW: {where.upper()[:28]}", 10, T["ink_dim"])
-        self.button(rx, 650, 300, 60, "DONE", self.close_overlay, px=18)
+        self.seg(950, 320, 150, 40, ["all", "machine"], self.pe["scope"], self.pe_scope, vertical=False)
+        self.text_fit(rx, 374, ("ONLY " + scope_m.upper()) if scope_m else "LOAD A MACHINE KIT TO USE 'MACHINE'",
+                      10, 296, T["ink_dim"])
+        self.button(lx, 410, 148, 48, "FROM FILE...", self.pe_from_file, px=14)
+        self.button(rx2, 410, 148, 48, "SAVE MY KIT", lambda: self.open_overlay(("mykits",)), px=14)
+        self.text(952, 452, "EDIT THIS PAD'S SOUND", 11, T["accent"], True, "w")
+        for j, row in enumerate(((("TRIM", self.sample_trim), ("NORMALIZE", self.sample_normalize)),
+                                 (("FADE IN", self.sample_fade_in), ("FADE OUT", self.sample_fade_out)),
+                                 (("PITCH −1", lambda: self.sample_pitch(-1)), ("PITCH +1", lambda: self.sample_pitch(1))))):
+            for k, (lab, fn) in enumerate(row):
+                self.button(lx if k == 0 else rx2, 486 + j * 50, 148, 44, lab, fn, px=13)
+        self.text_fit(rx, 628, f"NOW: {where.upper()}", 10, 296, T["ink_dim"])
+        self.button(rx, 676, 300, 52, "DONE", self.close_overlay, px=18)
 
     def toggle_pad_lock(self, pad):
         if pad in self.state.locked_pads:
@@ -2068,8 +2213,9 @@ class App:
     def scene_hold(self, on):
         p = self.state.params
         if on:
-            if not (p.scenes.get("A") and p.scenes.get("B")):
-                self.show_toast("SAVE SCENE A AND B FIRST")
+            src, dst = p.scene_pair()
+            if not (p.scenes.get(src) and p.scenes.get(dst)):
+                self.show_toast(f"SAVE SCENES {src} AND {dst} FIRST")
                 return
             if self.midi.scene_hold is None:
                 self.midi.scene_hold = p.norm["sc.morph"]
@@ -2080,8 +2226,12 @@ class App:
         self.state.dirty = True
 
     def save_scene(self, slot):
-        self.state.params.save_scene(slot)
+        p = self.state.params
+        p.save_scene(slot)
         self.state.dirty = True
+        src, dst = p.scene_pair()
+        both = p.scenes.get(src) and p.scenes.get(dst)
+        self.show_toast(f"SCENE {slot} SAVED" + (f" · {len(p.scene_keys)} DIFFER" if both else ""))
 
     def do_undo(self):
         if self.state.params.undo():
@@ -2109,25 +2259,14 @@ class App:
         self.state.dirty = True
         self.show_toast(f"LOADED SCENE {slot}")
 
-    def cycle_scene_src(self):
+    def cycle_scene(self, key):
+        """FROM / TO keys: step the scene slot 1 > 2 > ... > 8 > 1."""
         p = self.state.params
-        cur = int(round(SPECS["sc.src"].to_val(p.norm.get("sc.src", 0.0))))
-        cur = cur + 1 if cur < 8 else 1
-        p.set_norm("sc.src", SPECS["sc.src"].to_norm(cur))
-        p._scene_keys()
+        cur = int(round(p.val[key]))
+        p.set_val(key, cur % 8 + 1)
         self.state.dirty = True
-
-    def cycle_scene_dst(self):
-        p = self.state.params
-        cur = int(round(SPECS["sc.dst"].to_val(p.norm.get("sc.dst", 0.0))))
-        cur = cur + 1 if cur < 8 else 1
-        p.set_norm("sc.dst", SPECS["sc.dst"].to_norm(cur))
-        p._scene_keys()
-        self.state.dirty = True
-        p = self.state.params
-        self.state.dirty = True
-        n = len(p.scene_keys)
-        self.show_toast(f"SCENE {which} SAVED" + (f" · {n} SETTINGS DIFFER" if p.scenes.get("A") and p.scenes.get("B") else ""))
+        src, dst = p.scene_pair()
+        self.show_toast(f"MORPH: SCENE {src} > SCENE {dst}", 1.2)
 
     def set_morph(self, x):
         self.state.params.set_norm("sc.morph", x)
@@ -2139,6 +2278,8 @@ class App:
         r = 19
         hot = time.time() - self.midi.flash[idx] < 0.35
         X, Y = self.X, self.Y
+        self.arc(cx, cy, r + 5, 225, -270, T["ink_faint"], 2)
+        self.arc(cx, cy, r + 5, 225, -270 * n, T["accent"], 3)
         self.cv.create_oval(X(cx - r), Y(cy - r), X(cx + r), Y(cy + r), fill=T["knob_face"],
                             outline=T["accent"] if hot else T["knob_ring"], width=max(1, int(2 * self.scale)))
         a = math.radians(225 - 270 * n)
@@ -2153,8 +2294,8 @@ class App:
             lab = f"{self.audio.engine.drums.names[pn][:7]} {lab.lower()}"
         if key[:2] in ("s1", "s2") and "Synth" not in lab:
             lab = key[:2].upper() + " " + lab
-        self.text(cx, cy + r + 15, lab[:13], 11, T["ink"], True)
-        self.text(cx, cy + r + 31, SPECS[key].fmt(p.val[key])[:12], 12, T["accent"] if hot else T["ink_dim"])
+        self.text_fit(cx, cy + r + 15, lab, 11, 74, T["ink"], True)
+        self.text_fit(cx, cy + r + 31, SPECS[key].fmt(p.val[key]), 12, 74, T["accent"] if hot else T["ink_dim"])
         self.text(cx - r - 2, cy - r, str(idx + 1), 9, T["ink_faint"], False, "e")
         self.hit(cx - 38, cy - r - 8, 76, 2 * r + 46, lambda k=key: k, "knob")
 
@@ -2162,7 +2303,7 @@ class App:
         eng = self.audio.engine
         p = self.state.params
         self.frame(14, 100, 1252, 372, "Live",
-                   "BEATSTEP PADS HERE: 1-8 EFFECTS · 9 FILL · 10 SCENE B · 11 REC · 12-15 RANDOM / KITS · 16 BACK")
+                   "BEATSTEP PADS HERE: 1-8 EFFECTS · 9 FILL · 10 HOLD SCENE · 11 REC · 12-15 RANDOM / KITS · 16 BACK")
         for i, key in enumerate(PAGES["Live"]):
             self.mini_knob(i, 14 + 39 + i * 77.5, 172, key)
         self.text(34, 262, "PUNCH-IN EFFECTS · HOLD", 11, T["accent"], True, "w")
@@ -2177,37 +2318,33 @@ class App:
                 self.text(x0 + 72, 362, rest.upper(), 18, T["btn_text"], True)
             self.text(x0 + 72, 430, f"PAD {i + 1}", 11, T["btn_text"] if on else T["ink_dim"], True)
             self.hit(x0, 276, 143, 180, lambda on, j=i: self.live_pad(j, on), "hold")
-        # scenes (8 snapshots, morph between src and dst)
+        # scenes: 8 snapshots, morph between any two
         y = 482
-        self.frame(14, y, 626, 250, "Scenes", "8 SNAPSHOTS · MORPH BETWEEN ANY TWO")
-        src = int(round(SPECS["sc.src"].to_val(p.norm.get("sc.src", 0.0))))
-        dst = int(round(SPECS["sc.dst"].to_val(p.norm.get("sc.dst", 0.0))))
-        self.button(40, y + 40, 90, 34, f"FROM {src}", lambda: self.cycle_scene_src(), px=12)
-        self.button(140, y + 40, 90, 34, f"TO {dst}", lambda: self.cycle_scene_dst(), px=12)
-        x0, x1 = 260, 600
-        self.rect(x0, y + 46, x1 - x0, 14, fill=T["well"], outline=T["line"])
+        self.frame(14, y, 626, 250, "Scenes", "SAVE · CHANGE THINGS · SAVE ANOTHER · MORPH")
+        src, dst = p.scene_pair()
+        self.button(78, y + 72, 100, 40, f"FROM {src}", lambda: self.cycle_scene("sc.src"), px=14)
+        self.button(576, y + 72, 100, 40, f"TO {dst}", lambda: self.cycle_scene("sc.dst"), px=14)
+        x0, x1 = 146, 508
         m = p.norm["sc.morph"]
-        self.rect(x0, y + 46, (x1 - x0) * m, 14, fill=T["accent"])
+        self.rect(x0, y + 64, x1 - x0, 16, fill=T["well"], outline=T["line"])
+        self.rect(x0, y + 64, (x1 - x0) * m, 16, fill=T["accent"])
         hx = x0 + (x1 - x0) * m
-        self.rrect(hx - 7, y + 40, 14, 26, 4, T["knob_dot"])
-        self.text((x0 + x1) / 2, y + 72, f"MORPH {m * 100:.0f}%", 11, T["ink_dim"], True)
-        self.hit(x0 - 10, y + 36, x1 - x0 + 20, 34, self.set_morph, "slider")
-        # save row
+        self.rrect(hx - 8, y + 54, 16, 36, 5, T["knob_dot"], outline=T["line"])
+        both = p.scenes.get(src) and p.scenes.get(dst)
+        info = (f"MORPH {m * 100:.0f}% · {len(p.scene_keys)} SETTINGS MOVE · BEATSTEP KNOB 1" if both
+                else f"SAVE SCENES {src} AND {dst} TO MORPH")
+        self.text_fit((x0 + x1) / 2, y + 104, info, 11, x1 - x0 + 40, T["ink_dim"], True)
+        self.hit(x0 - 10, y + 50, x1 - x0 + 20, 44, self.set_morph, "slider")
         for i in range(1, 9):
-            xx = 40 + (i - 1) * 74
+            xx = 54 + (i - 1) * 72
             has = p.scenes.get(str(i)) is not None
-            self.button(xx, y + 92, 66, 40, f"SAVE {i}", lambda sl=i: self.save_scene(sl), accent=not has, px=11)
-        # recall row
-        for i in range(1, 9):
-            xx = 40 + (i - 1) * 74
-            has = p.scenes.get(str(i)) is not None
-            self.button(xx, y + 140, 66, 40, f"LOAD {i}", lambda sl=i: self.load_scene(sl), accent=has, px=11)
-        info = "Empty slots are dim. LOAD replaces current settings."
-        self.text(327, y + 196, info, 12, T["ink_dim"], True)
+            self.button(xx, y + 136, 66, 36, f"SAVE {i}", lambda sl=i: self.save_scene(sl), px=11)
+            self.button(xx, y + 176, 66, 36, f"LOAD {i}" if has else "EMPTY", lambda sl=i: self.load_scene(sl),
+                        on=has, px=11)
         on = self.midi.scene_hold is not None
-        self.rrect(40, y + 206, 560, 34, 10, T["btn_on"] if on else T["btn_bg"])
-        self.text(320, y + 223, "HOLD FOR SCENE B  ·  PAD 10", 13, T["btn_text"], True)
-        self.hit(40, y + 206, 560, 34, self.scene_hold, "hold")
+        self.rrect(40, y + 202, 560, 38, 10, T["btn_on"] if on else T["btn_bg"])
+        self.text(320, y + 221, f"HOLD FOR SCENE {dst}  ·  PAD 10", 14, T["btn_text"], True)
+        self.hit(40, y + 202, 560, 38, self.scene_hold, "hold")
         # record
         rec = eng.recorder
         self.frame(650, y, 300, 250, "Record", "")
@@ -2267,6 +2404,7 @@ class App:
             except Exception:
                 pass
         bp.mutes = set(self.state.beat_mutes)
+        self.arr_sync(bp)
 
     def clock_live(self):
         """True when the tempo comes from the BeatStep (it's sending clock and we're not the master)."""
@@ -2515,9 +2653,9 @@ class App:
                     on=b.steps > 16, px=13)
         self.button(916, cy2, 176, 44, "GENRE KIT: ON" if self.state.beat_kit else "GENRE KIT: OFF", self.toggle_beat_kit,
                     on=self.state.beat_kit, px=13)
-        self.button(1130, cy2, 240, 44, "CLOCK OUT TO BEATSTEP: ON" if self.state.clock_master else "CLOCK OUT TO BEATSTEP: OFF",
+        self.button(1086, cy2, 152, 44, "CLOCK OUT: ON" if self.state.clock_master else "CLOCK OUT: OFF",
                     self.toggle_clock_master, on=self.state.clock_master, px=13)
-        self.button(916, cy2 + 52, 176, 44, "EXPORT MIDI", self.export_beat_midi, px=13)
+        self.button(1210, cy2, 88, 44, "MIDI FILE", self.export_beat_midi, px=12)
         if bp.send:
             if self.state.clock_master:
                 msg = ("PRESS REC ON THE BEATSTEP (EMPTY DRUM PATTERN). POTENTIALBOX STARTS IT AND SENDS THE BEAT ONCE, FROM STEP 1."
@@ -2553,56 +2691,7 @@ class App:
         self.show_toast("NEW ENDING: " + bp.beat.turn_text().upper())
 
     def export_beat_midi(self):
-        if mido is None:
-            self.show_toast("MIDO NOT AVAILABLE")
-            return
-        b = self.state.beat
-        if not isinstance(b, dict) or "grid" not in b:
-            # build from current beat object
-            b = self.audio.engine.beats.beat
-        if b is None:
-            self.show_toast("NO BEAT")
-            return
-        grid = getattr(b, "grid", None)
-        steps = getattr(b, "steps", 16)
-        bpm = getattr(self.audio.engine, "bpm", 120.0)
-        if not isinstance(grid, dict):
-            self.show_toast("NO BEAT")
-            return
-        notes = {"K": 36, "B": 36, "S": 38, "C": 39, "H": 42, "O": 46, "R": 37, "Y": 49, "W": 45, "T": 45, "P": 54, "G": 49}
-        velmap = {"X": 120, "x": 90, ";": 50, "g": 40}
-        mid = mido.MidiFile(ticks_per_beat=480)
-        track = mido.MidiTrack()
-        mid.tracks.append(track)
-        track.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(bpm), time=0))
-        events = [[] for _ in range(steps)]
-        for role, row in grid.items():
-            row = (row + "." * steps)[:steps]
-            for step, ch in enumerate(row):
-                if ch == ".":
-                    continue
-                note = notes.get(role, 38)
-                vel = velmap.get(ch, 80)
-                events[step].append((note, vel))
-        cur = 0
-        for step in range(steps):
-            tick = step * 120
-            delta = tick - cur
-            cur = tick
-            for note, vel in events[step]:
-                if delta > 0:
-                    track.append(mido.Message("note_on", note=note, velocity=vel, time=delta))
-                    delta = 0
-                else:
-                    track.append(mido.Message("note_on", note=note, velocity=vel, time=0))
-                track.append(mido.Message("note_off", note=note, velocity=0, time=60))
-                cur = tick + 60
-        out_dir = os.path.join(CFG_DIR, "Recordings")
-        os.makedirs(out_dir, exist_ok=True)
-        import time as _t
-        path = os.path.join(out_dir, f"PotentialBox-beat-{int(_t.time())}.mid")
-        mid.save(path)
-        self.show_toast(f"EXPORTED MIDI: {os.path.basename(path)}")
+        self.save_midi([self.audio.engine.beats.beat.to_json()], "Beat")
 
     def toggle_beat_kit(self):
         self.state.beat_kit = not self.state.beat_kit
@@ -3051,6 +3140,7 @@ class App:
         p.recompute_macros()
         p.norm["sc.morph"] = float(su.get("params", {}).get("sc.morph", 0.0))
         p._apply("sc.morph")
+        p._scene_keys()
         st.load_locks(su.get("locks"))
         if isinstance(su.get("beat"), dict):
             self.audio.engine.beats.beat = Beat.from_json(su["beat"])
@@ -3140,13 +3230,20 @@ class App:
     def draw_tabs(self):
         self.rect(0, 742, W, 58, fill=T["well"])
         tw = W / len(TABS)
+        key = ("tabs", round(self.scale, 3), self.fam_b)
+        if key not in self._fit:  # one size for every tab: the biggest that fits the longest name
+            px = 16
+            while px > 10 and max(self.font(px, True).measure(TAB_LABEL.get(t, t).upper()) for t in TABS) / self.scale > tw - 12:
+                px -= 1
+            self._fit[key] = px
+        px = self._fit[key]
         for i, name in enumerate(TABS):
             x = i * tw
             on = name == self.state.page
             if on:
                 self.rect(x + 4, 746, tw - 8, 50, fill=T["tab_on"])
                 self.rect(x + 4, 742, tw - 8, 4, fill=T["accent"])
-            self.text(x + tw / 2, 771, name.upper(), 16, T["tab_on_tx"] if on else T["chrome_ink"], on)
+            self.text(x + tw / 2, 771, TAB_LABEL.get(name, name).upper(), px, T["tab_on_tx"] if on else T["chrome_ink"], on)
             self.hit(x, 742, tw, 58, lambda n=name: self.set_page(n))
 
     def draw_setup(self):
@@ -3170,10 +3267,15 @@ class App:
             self.button(782, cy, 80, 80, "", lambda d=d: self.scroll_dev(3 * d))
             pts = [(782 - 18, cy - 9 * d), (782 + 18, cy - 9 * d), (782, cy + 12 * d)]
             self.cv.create_polygon([c for x, y in pts for c in (self.X(x), self.Y(y))], fill=T["ink"], outline="")
-        self.text(34, 498, "BUFFER (SMALLER = LESS LAG)", 12, T["ink_dim"], False, "w")
-        self.seg(34, 512, 110, 44, [64, 128, 256, 512, 1024, 2048], self.state.blocksize, self.pick_buffer, vertical=False)
+        self.text(34, 498, "BUFFER: SMALLER = LESS LAG · CRACKLES? GO ONE BIGGER", 12, T["ink_dim"], False, "w")
+        self.seg(34, 512, 74, 44, [64, 128, 256, 512, 1024, 2048], self.state.blocksize, self.pick_buffer, vertical=False)
         lat = f"{self.audio.latency_ms:.1f} ms" if self.audio.stream else "-"
-        self.readout(650, 534, 220, 44, f"LAG {lat}")
+        self.readout(600, 534, 190, 44, f"LAG {lat}")
+        if self.audio.stream:
+            load = min(self.audio.engine.load, 9.99) * 100
+            drops = self.audio.underruns
+            self.text(710, 522, f"LOAD {load:.0f}%", 12, "#d9534f" if load > 70 else T["ink_dim"], True, "w")
+            self.text(710, 544, f"DROPOUTS {drops}", 12, "#d9534f" if drops else T["ink_dim"], True, "w")
         if self.audio.error:
             e = self.audio.error
             self.text(424, 470, e[:100], 12, "#d9534f")
@@ -3415,32 +3517,39 @@ class App:
         self.state.dirty = True
         self.show_toast("MACROS BACK TO ZERO")
 
+    def init_kind(self, page):
+        """Which INIT a synth sub-page offers: the whole synth (Main) or just that page's part."""
+        for tail, kind in (("Mod", "mod"), ("Mod 2", "mod"), ("Osc+", "osc"), ("Arp", "arp"), ("Env", "env"),
+                           ("LFO1 Steps", "steps1"), ("LFO2 Steps", "steps2")):
+            if page.endswith(" " + tail):
+                return kind
+        return "all"
+
     def init_keys(self, page):
-        """Keys reset by the INIT button on a synth page: Main = the whole synth (all 3 pages),
-        Osc+ = that page's own controls, Mod = LFOs, mod envelope and all 8 slots (routing + amount)."""
+        """Keys reset by the INIT key on a synth page: Main = the whole synth, every other page = only its own part."""
         pre = "s1" if page.startswith("Synth 1") else "s2"
         main = PAGES["Synth 1" if pre == "s1" else "Synth 2"]
-        if page.endswith("Mod"):
+        kind = self.init_kind(page)
+        if kind == "mod":
             tail = ("l1shape", "l1rate", "l1sync", "l2shape", "l2rate", "l2sync", "mea", "med")
             keys = [f"{pre}.{t}" for t in tail]
-            for j in range(1, 9):
+            for j in range(1, 13):
                 keys += [f"{pre}.m{j}src", f"{pre}.m{j}dst", f"{pre}.m{j}amt"]
-            return keys
-        if page.endswith("Osc+"):
+            return [k for k in keys if k in SPECS]
+        if kind == "osc":
             return [k for k in PAGES[page] if k not in main]
-        if page.endswith("Arp"):
+        if kind == "arp":
             return [k for k in SPECS if k.startswith(pre + ".arp")]
-        return [k for k in SPECS if k.startswith(pre + ".")]
+        if kind == "env":
+            return [k for k in PAGES[page] if not k.endswith((".vol", ".glide", ".glmode", ".velamp"))]
+        if kind in ("steps1", "steps2"):
+            return [f"{pre}.l{kind[-1]}step{i}" for i in range(16)]
+        return [k for k in SPECS if k.startswith(pre + ".") and not k.endswith((".mute", ".solo"))]
 
     def init_label(self):
         page = self.page_name()
-        if page.endswith("Mod"):
-            return "INIT MODULATION"
-        if page.endswith("Osc+"):
-            return "INIT OSC+ PAGE"
-        if page.endswith("Arp"):
-            return "INIT ARP"
-        return "INIT " + page.upper()
+        return {"mod": "INIT MODULATION", "osc": "INIT OSC+ PAGE", "arp": "INIT ARP", "env": "INIT ENVELOPES",
+                "steps1": "INIT LFO 1 STEPS", "steps2": "INIT LFO 2 STEPS"}.get(self.init_kind(page), "INIT " + page.upper())
 
     def init_page(self):
         self.lock_pick_clear()
@@ -3451,7 +3560,7 @@ class App:
         for k in keys:
             p.set_val(k, SPECS[k].default)
         p.clear_locks(keys)
-        if not (page.endswith("Mod") or page.endswith("Osc+") or page.endswith("Arp")):
+        if self.init_kind(page) == "all":
             pre = "s1" if page.startswith("Synth 1") else "s2"
             self.state.preset_name[pre] = "Init"
             self.state.preset[pre] = 0
@@ -3823,6 +3932,10 @@ class App:
 
 
 def main():
+    # The audio callback, MIDI and the screen share one Python interpreter lock. By default a thread that
+    # wants it can wait 5 ms - as long as a whole 256-sample buffer - which is what made the audio crackle
+    # while the screen redrew. 1 ms lets the audio thread in on time.
+    sys.setswitchinterval(0.001)
     try:
         App().run()
     except Exception:

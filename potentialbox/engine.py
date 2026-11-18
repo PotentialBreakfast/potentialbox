@@ -21,6 +21,7 @@ TWO_PI = 2.0 * math.pi
 DIVISIONS = [("1/16", 0.25), ("1/8T", 1 / 3), ("1/8", 0.5), ("3/16", 0.75), ("1/4", 1.0), ("3/8", 1.5)]
 BASE_TABLES = ["Analog", "Vowel", "Harmonic", "PWM", "FM Bell", "Digital"]
 LFO_SHAPES = ["Sine", "Triangle", "Saw up", "Saw down", "Square", "Random", "Smooth random", "Step"]
+STEP_SHAPE = LFO_SHAPES.index("Step")
 LFO_SYNC = [("Free", None), ("4 bars", 16), ("2 bars", 8), ("1 bar", 4), ("1/2", 2), ("1/4", 1), ("1/8", 0.5),
             ("1/16", 0.25), ("1/32", 0.125), ("1/4T", 2 / 3), ("1/8T", 1 / 3), ("1/16T", 1 / 6)]
 MOD_SOURCES = ["Off", "LFO 1", "LFO 2", "Mod env", "Amp env", "Velocity", "Note", "Random"]
@@ -314,7 +315,7 @@ def _build_specs():
         a(Param(f"dr.p{i+1}.pan", "Pan", -1, 1, 0.0, unit="pan"))
         a(Param(f"dr.p{i+1}.chance", "Chance", 0, 1, 1.0, unit="%"))
         a(Param(f"dr.p{i+1}.cond", "Plays", 0, len(DRUM_CONDS) - 1, 0, step=1, choices=DRUM_CONDS))
-        a(Param(f"dr.p{i+1}.choke", "Choke group", 0, 8, 0, step=1, choices=["Off"] + [str(g) for g in range(1, 9)]))
+        a(Param(f"dr.p{i+1}.choke", "Choke", 0, 8, 0, step=1, choices=["Off"] + [str(g) for g in range(1, 9)]))
     for band, lab in (("lo", "Low"), ("mid", "Mid"), ("hi", "High")):
         a(Param(f"eq.dr.{band}", f"Drums {lab}", -12, 12, 0.0, unit="dB"))
     for band, lab in (("lo", "Low"), ("mid", "Mid"), ("hi", "High")):
@@ -374,7 +375,6 @@ def _build_specs():
     a(Param("m.distortion", "Distortion", 0, 1, 0.0, unit="%"))
     a(Param("m.limiter", "Limiter", 0, 1, 0.0, unit="%"))
     a(Param("m.flanger", "Flanger", 0, 1, 0.0, unit="%"))
-    a(Param("m.phaser", "Phaser", 0, 1, 0.0, unit="%"))
     a(Param("m.compressor", "Compressor", 0, 1, 0.0, unit="%"))
     for i, mc in enumerate(MACROS):
         a(Param(f"mc.{i+1}", mc[0], 0, 1, 0.5 if mc[2] == "bip" else 0.0, unit="djm" if mc[2] == "bip" else "%"))
@@ -394,32 +394,32 @@ PAGES = collections.OrderedDict([
     ("Loop", ["lp.t1.vol", "lp.t2.vol", "lp.t3.vol", "lp.t4.vol", "lp.t5.vol", "lp.in", "lp.mon", "lp.vol",
               "lp.t1.fx", "lp.t2.fx", "lp.t3.fx", "lp.t4.fx", "lp.t5.fx", "lp.fb", "lp.filter", "lp.duck"]),
     ("Macros", [f"mc.{i}" for i in range(1, 17)]),
-    ("Synth 1", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s1.wave", "s1.supersaw", "s1.pw", "s1.detune", "s1.sub",
+    ("Synth 1", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s1.wave", "s1.pw", "s1.detune", "s1.sub",
                  "s1.attack", "s1.decay", "s1.sustain", "s1.release", "s1.glide", "s1.octave", "s1.drive", "s1.vol"]),
     ("Synth 1 Osc+", ["s1.osc2", "s1.fm", "s1.ring", "s1.sync", "s1.noise", "s1.chord", "s1.voicing", "s1.pan",
-                      "s1.ftype", "s1.keytrk", "s1.velamp", "s1.drift", "s1.penv", "s1.pdec", "s1.glmode", "s1.vol"]),
+                      "s1.ftype", "s1.keytrk", "s1.velamp", "s1.drift", "s1.penv", "s1.pdec", "s1.glmode", "s1.supersaw"]),
     ("Synth 1 Mod", ["s1.l1shape", "s1.l1rate", "s1.l1sync", "s1.l2shape", "s1.l2rate", "s1.l2sync", "s1.mea", "s1.med"]
                     + [f"s1.m{j}amt" for j in range(1, 9)]),
-    ("Synth 1 Mod 2", [f"s1.m{j}amt" for j in range(9, 13)] + ["s1.l1shape", "s1.l1rate", "s1.l1sync", "s1.l2shape",
-                     "s1.l2rate", "s1.l2sync", "s1.mea", "s1.med", "s1.mea", "s1.med", "s1.mea", "s1.med"]),
+    ("Synth 1 Mod 2", [f"s1.m{j}amt" for j in range(9, 13)] + ["s1.l1shape", "s1.l1rate", "s1.l1sync", "s1.mea",
+                      "s1.l2shape", "s1.l2rate", "s1.l2sync", "s1.med", "s1.keytrk", "s1.velamp", "s1.drift", "s1.pan"]),
     ("Synth 2", ["s2.pos", "s2.posenv", "s2.lforate", "s2.lfoamt", "s2.cutoff", "s2.reso", "s2.envamt", "s2.table",
                  "s2.attack", "s2.decay", "s2.sustain", "s2.release", "s2.glide", "s2.octave", "s2.detune", "s2.vol"]),
     ("Synth 2 Osc+", ["s2.chord", "s2.voicing", "s2.sub", "s2.noise", "s2.pan", "s2.drift", "s2.penv", "s2.pdec",
                       "s2.ftype", "s2.keytrk", "s2.velamp", "s2.glmode", "s2.table", "s2.pos", "s2.cutoff", "s2.vol"]),
     ("Synth 2 Mod", ["s2.l1shape", "s2.l1rate", "s2.l1sync", "s2.l2shape", "s2.l2rate", "s2.l2sync", "s2.mea", "s2.med"]
                     + [f"s2.m{j}amt" for j in range(1, 9)]),
-    ("Synth 2 Mod 2", [f"s2.m{j}amt" for j in range(9, 13)] + ["s2.l1shape", "s2.l1rate", "s2.l1sync", "s2.l2shape",
-                     "s2.l2rate", "s2.l2sync", "s2.mea", "s2.med", "s2.mea", "s2.med", "s2.mea", "s2.med"]),
+    ("Synth 2 Mod 2", [f"s2.m{j}amt" for j in range(9, 13)] + ["s2.l1shape", "s2.l1rate", "s2.l1sync", "s2.mea",
+                      "s2.l2shape", "s2.l2rate", "s2.l2sync", "s2.med", "s2.keytrk", "s2.velamp", "s2.drift", "s2.pan"]),
     ("Synth 1 Arp", ["s1.arp", "s1.arprate", "s1.arpoct", "s1.arpgate", "s1.arpswing", "s1.arphold", "s1.arpchance",
                      "s1.arpacc", "dk.s1", "eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "s1.pan", "fx.s1", "rv.s1", "s1.vol"]),
-    ("Synth 1 Env", ["s1.attack", "s1.decay", "s1.sustain", "s1.decay2", "s1.sustain2", "s1.release", "s1.fdecay", "s1.envamt",
-                    "s1.mea", "s1.med", "s1.penv", "s1.pdec", "s1.glide", "s1.drift", "s1.vol", "s1.vol"]),
+    ("Synth 1 Env", ["s1.attack", "s1.decay", "s1.sustain", "s1.release", "s1.decay2", "s1.sustain2", "s1.fdecay", "s1.envamt",
+                    "s1.mea", "s1.med", "s1.penv", "s1.pdec", "s1.glide", "s1.glmode", "s1.velamp", "s1.vol"]),
     ("Synth 1 LFO1 Steps", [f"s1.l1step{i}" for i in range(16)]),
     ("Synth 1 LFO2 Steps", [f"s1.l2step{i}" for i in range(16)]),
     ("Synth 2 Arp", ["s2.arp", "s2.arprate", "s2.arpoct", "s2.arpgate", "s2.arpswing", "s2.arphold", "s2.arpchance",
                      "s2.arpacc", "dk.s2", "eq.s2.lo", "eq.s2.mid", "eq.s2.hi", "s2.pan", "fx.s2", "rv.s2", "s2.vol"]),
-    ("Synth 2 Env", ["s2.attack", "s2.decay", "s2.sustain", "s2.decay2", "s2.sustain2", "s2.release", "s2.fdecay", "s2.envamt",
-                    "s2.mea", "s2.med", "s2.penv", "s2.pdec", "s2.glide", "s2.drift", "s2.vol", "s2.vol"]),
+    ("Synth 2 Env", ["s2.attack", "s2.decay", "s2.sustain", "s2.release", "s2.decay2", "s2.sustain2", "s2.posenv", "s2.envamt",
+                    "s2.mea", "s2.med", "s2.penv", "s2.pdec", "s2.glide", "s2.glmode", "s2.velamp", "s2.vol"]),
     ("Synth 2 LFO1 Steps", [f"s2.l1step{i}" for i in range(16)]),
     ("Synth 2 LFO2 Steps", [f"s2.l2step{i}" for i in range(16)]),
     ("Drums 1-8", [f"dr.p{i}.tune" for i in range(1, 9)] + [f"dr.p{i}.decay" for i in range(1, 9)]),
@@ -433,9 +433,10 @@ PAGES = collections.OrderedDict([
              "dk.s1", "dk.s2", "dk.fx", "dk.src", "dk.rel", "m.glue", "m.gluespd", "m.width"]),
     ("Mix EQ", ["eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "eq.s2.lo", "eq.s2.mid", "eq.s2.hi", "eq.lof", "eq.hif",
                 "eq.dr.lo", "eq.dr.mid", "eq.dr.hi", "eq.m.lo", "eq.m.mid", "eq.m.hi", "s1.pan", "s2.pan"]),
-    ("Arrangement", ["m.master"] * 16),
-    ("Track Mute/Solo", ["s1.mute", "s1.solo", "s2.mute", "s2.solo", "dr.mute", "dr.solo", "s1.vol", "s2.vol",
-                        "dr.vol", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master", "m.master"]),
+    ("Arrangement", ["s1.vol", "s2.vol", "dr.vol", "lp.vol", "fx.s1", "fx.s2", "fx.dr", "m.master",
+                     "s1.cutoff", "s2.cutoff", "dr.filter", "m.filter", "rv.s1", "rv.s2", "rv.dr", "m.drive"]),
+    ("Track Mute/Solo", ["s1.mute", "s2.mute", "dr.mute", "s1.solo", "s2.solo", "dr.solo", "lp.vol", "m.master",
+                        "s1.vol", "s2.vol", "dr.vol", "s1.pan", "s2.pan", "m.width", "m.glue", "m.drive"]),
     ("FX", ["fx.s1", "fx.s2", "fx.dr", "fx.time", "fx.fb", "fx.tone", "m.filter", "m.crush",
             "rv.s1", "rv.s2", "rv.dr", "rv.size", "rv.tone", "rv.level", "dr.filter", "m.limiter"]),
     ("Master FX", ["m.chorus", "m.flanger", "m.phaser", "m.distortion", "m.limiter", "m.compressor", "m.drive", "m.filter",
@@ -504,6 +505,7 @@ SUBPAGES = {
     "Drums 1-8": [("Main", "Drums 1-8"), ("Mix", "Drums 1-8 Mix"), ("Groove", "Drums 1-8 Groove"), ("Choke", "Drums Choke")],
     "Drums 9-16": [("Main", "Drums 9-16"), ("Mix", "Drums 9-16 Mix"), ("Groove", "Drums 9-16 Groove"), ("Choke", "Drums Choke")],
     "Mix": [("Main", "Mix"), ("EQ", "Mix EQ"), ("Mute/Solo", "Track Mute/Solo")],
+    "FX": [("Sends", "FX"), ("Master", "Master FX")],
 }
 HIDDEN_PAGES = {p for subs in SUBPAGES.values() for _, p in subs[1:]}
 NOT_LOCKABLE = ("mc.", "sc.", "m.master")
@@ -526,6 +528,7 @@ class ParamStore:
         self._undo = []
         self._redo = []
         self._undoing = False
+        self._last_change = 0.0
         # scenes: two snapshots of every setting; the Scene morph knob blends the ones that differ
         self.scenes = {str(i): None for i in range(1, 9)}
         self.scene_keys = []
@@ -574,23 +577,17 @@ class ParamStore:
         self.scenes[slot] = {k: n for k, n in self.norm.items() if self.lockable(k)}
         self._scene_keys()
 
+    def scene_pair(self):
+        """The two scene slots the morph goes between ("1".."8")."""
+        return str(int(round(self.val.get("sc.src", 1)))), str(int(round(self.val.get("sc.dst", 2))))
+
     def _scene_keys(self):
-        v = self.eng.p.val if hasattr(self, "eng") else None
-        # fallback: use stored src/dst indices
-        try:
-            src = str(int(self.norm["sc.src"]))
-            dst = str(int(self.norm["sc.dst"]))
-        except Exception:
-            src, dst = "1", "2"
+        src, dst = self.scene_pair()
         A, B = self.scenes.get(src), self.scenes.get(dst)
         self.scene_keys = [k for k in A if k in B and k in self.norm and abs(A[k] - B[k]) > 1e-6] if A and B else []
 
     def apply_morph(self):
-        try:
-            src = str(int(self.norm["sc.src"]))
-            dst = str(int(self.norm["sc.dst"]))
-        except Exception:
-            src, dst = "1", "2"
+        src, dst = self.scene_pair()
         A, B = self.scenes.get(src), self.scenes.get(dst)
         if not (A and B):
             return
@@ -614,22 +611,30 @@ class ParamStore:
             self.locks.setdefault(key, {})[self.lock_step] = n
             self.val[key] = SPECS[key].to_val(min(max(n + self.mod.get(key, 0.0), 0.0), 1.0))  # hear it
             return
-        if not self._undoing and key in self.norm and abs(self.norm[key] - n) > 1e-9:
-            self._undo.append(dict(self.norm))
-            if len(self._undo) > 50:
-                self._undo.pop(0)
-            self._redo.clear()
+        if not self._undoing and key in self.norm and abs(self.norm[key] - n) > 1e-9 and not key.startswith("sc."):
+            # one undo step per gesture: a knob turn, a sound load or a scene load is a burst of changes,
+            # so only the first change after a 0.6 s pause takes a snapshot
+            now = time.monotonic()
+            if now - self._last_change > 0.6:
+                self._undo.append(dict(self.norm))
+                if len(self._undo) > 50:
+                    self._undo.pop(0)
+                self._redo.clear()
+            self._last_change = now
         self.norm[key] = n
         self._apply(key)
         if key.startswith("mc."):
             self.recompute_macros()
         elif key == "sc.morph":
             self.apply_morph()
+        elif key in ("sc.src", "sc.dst"):
+            self._scene_keys()
 
     def undo(self):
         if not self._undo:
             return False
         self._undoing = True
+        self._last_change = 0.0
         self._redo.append(dict(self.norm))
         snap = self._undo.pop()
         self.norm.clear()
@@ -644,6 +649,7 @@ class ParamStore:
         if not self._redo:
             return False
         self._undoing = True
+        self._last_change = 0.0
         self._undo.append(dict(self.norm))
         snap = self._redo.pop()
         self.norm.clear()
@@ -735,13 +741,23 @@ def polyblep(t, dt):
 
 
 class ADSR:
+    """Attack -> decay -> sustain (optionally decay 2 -> sustain 2) -> release.
+    Every stage starts from the level the last one reached, so nothing ever jumps (no clicks)."""
+    IDLE, ATTACK, DECAY, DECAY2, RELEASE = 0, 1, 2, 3, 5
+
     def __init__(self, sr):
         self.sr = sr
         self.v = 0.0
-        self.stage = 0  # 0 idle, 1 attack, 2 decay/sustain, 3 release
+        self.t = 0
+        self.stage = 0
+
+    def held(self):
+        """True while the key is down (attack, decay or sustain)."""
+        return self.stage in (1, 2, 3)
 
     def gate_on(self):
         self.stage = 1
+        self.t = 0
 
     def gate_off(self):
         if self.stage:
@@ -751,17 +767,14 @@ class ADSR:
     def render(self, n, a, d, s, r, d2=None, s2=None):
         out = np.empty(n)
         i, sr = 0, self.sr
-        multi = d2 is not None and d2 > 1e-6
-        if not multi:
-            s2 = s
-            d2 = d
+        multi = d2 is not None and d2 > 1e-3
         while i < n:
-            if self.stage == 0:
+            st = self.stage
+            if st == 0:
                 out[i:] = 0.0
                 self.v = 0.0
-                self.t = 0
                 break
-            if self.stage == 1:   # attack
+            if st == 1:  # linear attack up to 1
                 inc = 1.0 / max(a * sr, 1.0)
                 m = min(int(math.ceil((1.0 - self.v) / inc)), n - i)
                 if m <= 0:
@@ -773,54 +786,24 @@ class ADSR:
                 i += m
                 if self.v >= 1.0 - 1e-9:
                     self.v, self.stage, self.t = 1.0, 2, 0
-            elif self.stage == 2:   # decay 1 -> s
-                dur = max(1, int(d * sr))
-                left = dur - self.t
-                if left <= 0:
-                    self.v = float(s)
-                    self.stage = 3 if multi else 4
-                    self.t = 0
-                    continue
-                m = min(left, n - i)
-                k = math.exp(-4.6 / max(d * sr, 1.0))
-                seg = s + (self.v - s) * k ** np.arange(1, m + 1)
+            elif st == 2 or st == 3:  # exponential glide towards the sustain level (never jumps)
+                if st == 2:
+                    tgt, k = s, math.exp(-4.6 / max(d * sr, 1.0))
+                    m = n - i
+                    if multi:  # after `decay` seconds, decay 2 takes over from wherever the level is
+                        m = min(m, max(int(d * sr) - self.t, 0))
+                        if m == 0:
+                            self.stage, self.t = 3, 0
+                            continue
+                else:
+                    tgt, k = (s2 if multi else s), math.exp(-4.6 / max((d2 if multi else d) * sr, 1.0))
+                    m = n - i
+                seg = tgt + (self.v - tgt) * k ** np.arange(1, m + 1)
                 out[i:i + m] = seg
                 self.v = float(seg[-1])
-                i += m
                 self.t += m
-                if self.t >= dur:
-                    self.v = float(s)
-                    self.stage = 3 if multi else 4
-                    self.t = 0
-            elif self.stage == 3:   # decay 2 -> s2 (multi) or sustain (single, unused)
-                if not multi:
-                    self.stage = 4
-                    continue
-                dur = max(1, int(d2 * sr))
-                left = dur - self.t
-                if left <= 0:
-                    self.v = float(s2)
-                    self.stage = 4
-                    self.t = 0
-                    continue
-                m = min(left, n - i)
-                k = math.exp(-4.6 / max(d2 * sr, 1.0))
-                seg = s2 + (self.v - s2) * k ** np.arange(1, m + 1)
-                out[i:i + m] = seg
-                self.v = float(seg[-1])
                 i += m
-                self.t += m
-                if self.t >= dur:
-                    self.v = float(s2)
-                    self.stage = 4
-                    self.t = 0
-            elif self.stage == 4:   # sustain (hold)
-                out[i:] = self.v if (multi and s2 is not None) else s
-                # single-stage sustain level is s
-                if not multi:
-                    out[i:] = s if abs(s - self.v) < 1e-9 else self.v
-                break
-            else:   # release
+            else:  # release
                 k = math.exp(-4.6 / max(r * sr, 1.0))
                 seg = self.v * k ** np.arange(1, n - i + 1)
                 out[i:] = seg
@@ -828,13 +811,9 @@ class ADSR:
                 if self.v < 1e-5:
                     self.v, self.stage, self.t = 0.0, 0, 0
                 break
-        # sustain hold value consistency
-        if self.stage == 4 and i < n:
-            out[i:] = (s2 if multi else s)
         return out
 
 
-# ----------------------------------------------------------------------------- modulation
 class LFO:
     """Free-running LFO. Random shapes pick a new value every cycle (Random) or glide between them (Smooth)."""
 
@@ -941,13 +920,8 @@ class MonoSynth:
         self.channels = channels
         self.zi = np.zeros((2, 2, channels)) if channels > 1 else np.zeros((2, 2))
         self.ftype = 0
-        self.comb_buf = np.zeros(1)
-        self.comb_idx = 0
-        self.comb_delay = 1
-        if getattr(self, "channels", 1) > 1:
-            self.formant_zi = [np.zeros((1, 2, self.channels)) for _ in range(3)]
-        else:
-            self.formant_zi = [np.zeros((1, 2)) for _ in range(3)]
+        self.reset_extra_filters()
+        self.step_val = [0.0, 0.0]
         self.ptime = 10 ** 9
         self.drift_val = np.zeros(self.MAXV)
         self.drift_tgt = self.rng.uniform(-1, 1, self.MAXV)
@@ -1110,7 +1084,7 @@ class MonoSynth:
 
     def _play_on(self, note, vel):
         v = self.eng.p.val
-        legato = bool(self.held) and self.amp.stage in (1, 2)
+        legato = bool(self.held) and self.amp.held()
         if note in self.held:
             self.held.remove(note)
         self.held.append(note)
@@ -1217,11 +1191,10 @@ class MonoSynth:
             if name.startswith("LFO"):
                 L = int(name[-1]) - 1
                 sh = int(v[f"{pre}.l{L+1}shape"])
-                if sh == LFO_SHAPES.index("Step"):
-                    step = self.eng.step if getattr(self.eng, "step", None) is not None else 0
-                    step = step % 16
-                    val = v[f"{pre}.l{L+1}step{step}"]
-                    s = np.full(n, val, dtype=float)
+                if sh == STEP_SHAPE:
+                    if lfo[L] is None:
+                        lfo[L] = self.step_lfo(L, n)
+                    s = lfo[L]
                 else:
                     if lfo[L] is None:
                         lfo[L] = self.lfos[L].render(n, self.sr, self.lfo_hz(L + 1), sh)
@@ -1243,6 +1216,23 @@ class MonoSynth:
                 self.lfos[L].ph = (self.lfos[L].ph + n * self.lfo_hz(L + 1) / self.sr) % 1.0
         return out
 
+    def step_lfo(self, L, n):
+        """Step LFO: the 16 step knobs, one per 16th. Follows the BeatStep's steps while it plays and the
+        LFO's own speed/sync when it's stopped. Each change glides over ~3 ms so steps don't click."""
+        v = self.eng.p.val
+        step = self.eng.step
+        if step is None:
+            self.lfos[L].ph = (self.lfos[L].ph + n * self.lfo_hz(L + 1) / self.sr) % 1.0
+            step = int(self.lfos[L].ph * 16) % 16
+        tgt = v[f"{self.pre}.l{L + 1}step{step % 16}"]
+        prev = self.step_val[L]
+        m = max(1, int(0.003 * self.sr))
+        out = np.full(n, tgt, dtype=float)
+        k = min(m, n)
+        out[:k] = prev + (tgt - prev) * (np.arange(1, k + 1) / m)
+        self.step_val[L] = float(out[-1])
+        return out
+
     def filt(self, x, fe, mods):
         v = self.eng.p.val
         pre = self.pre
@@ -1250,58 +1240,22 @@ class MonoSynth:
         if ftype != self.ftype:
             self.zi = np.zeros_like(self.zi)
             self.ftype = ftype
-            if ftype == 5:
-                self.comb_buf = np.zeros(1)
-                self.comb_idx = 0
-                self.comb_delay = 1
-            if ftype == 6:
-                if getattr(self, "channels", 1) > 1:
-                    self.formant_zi = [np.zeros((1, 2, self.channels)) for _ in range(3)]
-                else:
-                    self.formant_zi = [np.zeros((1, 2)) for _ in range(3)]
+            self.reset_extra_filters()
         reso0 = v[pre + ".reso"]
         base = v[pre + ".cutoff"] * 2.0 ** ((self.cur - 60.0) / 12.0 * v[pre + ".keytrk"])
         amt = v[pre + ".envamt"] * 7.0
         mc = mods.get("Cutoff", 0.0)
         mr = mods.get("Resonance", 0.0)
         n = len(x)
-        # ---- Comb: feedback delay tuned to the cutoff (resonator) ----
+        # ---- Comb: feedback delay tuned to the cutoff (a metallic resonator) ----
         if ftype == 5:
-            delay = int(self.sr / max(base, 40.0))
-            delay = min(max(delay, 1), 2000)
-            if self.comb_buf.shape[0] != delay:
-                self.comb_buf = np.zeros(delay)
-                self.comb_idx = 0
-                self.comb_delay = delay
-            fb = min(max(reso0, 0.0), 0.95)
-            buf = self.comb_buf
-            idx = self.comb_idx
-            y = np.empty_like(x)
-            for i in range(n):
-                dly = buf[idx]
-                y[i] = x[i] + fb * dly
-                buf[idx] = x[i] + fb * dly
-                idx += 1
-                if idx >= delay:
-                    idx = 0
-            self.comb_buf = buf
-            self.comb_idx = idx
-            return y * (1.0 - 0.5 * fb)
-        # ---- Formant: three band-pass peaks (vowel selected by cutoff) ----
+            fc = base * 2.0 ** (amt * float(fe[n // 2]) + 6.0 * _mean(mc))
+            return self.comb(x, fc, reso0 + _mean(mr))
+        # ---- Formant: three vowel peaks; the cutoff knob sweeps A > E > I > O > U ----
         if ftype == 6:
-            vi = int((base - 40.0) / (16000.0 - 40.0) * (len(VOWELS) - 1))
-            vi = min(max(vi, 0), len(VOWELS) - 1)
-            f1, f2, f3 = VOWELS[vi]
-            q = 0.6 + reso0 * 6.0
-            secs = [bp_coeffs(f1, q, self.sr), bp_coeffs(f2, q, self.sr), bp_coeffs(f3, q, self.sr)]
-            y = np.zeros_like(x)
-            for i in range(3):
-                yi, self.formant_zi[i] = sosfilt(np.array([secs[i]]), x if i == 0 else y, axis=0, zi=self.formant_zi[i])
-                if i == 0:
-                    y = yi.copy()
-                else:
-                    y = y + yi
-            return y * 0.33
+            pos = math.log2(max(base, 40.0) / 40.0) / math.log2(16000.0 / 40.0)
+            pos = pos + 0.25 * (amt * float(fe[n // 2]) / 7.0 + _mean(mc))
+            return self.formant(x, pos, reso0 + _mean(mr))
         # ---- standard SOS filters ----
         y = np.empty_like(x)
         for j in range(0, n, self.SUB):
@@ -1316,6 +1270,55 @@ class MonoSynth:
         elif ftype == 3:
             y = y * 2.5  # band-pass removes most of the energy: make-up gain
         return y
+
+    COMB_LEN = 8192
+
+    def reset_extra_filters(self):
+        shape = (self.COMB_LEN,) if self.channels == 1 else (self.COMB_LEN, self.channels)
+        self.comb_buf = np.zeros(shape)   # past outputs of the comb (ring buffer)
+        self.comb_w = 0
+        zshape = (1, 2) if self.channels == 1 else (1, 2, self.channels)
+        self.formant_zi = [np.zeros(zshape) for _ in range(3)]
+
+    def comb(self, x, fc, reso):
+        """y[i] = x[i] + fb * y[i - D]. Works for mono and stereo and any block size; the delay can
+        change between blocks without clearing the buffer (no clicks when notes change)."""
+        n = len(x)
+        L = self.COMB_LEN
+        D = int(min(max(self.sr / max(fc, 30.0), 2), 2000))
+        fb = min(max(reso, 0.0), 1.0) * 0.92
+        buf, w = self.comb_buf, self.comb_w
+        y = np.empty_like(x)
+        if D >= 96:  # long delay: whole chunks of D samples at a time
+            j = 0
+            while j < n:
+                m = min(D, n - j)
+                idx = (w + j - D + np.arange(m)) % L
+                y[j:j + m] = x[j:j + m] + fb * buf[idx]
+                buf[(w + j + np.arange(m)) % L] = y[j:j + m]
+                j += m
+        else:  # short delay: a recursive filter whose state is the last D outputs
+            a = np.zeros(D + 1)
+            a[0], a[D] = 1.0, -fb
+            zi = fb * buf[(w - D + np.arange(D)) % L]
+            y, _ = lfilter([1.0], a, x, axis=0, zi=zi)
+            buf[(w + np.arange(n)) % L] = y
+        self.comb_w = (w + n) % L
+        return y * math.sqrt(1.0 - fb)
+
+    def formant(self, x, pos, reso):
+        """Three band-pass peaks in parallel. `pos` 0..1 glides smoothly through the vowels."""
+        pos = min(max(pos, 0.0), 1.0) * (len(VOWELS) - 1)
+        i0 = min(int(pos), len(VOWELS) - 2)
+        f = pos - i0
+        q = 2.0 + min(max(reso, 0.0), 1.0) * 10.0
+        y = np.zeros_like(x)
+        for k, g in enumerate((1.0, 0.7, 0.45)):
+            fk = VOWELS[i0][k] * (1.0 - f) + VOWELS[i0 + 1][k] * f
+            sos = np.array([bp_coeffs(fk, q, self.sr)])
+            yk, self.formant_zi[k] = sosfilt(sos, x, axis=0, zi=self.formant_zi[k])
+            y += g * yk
+        return y * 1.6
 
     def envs(self, n, fdecay):
         v = self.eng.p.val
@@ -1357,9 +1360,13 @@ def _osc(t, d, wave, pw):
 
 
 class OscSynth(MonoSynth):
+    SS_SPREAD = (-1.0, -0.58, -0.18, 0.19, 0.6, 0.98)  # JP-8000 style uneven spacing (x detune)
+
     def __init__(self, eng, pre="s1"):
         super().__init__(eng, pre, 1)
         self.ph = np.zeros((self.MAXV, 3))
+        # supersaw: 6 extra saws per voice, each with its own phase, detuned around the main one
+        self.ssph = np.random.default_rng(7).random((self.MAXV, len(self.SS_SPREAD)))
 
     def render(self, n):
         if self.amp.stage == 0:
@@ -1405,13 +1412,18 @@ class OscSynth(MonoSynth):
             t1m = (t1 + fm * 0.5 * np.sin(TWO_PI * t2)) % 1.0 if use_fm else t1
             o1 = _osc(t1m, dt1, wave, pw)
             if isinstance(ss, np.ndarray) or ss > 0.001:
-                det = 0.07 * ss
-                ss_voices = []
-                for off in (-2.0 * det, -det, 0.0, det, 2.0 * det):
-                    td = (t1 + off) % 1.0
-                    ss_voices.append(_osc(td, dt1, 0.0, 0.5))
-                ss_mix = np.mean(ss_voices, axis=0)
-                o1 = (1.0 - ss) * o1 + ss * ss_mix
+                # real supersaw: detuned saws (own phases) blended in; more Supersaw = wider and louder stack
+                spread = 0.06 + 0.5 * _mean(ss)  # semitones for the outer saws
+                stack = np.zeros(n)
+                sph = self.ssph[vi]
+                for j, off in enumerate(self.SS_SPREAD):
+                    dtj = dt1 * 2.0 ** (off * spread / 12.0)
+                    tj = (sph[j] + np.cumsum(dtj)) % 1.0
+                    sph[j] = tj[-1]
+                    stack += 2.0 * tj - 1.0 - polyblep(tj, dtj)
+                saw1 = 2.0 * t1 - 1.0 - polyblep(t1, dt1)
+                stack = (stack + saw1) * (1.0 / math.sqrt(7.0))
+                o1 = (1.0 - ss) * o1 + ss * stack * 1.4
             mix = (o1 + o2) * 0.5
             if use_ring:
                 mix = mix * (1.0 - ring) + o1 * o2 * ring
@@ -1903,96 +1915,220 @@ def hp_coeffs(fc, q, sr):
     return [(1 + c) / 2 / a0, -(1 + c) / a0, (1 + c) / 2 / a0, 1.0, -2 * c / a0, (1 - alpha) / a0]
 
 
-class Chorus:
-    """Simple stereo chorus: modulated short delay."""
+class _ModDelay:
+    """Shared ring buffer for chorus and flanger. The buffer is longer than the biggest audio block plus the
+    longest delay, so every read lands on audio that is already written, whatever the buffer size."""
+    L = 16384
+
     def __init__(self, sr):
         self.sr = sr
-        self.buf = np.zeros((int(sr * 0.03), 2))
-        self.wi = 0
+        self.buf = np.zeros((self.L, 2))
+        self.w = 0
         self.ph = 0.0
+        self.on = False
+
+    def _lfo(self, n, hz):
+        ph = self.ph + np.arange(1, n + 1) * (hz / self.sr)
+        self.ph = float(ph[-1] % 1.0)
+        return ph
+
+    def _read(self, pos):
+        """Fractional read at absolute positions `pos` (float, may be negative -> wraps)."""
+        i0 = np.floor(pos)
+        fr = pos - i0
+        i0 = i0.astype(np.int64) % self.L
+        i1 = (i0 + 1) % self.L
+        fr = fr[:, None]
+        return self.buf[i0] * (1.0 - fr) + self.buf[i1] * fr
+
+    def _wake(self, amt):
+        """Bypassed below 0.5 %. Coming back on starts from a clean buffer (no burst of old audio)."""
+        if amt <= 0.005:
+            self.on = False
+            return False
+        if not self.on:
+            self.buf[:] = 0.0
+            self.on = True
+        return True
+
+
+class Chorus(_ModDelay):
+    """Stereo chorus: two voices per side, delays swept by slow sines a quarter-cycle apart."""
 
     def process(self, x, amt):
-        if amt <= 0.005 or x is None:
+        if not self._wake(amt):
             return x
-        n = x.shape[0]
-        L = len(self.buf)
-        wi = self.wi
-        wi_arr = (wi + np.arange(n)) % L
-        phase = (self.ph + (np.arange(1, n + 1) * (0.5 + amt * 1.5) / self.sr)) % 1.0
-        mod = 0.5 + 0.5 * np.sin(TWO_PI * phase)
-        depth = 0.003 * self.sr
-        delay = 0.012 * self.sr + mod * depth * amt
-        ri = np.floor(delay).astype(np.int64)
-        frac = delay - ri
-        ridx = (wi_arr - ri) % L
-        ridx2 = (ridx - 1) % L
-        dly = self.buf[ridx] * (1.0 - frac)[:, None] + self.buf[ridx2] * frac[:, None]
-        out = x + dly * amt * 0.5
-        self.buf[wi_arr] = x
-        self.wi = int((wi + n) % L)
-        self.ph = float(phase[-1])
-        return out.astype(np.float32) if x.dtype != np.float64 else out
+        n = len(x)
+        ar = np.arange(n)
+        self.buf[(self.w + ar) % self.L] = x
+        ph = self._lfo(n, 0.35 + 0.9 * amt)
+        base, depth = 0.011 * self.sr, (0.002 + 0.004 * amt) * self.sr
+        now = self.w + ar
+        wet = np.empty_like(x)
+        for ch, off in ((0, 0.0), (1, 0.25)):
+            d1 = base + depth * (0.5 + 0.5 * np.sin(TWO_PI * (ph + off)))
+            d2 = base * 1.6 + depth * (0.5 + 0.5 * np.sin(TWO_PI * (ph + off + 0.5)))
+            wet[:, ch] = 0.5 * (self._read(now - d1)[:, ch] + self._read(now - d2)[:, 1 - ch])
+        self.w = (self.w + n) % self.L
+        mix = 0.6 * amt
+        return x * (1.0 - 0.35 * mix) + wet * mix
+
+
+class Flanger(_ModDelay):
+    """Flanger: 0.5-6 ms swept delay with feedback. Done in chunks shorter than the shortest delay so the
+    feedback is exact at any buffer size."""
+    CH = 16
+
+    def process(self, x, amt):
+        if not self._wake(amt):
+            return x
+        n = len(x)
+        ph = self._lfo(n, 0.08 + 0.5 * amt)
+        sw = 0.5 + 0.5 * np.sin(TWO_PI * ph)
+        lo, span = 0.0006 * self.sr, (0.0015 + 0.004 * amt) * self.sr  # never shorter than CH samples
+        dl = lo + span * sw
+        dr = lo + span * (0.5 + 0.5 * np.sin(TWO_PI * (ph + 0.18)))
+        fb = 0.25 + 0.5 * amt
+        wet = np.empty_like(x)
+        for j in range(0, n, self.CH):
+            m = min(self.CH, n - j)
+            now = self.w + np.arange(m)
+            yl = self._read(now - dl[j:j + m])[:, 0]
+            yr = self._read(now - dr[j:j + m])[:, 1]
+            wet[j:j + m, 0], wet[j:j + m, 1] = yl, yr
+            idx = now % self.L
+            self.buf[idx, 0] = x[j:j + m, 0] + fb * yl
+            self.buf[idx, 1] = x[j:j + m, 1] + fb * yr
+            self.w = (self.w + m) % self.L
+        mix = 0.5 * min(1.0, amt * 1.5)
+        return x * (1.0 - mix) + wet * mix
 
 
 class Phaser:
-    """Simple phaser: modulated first-order allpass."""
+    """4-stage phaser (two all-pass biquads) swept from 200 Hz to 3.2 kHz, with a little feedback-free
+    resonance. Coefficients move every 32 samples; the filter state carries over, so it's click-free."""
+    S = 32
+
     def __init__(self, sr):
         self.sr = sr
-        self.xp = np.zeros(2)
-        self.yp = np.zeros(2)
         self.ph = 0.0
+        self.zi = np.zeros((2, 2, 2))
+        self.on = False
 
     def process(self, x, amt):
-        if amt <= 0.005 or x is None:
+        if amt <= 0.005:
+            self.on = False
             return x
-        n = x.shape[0]
-        rate = 0.15 + amt * 1.5
-        phase = (self.ph + (np.arange(1, n + 1) * rate / self.sr)) % 1.0
-        a = 0.3 + 0.6 * (0.5 + 0.5 * np.sin(TWO_PI * phase)) * amt
-        a_mean = float(np.mean(a))
-        # allpass per channel with fixed coefficient a_mean
-        out = np.zeros_like(x)
-        for ch in range(2):
-            # y[n] = a*x[n] + x[n-1] - a*y[n-1]
-            # use lfilter: b=[a,1], a=[1,a]? Actually allpass H=(a+z^-1)/(1+a*z^-1)
-            # lfilter b=[a,1], a=[1,a]
-            out[:, ch] = lfilter([a_mean, 1.0], [1.0, a_mean], x[:, ch])
-        mix = amt
-        out = (1.0 - mix) * x + mix * out
-        self.ph = float(phase[-1])
-        return out.astype(np.float32) if x.dtype != np.float64 else out
+        if not self.on:
+            self.zi[:] = 0.0
+            self.on = True
+        n = len(x)
+        hz = 0.12 + 0.9 * amt
+        y = np.empty_like(x)
+        for j in range(0, n, self.S):
+            m = min(self.S, n - j)
+            self.ph = (self.ph + m * hz / self.sr) % 1.0
+            sw = 0.5 - 0.5 * math.cos(TWO_PI * self.ph)
+            fc = 200.0 * 16.0 ** sw
+            t = math.tan(math.pi * fc / self.sr)
+            a = (t - 1.0) / (t + 1.0)
+            sec = [a * a, 2 * a, 1.0, 1.0, 2 * a, a * a]
+            y[j:j + m], self.zi = sosfilt(np.array([sec, sec]), x[j:j + m], axis=0, zi=self.zi)
+        mix = 0.5 * min(1.0, amt * 1.4)
+        return x * (1.0 - mix) + y * mix
 
 
-class Flanger:
-    """Simple flanger: modulated short delay with feedback."""
+def _ramp_gains(prev, g, S, n):
+    """Per-chunk gains -> a per-sample curve that ramps from the last block's gain (no steps at block edges)."""
+    k = len(g)
+    pts = np.concatenate([[prev], g])
+    xs = np.concatenate([[0.0], (np.arange(k) + 1) * S])
+    return np.interp(np.arange(1, n + 1), xs, pts)
+
+
+class Compressor:
+    """Master compressor. More = lower threshold, higher ratio, auto make-up. 5 ms attack, 150 ms release."""
+    S = 32
+
     def __init__(self, sr):
         self.sr = sr
-        self.buf = np.zeros((int(sr * 0.02), 2))
-        self.wi = 0
-        self.ph = 0.0
+        self.env = 0.0
+        self.g = 1.0
 
     def process(self, x, amt):
-        if amt <= 0.005 or x is None:
+        if amt <= 0.005:
+            self.env, self.g = 0.0, 1.0
             return x
-        n = x.shape[0]
-        L = len(self.buf)
-        wi = self.wi
-        wi_arr = (wi + np.arange(n)) % L
-        rate = 0.1 + amt * 1.0
-        phase = (self.ph + (np.arange(1, n + 1) * rate / self.sr)) % 1.0
-        mod = 0.5 + 0.5 * np.sin(TWO_PI * phase)
-        depth = 0.005 * self.sr
-        delay = 0.005 * self.sr + mod * depth
-        ri = np.floor(delay).astype(np.int64)
-        frac = delay - ri
-        ridx = (wi_arr - ri) % L
-        ridx2 = (ridx - 1) % L
-        dly = self.buf[ridx] * (1.0 - frac)[:, None] + self.buf[ridx2] * frac[:, None]
-        out = x + dly * amt
-        self.buf[wi_arr] = x + dly * (amt * 0.7)
-        self.wi = int((wi + n) % L)
-        self.ph = float(phase[-1])
-        return out.astype(np.float32) if x.dtype != np.float64 else out
+        n, S = len(x), self.S
+        k = -(-n // S)
+        lv = np.abs(x).max(axis=1)
+        if k * S != n:
+            lv = np.concatenate([lv, np.zeros(k * S - n)])
+        peaks = lv.reshape(k, S).max(axis=1)
+        ca, cr = math.exp(-S / (0.005 * self.sr)), math.exp(-S / (0.15 * self.sr))
+        thr = 10 ** ((-3.0 - 27.0 * amt) / 20.0)
+        ratio = 1.5 + 8.5 * amt
+        makeup = (1.0 / thr) ** ((1.0 - 1.0 / ratio) * 0.6)
+        g = np.empty(k)
+        e = self.env
+        for i in range(k):
+            pk = peaks[i]
+            e = pk + (e - pk) * (ca if pk > e else cr)
+            g[i] = ((e / thr) ** (1.0 / ratio - 1.0) if e > thr else 1.0) * makeup
+        self.env = e
+        gs = _ramp_gains(self.g, g, S, n)
+        self.g = float(g[-1])
+        return x * gs[:, None]
+
+
+class Limiter:
+    """Look-ahead limiter for the very end of the chain. More = up to +12 dB pushed into a 0.95 ceiling.
+    It sees 1 ms ahead (that much delay while it's on), so the gain is already down when a peak arrives:
+    no clipping, no clicks. Recovers over ~80 ms."""
+    CEIL = 0.95
+    S = 16
+
+    def __init__(self, sr):
+        self.sr = sr
+        self.W = max(8, int(0.001 * sr))
+        self.on = False
+        self.reset()
+
+    def reset(self):
+        W = self.W
+        self.xh = np.zeros((W, 2))      # delayed audio
+        self.th = np.ones(2 * W)        # gain targets of the last 2W samples
+        self.r = 1.0                    # release envelope
+
+    def process(self, x, amt):
+        if amt <= 0.005:
+            self.on = False
+            return None
+        if not self.on:
+            self.reset()
+            self.on = True
+        n, W, S = len(x), self.W, self.S
+        x = x * 10 ** (12.0 * amt / 20.0)
+        pk = np.abs(x).max(axis=1)
+        tg = np.minimum(1.0, self.CEIL / np.maximum(pk, 1e-9))
+        T = np.concatenate([self.th, tg])
+        gmin = np.lib.stride_tricks.sliding_window_view(T, W).min(axis=1)        # min over the next W samples
+        g = np.lib.stride_tricks.sliding_window_view(gmin, W).mean(axis=1)[1:n + 1]  # smoothed over W
+        X = np.concatenate([self.xh, x])
+        self.xh, self.th = X[n:], T[n:]
+        # slow release: per 16-sample chunk the gain may only rise by a set amount
+        k = -(-n // S)
+        gp = np.concatenate([g, np.full(k * S - n, g[-1])]) if k * S != n else g
+        c = gp.reshape(k, S).min(axis=1)
+        rise = math.exp(S / (0.08 * self.sr) * 2.3)  # ~ +20 dB per 80 ms at most
+        r = np.empty(k)
+        e = self.r
+        for i in range(k):
+            e = min(c[i], e * rise)
+            r[i] = e
+        rs = _ramp_gains(self.r, r, S, n)
+        self.r = float(r[-1])
+        return np.clip(X[:n] * np.minimum(g, rs)[:, None], -0.999, 0.999)
 
 
 class MasterFX:
@@ -2083,7 +2219,7 @@ class Glue:
 
     def process(self, x, amt, speed):
         if amt < 0.01:
-            self.env, self.gr = 0.0, 1.0
+            self.env, self.gr, self.glast = 0.0, 1.0, 1.0
             return x
         n = len(x)
         S = self.S
@@ -2104,7 +2240,8 @@ class Glue:
             g[i] = (e / thr) ** (1.0 / ratio - 1.0) if e > thr else 1.0
         self.env = e
         makeup = (1.0 / thr) ** ((1.0 - 1.0 / ratio) * 0.5)
-        gs = np.interp(np.arange(n), np.arange(k) * S + S / 2, g)
+        gs = _ramp_gains(getattr(self, "glast", 1.0), g, S, n)
+        self.glast = float(g[-1])
         self.gr = float(g.min())
         return x * (gs * makeup)[:, None]
 
@@ -2244,6 +2381,8 @@ class Engine:
         self.chorus = Chorus(self.sr)
         self.flanger = Flanger(self.sr)
         self.phaser = Phaser(self.sr)
+        self.comp = Compressor(self.sr)
+        self.limiter = Limiter(self.sr)
         self.eqs = {k: EQ3(self.sr) for k in ("s1", "s2", "dr", "m")}
         self.glue = Glue(self.sr)
         self.punch = PunchFX(self.sr)
@@ -2251,6 +2390,7 @@ class Engine:
         self.bpm = 120.0
         self.peak = 0.0
         self.samples = 0
+        self.load = 0.0
         # transport from the BeatStep's clock: 24 ticks per beat, 16th step = 6 ticks
         self.tick = -1
         self.playing = False
@@ -2411,6 +2551,14 @@ class Engine:
         return env
 
     def render(self, n, inp=None):
+        t0 = time.perf_counter()
+        out = self._render(n, inp)
+        # how much of the buffer's time the sound took to make (shown on the Setup tab)
+        used = (time.perf_counter() - t0) * self.sr / max(n, 1)
+        self.load = max(used, self.load * 0.97)
+        return out
+
+    def _render(self, n, inp=None):
         now = time.perf_counter()
         self.cb_prev = self.cb_t if self.cb_t else now - n / self.sr
         self.cb_t = now
@@ -2429,10 +2577,8 @@ class Engine:
                 return solo >= 0.5
             return mute < 0.5
         for key, syn in (("s1", self.s1), ("s2", self.s2)):
-            if not track_plays(v[f"{key}.mute"], v[f"{key}.solo"]):
-                continue
-            a = syn.render_block(n)
-            if a is None:
+            a = syn.render_block(n)  # muted tracks still run, so notes, arp and envelopes stay in time
+            if a is None or not track_plays(v[f"{key}.mute"], v[f"{key}.solo"]):
                 continue
             a = self.eqs[key].process(a, v[f"eq.{key}.lo"], v[f"eq.{key}.mid"], v[f"eq.{key}.hi"], lof, hif)
             if duck is not None and v["dk." + key] > 0.005:
@@ -2443,8 +2589,8 @@ class Engine:
             if stems is not None:
                 stems[key] = a
         self.beats.render_hits(n)
+        c = self.drums.render(n)
         if track_plays(v["dr.mute"], v["dr.solo"]):
-            c = self.drums.render(n)
             if c is not None:
                 c = self.eqs["dr"].process(c, v["eq.dr.lo"], v["eq.dr.mid"], v["eq.dr.hi"], lof, hif)
                 out += c
@@ -2474,28 +2620,12 @@ class Engine:
         out = self.chorus.process(out, v["m.chorus"])
         out = self.flanger.process(out, v["m.flanger"])
         out = self.phaser.process(out, v["m.phaser"])
-        amt = v["m.compressor"]
-        if amt > 0.005:
-            # simple feed-forward compressor
-            thr = 0.6 - amt * 0.5
-            ratio = 2.0 + amt * 8.0
-            # compute gain reduction per sample based on peak envelope
-            env = np.abs(out).max(axis=1)
-            a = 0.01 + amt * 0.1
-            env_s = lfilter([a], [1.0, -(1.0 - a)], env)
-            gain = np.ones_like(env_s)
-            over = env_s > thr
-            gain[over] = (thr + (env_s[over] - thr) / ratio) / (env_s[over] + 1e-9)
-            out = out * gain[:, None]
+        out = self.comp.process(out, v["m.compressor"])
         amt = v["m.distortion"]
-        if amt > 0.005:
+        if amt > 0.005:  # blended in, so turning it up from zero doesn't jump in level
             drive = 1.0 + amt * 9.0
-            out = np.tanh(out * drive) / np.tanh(drive)
+            out = out + amt * (np.tanh(out * drive) / math.tanh(drive) - out)
         out = self.master.process(out, v["m.filter"], v["m.crush"])
-        amt = v["m.limiter"]
-        if amt > 0.005:
-            thr = 1.0 - amt * 0.9
-            out = np.clip(out, -thr, thr)
         out = self.eqs["m"].process(out, v["eq.m.lo"], v["eq.m.mid"], v["eq.m.hi"], lof, hif)
         out = self.glue.process(out, v["m.glue"], v["m.gluespd"])
         w = v["m.width"]
@@ -2505,7 +2635,11 @@ class Engine:
             out = np.stack([mid + side, mid - side], axis=1)
         out = self.punch.process(out, self.bpm)
         g = 1.0 + 4.0 * v["m.drive"]
-        out = np.tanh(out * (v["m.master"] * g)) if g > 1.01 else np.tanh(out * v["m.master"])
+        lim = self.limiter.process(out * (v["m.master"] * g), v["m.limiter"])  # None while it's off
+        if lim is not None:  # the limiter replaces the soft clip at the very end
+            out = lim
+        else:
+            out = np.tanh(out * (v["m.master"] * g)) if g > 1.01 else np.tanh(out * v["m.master"])
         pk = float(np.max(np.abs(out))) if n else 0.0
         self.peak = max(pk, self.peak * 0.9)
         self.samples += n

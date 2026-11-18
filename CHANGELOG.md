@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.9.2
+Fixes for the crackling audio and the screens added in 1.9.1.
+
+**Sound**
+- **Crackles fixed.** The new Chorus, Flanger and Phaser lost their place at the edge of every audio buffer (and with buffers of 512 or more they read audio that hadn't been written yet), and the Compressor restarted every buffer. All four are rebuilt so they run smoothly at any buffer size.
+- **Limiter** is a real look-ahead limiter now (it used to hard-clip, which crackles). More = louder, never over the ceiling.
+- **Distortion** fades in from zero instead of jumping in level the moment you touch it.
+- The audio thread gets in on time while the screen redraws (it could wait up to 5 ms, as long as a whole 256 buffer).
+- **Comb filter** on Synth 2 silenced everything (it crashed on every buffer); fixed on both synths, and it no longer clicks when the note changes.
+- **Formant filter** is three proper vowel peaks; the cutoff glides smoothly A > E > I > O > U.
+- **Supersaw** is a real supersaw now: 7 detuned saws (it used to be 5 copies of one saw at the same pitch).
+- **Envelopes**: slides and ties glide again once a note reaches its sustain (they had started retriggering), and Decay 2 / Sustain 2 never jump.
+- **Step LFO** steps glide over 3 ms (no clicks) and step along with the LFO's speed when the BeatStep is stopped.
+- Muted tracks keep running in time, so unmuting doesn't bring back stuck notes.
+- Setup tab shows the sound engine's **LOAD** and how many **DROPOUTS** the sound card has had. Crackles? Go one buffer size up.
+
+**Screens**
+- **Toasts, My Setups, My Loops and the loop Input picker were invisible** (their drawing code had ended up inside the MIDI export). They're back.
+- **Synth 1 Main** stopped drawing half way (17 knobs on a 16-knob page) and **Synth 2 Env** didn't draw at all. Supersaw moved to Osc+; every page has exactly 16 different knobs (Mod 2, Env and Mute/Solo had the same knob two or three times).
+- **Scenes**: the morph never worked (it read the slot numbers wrongly), HOLD FOR SCENE always said "save A and B first" and the TO key crashed. All fixed; scenes saved in 1.9.0 come back as scenes 1 and 2. New layout for the Scenes panel.
+- **INIT** on the Mod 2, Env and LFO step pages reset the whole synth. Now each resets only its own page.
+- **Undo** (Ctrl+Z) undoes a whole knob turn, sound load or scene load, not one tiny step of it.
+- **Mute / Solo** (and other on/off settings) are one-tap keys instead of knobs.
+- **Arrangement** actually plays now: PLAY SONG plays the beats in order, each for its own length, then round again. Tap a beat to jump to it (or to hear it on the Beats tab), remove the last one, clear, and SAVE SONG AS MIDI FILE. MIDI files use the BeatStep's notes (pad 1 = note 36) and go to Music > PotentialBox Recordings.
+- **Master FX** is now a page of the FX tab (FX > Master), so the tab bar fits.
+- Tidier layouts: tab names, the synth page bar (no more INIT key on top of it), the pad editor's buttons, the Setup buffer row (1024 and 2048 were hidden), Beats tab bottom row.
+- Knobs show their value as a ring, and the window can be made small again (a big minimum size pushed the tabs off smaller screens).
+
 ## 1.9.0
 - **Three looks.** PotentialBox has a new default look, **Print Plate** (a warm printed panel), plus **Night Rack** (dark rack unit) and **Colour Block** (flat and bold), all in PotentialBox's own colour, emerald. Tap the **LOOK** key on the Setup tab to step through them. The change shows at once and is remembered.
 - The name at the top now reads **PotentialBox**, as it is written everywhere else.

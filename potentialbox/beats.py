@@ -522,9 +522,20 @@ class BeatPlayer:
         self.sent = 0
         self.send_done = False
         self.var_rng = np.random.default_rng(7)
+        # Arrangement: beats played one after another, each for its own length, then round again
+        self.chain = []
+        self.chain_on = False
+        self.chain_i = 0
+        self.chain_pos = 0
 
     # transport hooks (audio thread)
+    def chain_restart(self):
+        self.chain_i = 0
+        self.chain_pos = 0
+
     def on_start(self):
+        if self.chain_on:
+            self.chain_restart()
         if self.auto:
             self.on = True
             self.auto = False
@@ -553,8 +564,20 @@ class BeatPlayer:
 
     def _step(self, k, offset):
         v = self.eng.p.val
-        b = self.beat
-        st = k % b.steps
+        chain = self.chain if (self.chain_on and self.send != "sending") else None
+        if chain:
+            if self.chain_pos == 0:
+                self.chain_i %= len(chain)
+                self.beat = chain[self.chain_i]
+            b = self.beat
+            st = self.chain_pos
+            self.chain_pos += 1
+            if self.chain_pos >= b.steps:
+                self.chain_pos = 0
+                self.chain_i = (self.chain_i + 1) % len(chain)
+        else:
+            b = self.beat
+            st = k % b.steps
         self.step = st
         L = self.step_len()
         swing = v["bt.swing"] if v["bt.swing"] > 50.5 else GENRES[b.genre][2]
