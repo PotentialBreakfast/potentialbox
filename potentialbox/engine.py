@@ -399,13 +399,17 @@ PAGES = collections.OrderedDict([
     ("Synth 1 Osc+", ["s1.osc2", "s1.fm", "s1.ring", "s1.sync", "s1.noise", "s1.chord", "s1.voicing", "s1.pan",
                       "s1.ftype", "s1.keytrk", "s1.velamp", "s1.drift", "s1.penv", "s1.pdec", "s1.glmode", "s1.vol"]),
     ("Synth 1 Mod", ["s1.l1shape", "s1.l1rate", "s1.l1sync", "s1.l2shape", "s1.l2rate", "s1.l2sync", "s1.mea", "s1.med"]
-                    + [f"s1.m{j}amt" for j in range(1, 13)]),
+                    + [f"s1.m{j}amt" for j in range(1, 9)]),
+    ("Synth 1 Mod 2", [f"s1.m{j}amt" for j in range(9, 13)] + ["s1.l1shape", "s1.l1rate", "s1.l1sync", "s1.l2shape",
+                     "s1.l2rate", "s1.l2sync", "s1.mea", "s1.med", "s1.mea", "s1.med", "s1.mea", "s1.med"]),
     ("Synth 2", ["s2.pos", "s2.posenv", "s2.lforate", "s2.lfoamt", "s2.cutoff", "s2.reso", "s2.envamt", "s2.table",
                  "s2.attack", "s2.decay", "s2.sustain", "s2.release", "s2.glide", "s2.octave", "s2.detune", "s2.vol"]),
     ("Synth 2 Osc+", ["s2.chord", "s2.voicing", "s2.sub", "s2.noise", "s2.pan", "s2.drift", "s2.penv", "s2.pdec",
                       "s2.ftype", "s2.keytrk", "s2.velamp", "s2.glmode", "s2.table", "s2.pos", "s2.cutoff", "s2.vol"]),
     ("Synth 2 Mod", ["s2.l1shape", "s2.l1rate", "s2.l1sync", "s2.l2shape", "s2.l2rate", "s2.l2sync", "s2.mea", "s2.med"]
-                    + [f"s2.m{j}amt" for j in range(1, 13)]),
+                    + [f"s2.m{j}amt" for j in range(1, 9)]),
+    ("Synth 2 Mod 2", [f"s2.m{j}amt" for j in range(9, 13)] + ["s2.l1shape", "s2.l1rate", "s2.l1sync", "s2.l2shape",
+                     "s2.l2rate", "s2.l2sync", "s2.mea", "s2.med", "s2.mea", "s2.med", "s2.mea", "s2.med"]),
     ("Synth 1 Arp", ["s1.arp", "s1.arprate", "s1.arpoct", "s1.arpgate", "s1.arpswing", "s1.arphold", "s1.arpchance",
                      "s1.arpacc", "dk.s1", "eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "s1.pan", "fx.s1", "rv.s1", "s1.vol"]),
     ("Synth 1 Env", ["s1.attack", "s1.decay", "s1.sustain", "s1.decay2", "s1.sustain2", "s1.release", "s1.fdecay", "s1.envamt",
@@ -493,9 +497,9 @@ PRESETS = {
 
 # tab -> [(sub-page button, page)]; tapping a tab again goes to its next sub-page
 SUBPAGES = {
-    "Synth 1": [("Main", "Synth 1"), ("Osc+", "Synth 1 Osc+"), ("Mod", "Synth 1 Mod"), ("Arp+", "Synth 1 Arp"), ("Env", "Synth 1 Env"),
+    "Synth 1": [("Main", "Synth 1"), ("Osc+", "Synth 1 Osc+"), ("Mod", "Synth 1 Mod"), ("Mod2", "Synth 1 Mod 2"), ("Arp+", "Synth 1 Arp"), ("Env", "Synth 1 Env"),
                 ("LFO1 Steps", "Synth 1 LFO1 Steps"), ("LFO2 Steps", "Synth 1 LFO2 Steps")],
-    "Synth 2": [("Main", "Synth 2"), ("Osc+", "Synth 2 Osc+"), ("Mod", "Synth 2 Mod"), ("Arp+", "Synth 2 Arp"), ("Env", "Synth 2 Env"),
+    "Synth 2": [("Main", "Synth 2"), ("Osc+", "Synth 2 Osc+"), ("Mod", "Synth 2 Mod"), ("Mod2", "Synth 2 Mod 2"), ("Arp+", "Synth 2 Arp"), ("Env", "Synth 2 Env"),
                 ("LFO1 Steps", "Synth 2 LFO1 Steps"), ("LFO2 Steps", "Synth 2 LFO2 Steps")],
     "Drums 1-8": [("Main", "Drums 1-8"), ("Mix", "Drums 1-8 Mix"), ("Groove", "Drums 1-8 Groove"), ("Choke", "Drums Choke")],
     "Drums 9-16": [("Main", "Drums 9-16"), ("Mix", "Drums 9-16 Mix"), ("Groove", "Drums 9-16 Groove"), ("Choke", "Drums Choke")],
