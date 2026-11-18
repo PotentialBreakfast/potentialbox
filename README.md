@@ -8,7 +8,7 @@ The BeatStep Pro is the sequencer and controller, and PotentialBox makes the sou
 |---|---|
 | **Sequencer 1** (MIDI ch 1) | **Synth 1**: analog-style synth for basslines, acid, leads and chords |
 | **Sequencer 2** (MIDI ch 2) | **Synth 2**: wavetable synth with 30 morphing tables |
-| **Drum sequencer** (MIDI ch 10) | **Drums**: 16-pad sampler with 9 built-in kits, your own folders and a drum machine library browser |
+| **Drum sequencer** (MIDI ch 10) | **Drums**: 16-pad sampler with 9 built-in kits, a drum machine library browser and the **Kit Maker**, which builds kits from all your own one-shots |
 | **16 knobs** (Control Mode) | The 16 knobs on whichever PotentialBox page is open, including **16 performance macros** |
 | **16 pads** (Control Mode, ch 16) | Actions: random sounds, switch pages, next kit and more |
 
@@ -39,7 +39,9 @@ It's pre-wired for the BeatStep Pro's factory settings, so you can plug it in an
 - **My Setups**: 8 slots that save everything at once (sounds, kit, mix, effects, locks and scenes)
 - **Drum sampler**: 9 synthesized kits (808 Boom, 909 Punch, 606 Tight, Trap 808, SP Dust 12-bit, Electro 80s, Minimal Tech, Industrial, Potential), all with the same pad layout so patterns carry over
 - **Drum machine library**: point it at a collection of sampled machines (one folder per machine) and browse brand > machine > kit. Sounds are sorted onto the right pads by their file names, and silence at the start of every hit is trimmed
-- **Build your own kits**: put any one-shot from your whole collection on any pad, with a random pick per pad type, and save 8 of your own kits
+- **Kit Maker** (new in 1.10): one tap builds a 16-pad kit from every one-shot you have (your drum machine collection plus any sample folders), like PotentialKits on the MPC. 12 styles (Classic, Boom Bap, Lo-Fi, Trap, House, Techno, Jungle, Electro, Dusty Jazz, Percussion, Dub, Weird), lock the pads you like, roll the rest Mild / Medium / Wild, one-tap type per pad (kick, 808, snare, clap, rim, hats, toms, congas, shakers, vox ...), pitch / length / level, and levels evened out for you. The Beats tab's genre kits can come from your own samples too
+- **GET MPC ONE-SHOTS**: copies the sorted DRUM ONE SHOTS folder that MPC TOOLS makes on an MPC's SD card to the PC over SSH (no password with MPC TOOLS' key login), and fetches only new sounds after that
+- **Build your own kits**: put any one-shot from your collection or sample folders on any pad, with a random pick per pad type, and save 8 of your own kits (with each pad's pitch, length, level, pan and choke)
 - **16 performance macros**: S1 Sweep, S2 Sweep, Acid, Wobble, Bright, Pluck, Glide, Wide, Dub Throw, Space, DJ Filter, Build-Up, Lo-Fi, Drum Smash, Tighten, Glue. Turn one back to zero and your sound is exactly as it was
 - **Effects**: tempo-synced ping-pong delay, reverb, DJ filter and lo-fi crusher
 - **Save slots**: 8 sounds per synth, plus Init sounds and Reset All to start fresh
@@ -55,9 +57,13 @@ It's pre-wired for the BeatStep Pro's factory settings, so you can plug it in an
 |---|---|---|
 | ![Macros](docs/images/macros.png) | ![Synth 1 Mod page](docs/images/s1mod.png) | ![Mod routing menu](docs/images/route.png) |
 
-| Synth 1 Osc+ | Pad editor | Drum machines |
+| Kit Maker | Sample folders | Pad editor |
 |---|---|---|
-| ![Synth 1 Osc+ page](docs/images/s1osc.png) | ![Pad editor](docs/images/pad.png) | ![Drum machines](docs/images/machines.png) |
+| ![Kit Maker](docs/images/kitmaker.png) | ![Sample folders](docs/images/ksources.png) | ![Pad editor](docs/images/pad.png) |
+
+| Synth 1 Osc+ | Drum machines |
+|---|---|
+| ![Synth 1 Osc+ page](docs/images/s1osc.png) | ![Drum machines](docs/images/machines.png) |
 
 ---
 

@@ -15,6 +15,7 @@ import time
 import traceback
 import threading
 import collections
+import random
 
 os.environ.setdefault("SD_ENABLE_ASIO", "1")  # load the ASIO-enabled PortAudio on Windows
 
@@ -50,10 +51,14 @@ from potentialbox.looper import TRACKS, SOURCES, FX_TYPES, SPEEDS, LENGTHS, STAT
 from potentialbox.beats import (Beat, GENRES, GENRE_NAMES, ROLE_PAD, ROLE_NAME, GROUP_NAMES,  # noqa: E402
                                GROUPS as BEAT_GROUPS, BAR_CHOICES)
 from potentialbox import kits  # noqa: E402
-from potentialbox.library import Library, map_kit, brand_of, build_index, filter_index, GROUPS, PAD_GROUP  # noqa: E402
+from potentialbox.library import Library, map_kit, brand_of  # noqa: E402
+from potentialbox.samples import (SampleIndex, default_roots, GROUPS, TYPES,  # noqa: E402
+                                  SHORT as SHORT_TYPE, group_of_type)
+from potentialbox import kitmaker  # noqa: E402
+from potentialbox.mpcsync import MpcSync  # noqa: E402
 
 APP = "PotentialBox"
-VERSION = "1.9.2"
+VERSION = "1.10.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
@@ -67,6 +72,8 @@ SOUNDS_FILE = os.path.join(CFG_DIR, "my-sounds.json")
 SLOTS = 8
 KITS_FILE = os.path.join(CFG_DIR, "my-kits.json")
 SETUPS_FILE = os.path.join(CFG_DIR, "my-setups.json")
+SAMPLE_INDEX_FILE = os.path.join(CFG_DIR, "sample-index.json")
+MPC_ONESHOTS_DIR = os.path.join(os.path.expanduser("~"), "Music", "MPC Drum One Shots")
 RESAMPLE_DIR = os.path.join(CFG_DIR, "Resampled")
 NO_LOCK_PAGES = ("Macros", "Beats", "Live", "Loop", "Setup")
 OWN_SCREEN_PAGES = ("Beats", "Live", "Loop")  # tabs that draw their own screen and turn the pads into their own pads
@@ -256,7 +263,11 @@ class State:
         self.loop_input = None    # list of interface input channels (0-based) or None
         self.loop_cfg = {}
         self.beat = None          # Beat.to_json()
-        self.beat_kit = True      # picking a genre also loads its kit
+        self.beat_kit = True      # picking a genre also loads its kit: True (built-in), "samples" (Kit Maker) or False
+        self.sample_folders = []  # Kit Maker / pad editor: folders of one-shots besides the Drum Machine Collection
+        self.km = {"style": "CLASSIC", "scope": "all", "one": False}
+        self.mpc_host = ""        # only if MPC TOOLS' settings don't say
+        self.mpc_dest = MPC_ONESHOTS_DIR
         self.arrangement = []      # list of beat dicts (pattern chain)
         self.locked_pads = set()  # pads kept when randomising a kit
         self.beat_mutes = []
@@ -411,7 +422,18 @@ class State:
         self.beat = d.get("beat") if isinstance(d.get("beat"), dict) else None
         self.arrangement = [x for x in d.get("arrangement", []) if isinstance(x, dict)] if isinstance(d.get("arrangement"), list) else []
         self.locked_pads = set(x for x in d.get("locked_pads", []) if isinstance(x, int) and 0 <= x < 16)
-        self.beat_kit = bool(d.get("beat_kit", True))
+        bk = d.get("beat_kit", True)
+        self.beat_kit = "samples" if bk == "samples" else bool(bk)
+        self.sample_folders = [f for f in d.get("sample_folders", []) if isinstance(f, str)][:12]
+        km = d.get("km") if isinstance(d.get("km"), dict) else {}
+        if km.get("style") in kitmaker.STYLE_NAMES:
+            self.km["style"] = km["style"]
+        if km.get("scope") in kitmaker.SCOPES:
+            self.km["scope"] = km["scope"]
+        self.km["one"] = bool(km.get("one", False))
+        self.mpc_host = d.get("mpc_host", "") if isinstance(d.get("mpc_host"), str) else ""
+        if isinstance(d.get("mpc_dest"), str) and d["mpc_dest"]:
+            self.mpc_dest = d["mpc_dest"]
         self.beat_mutes = [g for g in d.get("beat_mutes", []) if g in GROUP_NAMES]
         self.beat_bars = int(d.get("beat_bars", 2)) if int(d.get("beat_bars", 2)) in BAR_CHOICES else 2
         self.clock_master = bool(d.get("clock_master", False))
@@ -432,7 +454,8 @@ class State:
                      loop_input=self.loop_input, loop_cfg=self.loop_cfg, beat=self.beat, beat_kit=self.beat_kit,
                      beat_mutes=self.beat_mutes, beat_bars=self.beat_bars,
                      arrangement=self.arrangement, locked_pads=sorted(self.locked_pads),
-                     clock_master=self.clock_master, look=self.look)
+                     clock_master=self.clock_master, look=self.look, sample_folders=self.sample_folders,
+                     km=self.km, mpc_host=self.mpc_host, mpc_dest=self.mpc_dest)
             tmp = CFG_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(d, f, indent=1)
@@ -1050,8 +1073,12 @@ class App:
         self.lib_scroll = {"brands": 0, "machines": 0, "kits": 0}
         self.sel_pad = 0
         self.pe = {"group": None, "scope": "all", "scroll": 0}
-        self.sound_index = None  # built on first use of the pad editor
-        self.indexing = False
+        self.samples = SampleIndex(SAMPLE_INDEX_FILE)  # every one-shot: Drum Machine Collection + sample folders
+        self.samples_again = False
+        self.km_hist = collections.deque()
+        self.km_rng = random.Random()
+        self.sync = None
+        self.sync_thread = None
         self.action_q = collections.deque()
         self.action_flash = {}
         self.rebuild_actions()
@@ -1083,6 +1110,7 @@ class App:
         else:
             self.root.after(300, lambda: self.start_audio(fallback=True))
         self.midi.open_all()
+        self.root.after(1200, self.rescan_samples)
         self.last_save = time.time()
         self.last_draw = 0.0
         self.root.after(40, self.tick)
@@ -1369,6 +1397,8 @@ class App:
             "setups": self.draw_setups,
             "loopinput": self.draw_loop_input,
             "myloops": self.draw_my_loops,
+            "kitmaker": self.draw_kitmaker,
+            "ksources": self.draw_ksources,
         }.get(ov)
         if draw_ov:
             draw_ov()
@@ -1661,10 +1691,11 @@ class App:
             self.text(bx + 22, by + 15, str(i + 1), 11, T["btn_text"], True)
             self.text(bx + 22, by + 32, eng.drums.names[i][:5].upper(), 8, T["ink_dim"] if not on else T["btn_text"])
             self.hit(bx, by, 44, 44, lambda p=i: self.test_pad(p))
-        self.button(x + 46, y + 222, 64, 42, "<", lambda: self.kit_step(-1), px=20)
-        self.button(x + 150, y + 222, 130, 42, "KIT MENU", lambda: self.open_overlay(("kits",)), accent=True, px=15)
-        self.button(x + 254, y + 222, 64, 42, ">", lambda: self.kit_step(1), px=20)
-        self.button(x + 346, y + 222, 104, 42, f"EDIT PAD {self.sel_pad + 1}", self.open_pad_editor, px=13)
+        self.button(x + 40, y + 222, 52, 42, "<", lambda: self.kit_step(-1), px=20)
+        self.button(x + 114, y + 222, 88, 42, "KITS", lambda: self.open_overlay(("kits",)), px=15)
+        self.button(x + 188, y + 222, 52, 42, ">", lambda: self.kit_step(1), px=20)
+        self.button(x + 270, y + 222, 104, 42, "KIT MAKER", lambda: self.open_overlay(("kitmaker",)), accent=True, px=13)
+        self.button(x + 361, y + 222, 70, 42, f"EDIT {self.sel_pad + 1}", self.open_pad_editor, px=13)
 
     # ---------------------------------------------------------------- overlays
     def overlay_base(self, title, sub):
@@ -1729,10 +1760,11 @@ class App:
         self.text(34, 530, "TAP A KIT TO HEAR IT. IT STAYS LOADED WHEN YOU CLOSE THIS MENU.", 13, T["ink_dim"], False, "w")
         lib = self.audio.library()
         n = len(lib.machines) if lib.ok() else 0
-        self.button(164, 610, 260, 80, f"DRUM MACHINES ({n})" if n else "DRUM MACHINES",
-                    lambda: self.open_overlay(("machines",)), accent=True, px=18)
-        self.button(436, 610, 260, 80, "PLAY DEMO BEAT", self.demo_beat, px=18)
-        self.button(708, 610, 260, 80, "RESET PAD KNOBS", self.reset_pads, px=18)
+        self.button(132, 610, 196, 80, f"DRUM MACHINES ({n})" if n else "DRUM MACHINES",
+                    lambda: self.open_overlay(("machines",)), accent=True, px=15)
+        self.button(336, 610, 196, 80, "KIT MAKER", lambda: self.open_overlay(("kitmaker",)), accent=True, px=18)
+        self.button(540, 610, 196, 80, "PLAY DEMO BEAT", self.demo_beat, px=15)
+        self.button(744, 610, 196, 80, "RESET PAD KNOBS", self.reset_pads, px=15)
         # recent library kits + folders
         self.text(866, 168, "RECENT KITS", 16, T["accent"], True, "w")
         recent = self.state.recent
@@ -1829,40 +1861,26 @@ class App:
     def open_pad_editor(self, pad=None):
         if pad is not None:
             self.sel_pad = pad
-        self.pe["group"] = PAD_GROUP[self.sel_pad]
+        self.pe["group"] = group_of_type(self.pad_type(self.sel_pad))
         self.pe["scroll"] = 0
         self.open_overlay(("pad",))
-        self.ensure_index()
 
-    def ensure_index(self):
-        lib = self.audio.library()
-        if self.sound_index is not None or self.indexing or not lib.ok():
-            return
-        self.indexing = True
-
-        def work():
-            try:
-                self.sound_index = build_index(lib)
-            except Exception:
-                log("index error", traceback.format_exc())
-                self.sound_index = []
-            self.indexing = False
-            self.request_redraw()
-        threading.Thread(target=work, daemon=True).start()
+    def pad_source(self, p=None):
+        """The drum machine or pack the pad's sound comes from (for ONLY THIS SOURCE in the pad editor)."""
+        c = self.km_cur()[self.sel_pad if p is None else p]
+        return (c or {}).get("src") or (self.state.kit.get("library") or [None])[0]
 
     def pad_list(self):
-        if not self.sound_index:
+        if not self.samples.entries:
             return []
-        m = None
-        if self.pe["scope"] == "machine":
-            m = (self.state.kit.get("library") or [None])[0] or self.pe.get("machine")
-        return filter_index(self.sound_index, self.pe["group"], m)
+        m = self.pe.get("source") if self.pe["scope"] == "machine" else None
+        return self.samples.filter(self.pe["group"], m)
 
     def draw_pad_editor(self):
         eng = self.audio.engine
         p = self.sel_pad
         src = eng.drums.sources[p] if p < len(eng.drums.sources) else {}
-        where = os.path.basename(os.path.dirname(os.path.dirname(src["file"]))) if "file" in src else "built-in"
+        where = (self.pad_source(p) or os.path.basename(os.path.dirname(src["file"]))) if "file" in src else "built-in"
         self.overlay_base(f"Pad {p + 1} · {eng.drums.names[p]}", "TAP A SOUND TO PUT IT ON THIS PAD  ·  SILENCE AT THE START IS TRIMMED")
         # pad strip
         for i in range(16):
@@ -1874,20 +1892,18 @@ class App:
             self.hit(bx, 150, 70, 46, lambda j=i: self.pe_pick_pad(j))
         # categories
         for j, (g, _) in enumerate(GROUPS):
-            y0 = 212 + j * 50
+            y0 = 212 + j * 49
             on = g == self.pe["group"]
             self.rect(34, y0, 200, 44, fill=T["seg_active"] if on else T["seg_inactive"])
             self.text(50, y0 + 22, g.upper(), 15, T["accent"] if on else T["ink"], on, "w")
             self.hit(34, y0, 200, 44, lambda gg=g: self.pe_group(gg))
         # sound list
-        lib = self.audio.library()
         x0, w = 250, 690
-        if not lib.ok():
-            self.text(x0 + w / 2, 380, "Your Drum Machine Collection folder isn't set.", 16, T["ink_dim"])
-            self.button(x0 + w / 2, 440, 340, 60, "PICK LIBRARY FOLDER", self.pick_library, px=16)
-        elif self.sound_index is None:
-            self.text(x0 + w / 2, 400, "Reading your collection...", 18, T["ink_dim"])
-            self.ensure_index()
+        if not self.samples.entries and not self.samples.busy:
+            self.text(x0 + w / 2, 380, "No sample folders yet.", 16, T["ink_dim"])
+            self.button(x0 + w / 2, 440, 340, 60, "SAMPLE FOLDERS", lambda: self.open_overlay(("ksources",)), px=16)
+        elif not self.samples.entries:
+            self.text(x0 + w / 2, 400, "Reading your samples...", 18, T["ink_dim"])
         else:
             lst = self.pad_list()
             rows = 10
@@ -1912,9 +1928,10 @@ class App:
         self.button(lx, 290, 148, 48, "PLAY PAD", lambda: self.test_pad(p), px=15)
         self.button(rx2, 290, 148, 48, "UNLOCK PAD" if locked else "LOCK PAD",
                     lambda pp=p: self.toggle_pad_lock(pp), on=locked, px=14)
-        scope_m = (self.state.kit.get("library") or [None])[0]
-        self.seg(950, 320, 150, 40, ["all", "machine"], self.pe["scope"], self.pe_scope, vertical=False)
-        self.text_fit(rx, 374, ("ONLY " + scope_m.upper()) if scope_m else "LOAD A MACHINE KIT TO USE 'MACHINE'",
+        scope_m = self.pe.get("source") if self.pe["scope"] == "machine" else self.pad_source()
+        self.seg(950, 320, 150, 40, ["all", "this source"], {"machine": "this source"}.get(self.pe["scope"], "all"),
+                 lambda v: self.pe_scope("machine" if v == "this source" else "all"), vertical=False)
+        self.text_fit(rx, 374, ("ONLY " + scope_m.upper()) if scope_m else "THIS PAD HAS A BUILT-IN SOUND",
                       10, 296, T["ink_dim"])
         self.button(lx, 410, 148, 48, "FROM FILE...", self.pe_from_file, px=14)
         self.button(rx2, 410, 148, 48, "SAVE MY KIT", lambda: self.open_overlay(("mykits",)), px=14)
@@ -2008,7 +2025,9 @@ class App:
 
     def pe_pick_pad(self, i):
         self.sel_pad = i
-        self.pe["group"] = PAD_GROUP[i]
+        self.pe["group"] = group_of_type(self.pad_type(i))
+        if self.pe["scope"] == "machine" and self.pad_source(i):
+            self.pe["source"] = self.pad_source(i)
         self.pe["scroll"] = 0
         self.test_pad(i)
 
@@ -2017,9 +2036,12 @@ class App:
         self.pe["scroll"] = 0
 
     def pe_scope(self, s):
-        if s == "machine" and not self.state.kit.get("library"):
-            self.show_toast("LOAD A DRUM MACHINE KIT FIRST")
-            return
+        if s == "machine":
+            src = self.pad_source()
+            if not src:
+                self.show_toast("THIS PAD HAS A BUILT-IN SOUND")
+                return
+            self.pe["source"] = src
         self.pe["scope"] = s
         self.pe["scroll"] = 0
 
@@ -2034,6 +2056,9 @@ class App:
         eng = self.audio.engine
         try:
             eng.drums.set_pad(self.sel_pad, path, label)
+            e = self.samples.find(path)
+            if e:
+                eng.drums.sources[self.sel_pad].update(type=e.type, src=e.src)
         except Exception as e:
             log("pad load failed", path, e)
             self.show_toast("COULDN'T READ THAT FILE")
@@ -2062,6 +2087,447 @@ class App:
                                           filetypes=[("WAV audio", "*.wav *.WAV")])
         if path:
             self.pe_assign(path, os.path.splitext(os.path.basename(path))[0][:24])
+
+    # ---------------------------------------------------------------- samples + Kit Maker
+    def sample_roots(self):
+        return default_roots(self.state.library_root, self.state.sample_folders)
+
+    def rescan_samples(self, quiet=True):
+        """Read the sample folders again in the background (only new or changed files are opened)."""
+        def done():
+            self.request_redraw()
+            if not quiet:
+                self.toast = (f"{len(self.samples.entries)} SOUNDS READY", time.time() + 1.6)
+        if not self.samples.scan_async(self.sample_roots(), done):
+            self.samples_again = True
+
+    def samples_tick(self):
+        if getattr(self, "samples_again", False) and not self.samples.busy:
+            self.samples_again = False
+            self.rescan_samples()
+        s = self.sync
+        if s is not None and not s.busy and getattr(self, "sync_thread", None) is not None:
+            self.sync_thread = None
+            if s.copied and s.dest not in self.state.sample_folders:
+                self.state.sample_folders.append(s.dest)
+                self.state.dirty = True
+            if s.copied or s.dest in self.state.sample_folders:
+                self.rescan_samples(quiet=False)
+            self.show_toast("MPC ONE-SHOTS: " + ("FAILED" if s.error else f"{s.copied} NEW"), 2.0)
+            self.request_redraw()
+        if (s is not None and s.busy) or self.samples.busy:
+            self.request_redraw()
+
+    def km_cur(self):
+        """The kit as Kit Maker sees it: 16 dicts (file, label, type, src, tune, decay) or None for built-in pads."""
+        d = self.audio.engine.drums
+        val = self.state.params.val
+        out = []
+        for i, src in enumerate(d.sources):
+            if "file" not in src:
+                out.append(None)
+                continue
+            t, sname = src.get("type"), src.get("src")
+            if not t or not sname:
+                e = self.samples.find(src["file"]) if self.samples.ready else None
+                t = t or (e.type if e else None)
+                sname = sname or (e.src if e else "")
+            out.append({"file": src["file"], "label": src.get("label", ""), "type": t, "src": sname or "",
+                        "tune": int(val[f"dr.p{i+1}.tune"]), "decay": float(val[f"dr.p{i+1}.decay"])})
+        return out
+
+    def pad_type(self, i):
+        c = self.km_cur()[i]
+        return (c or {}).get("type") or kitmaker.PAD_ROLE[i].replace("Kick 2", "Kick").replace("Low Tom", "Tom") \
+            .replace("Mid Tom", "Tom").replace("High Tom", "Tom")
+
+    def km_snapshot(self):
+        d = self.audio.engine.drums
+        p = self.state.params
+        keys = [f"dr.p{i}.{x}" for i in range(1, 17) for x in ("tune", "decay", "level")]
+        return {"pads": [dict(s) for s in d.sources], "name": d.kit_name, "params": {k: p.val[k] for k in keys}}
+
+    def km_restore(self, snap):
+        d = self.audio.engine.drums
+        d.load_sources(snap["pads"], snap["name"])
+        for k, v in snap["params"].items():
+            self.state.params.set_val(k, v)
+        self.state.kit = {"pads": d.sources, "name": snap["name"]}
+        self.state.dirty = True
+
+    def km_apply(self, pads, name, match=True):
+        """Put new pads on the kit (None = keep that pad), set their tune and length, even out their levels."""
+        if not any(pads):
+            self.show_toast("NO SOUNDS TO PICK FROM")
+            return False
+        self.km_hist.append(self.km_snapshot())
+        while len(self.km_hist) > 12:
+            self.km_hist.popleft()
+        d = self.audio.engine.drums
+        srcs = []
+        for i in range(16):
+            if pads[i]:
+                pd = pads[i]
+                srcs.append({"file": pd["file"], "label": pd["label"], "type": pd["type"], "src": pd["src"]})
+            else:
+                srcs.append(dict(d.sources[i]))
+        loaded = d.load_sources(srcs, name)
+        p = self.state.params
+        for i, pd in enumerate(pads):
+            if pd:
+                p.set_val(f"dr.p{i+1}.tune", pd["tune"])
+                p.set_val(f"dr.p{i+1}.decay", pd["decay"])
+        if match:
+            lv = kitmaker.match_levels([d.samples[i][0] if d.samples[i] else None for i in range(16)],
+                                       [(d.sources[i].get("type") or "Other") for i in range(16)], d.sr)
+            for i, pd in enumerate(pads):
+                if pd and lv[i] is not None:
+                    p.set_val(f"dr.p{i+1}.level", lv[i])
+        self.state.kit = {"pads": d.sources, "name": name}
+        self.state.dirty = True
+        self.request_redraw()
+        return loaded
+
+    def km_ready(self):
+        if self.samples.entries:
+            return True
+        if self.samples.busy:
+            self.show_toast("STILL READING YOUR SAMPLES...")
+        else:
+            self.show_toast("NO SAMPLES YET - ADD A FOLDER")
+            self.open_overlay(("ksources",))
+        return False
+
+    def km_name(self, style=None):
+        return f"Kit Maker · {(style or self.state.km['style']).title()}"
+
+    def km_new(self, style=None, preview=True, toast=True):
+        if not self.km_ready():
+            return
+        km = self.state.km
+        if style:
+            km["style"] = style
+        pads, src = kitmaker.make_kit(self.samples, km["style"], self.state.locked_pads, self.km_rng,
+                                      km["scope"], km["one"])
+        if self.km_apply(pads, self.km_name()):
+            if preview:
+                self.play_pattern([[0], [4], [2], [4]], 130)
+            if toast:
+                self.show_toast(f"NEW {km['style']} KIT" + (f" · {src.upper()[:20]}" if src else ""), 1.4)
+
+    def km_roll(self, mode):
+        if not self.km_ready():
+            return
+        km = self.state.km
+        locked = self.state.locked_pads
+        if mode == "MILD":
+            pads = kitmaker.roll_mild(self.samples, self.km_cur(), locked, self.km_rng, km["scope"])
+        elif mode == "MEDIUM":
+            pads, _ = kitmaker.make_kit(self.samples, km["style"], locked, self.km_rng, km["scope"], km["one"],
+                                        tune_jitter=2, decay_jitter=0.3)
+        else:
+            pads, _ = kitmaker.make_kit(self.samples, km["style"], locked, self.km_rng, km["scope"], False,
+                                        wild=0.45, tune_jitter=5, decay_jitter=0.6)
+        if self.km_apply(pads, self.km_name()):
+            changed = [i for i, x in enumerate(pads) if x]
+            if mode == "MILD":
+                self.play_pattern([[i] for i in changed], 170)
+            else:
+                self.play_pattern([[0], [4], [2], [4]], 130)
+            self.show_toast(f"ROLL {mode}: {len(changed)} PAD{'S' if len(changed) != 1 else ''}", 1.2)
+
+    def km_type(self, t):
+        if not self.km_ready():
+            return
+        i = self.sel_pad
+        cur = self.km_cur()
+        new = kitmaker.reroll_pad(self.samples, i, t, cur[i], self.km_rng, self.state.km["scope"], cur)
+        if new is None:
+            self.show_toast(f"NO {t.upper()} SOUNDS")
+            return
+        pads = [None] * 16
+        pads[i] = new
+        name = self.audio.engine.drums.kit_name
+        if self.km_apply(pads, name if name.startswith("Kit Maker") else self.km_name()):
+            self.audio.engine.note_on("dr", i, 110)
+
+    def km_reroll(self):
+        self.km_type(self.pad_type(self.sel_pad))
+
+    def km_back(self):
+        if not self.km_hist:
+            self.show_toast("NO EARLIER KIT")
+            return
+        self.km_restore(self.km_hist.pop())
+        self.play_pattern([[0], [4], [2], [4]], 130)
+        self.show_toast("PREVIOUS KIT", 1.0)
+
+    def km_select(self, i):
+        self.sel_pad = i
+        self.test_pad(i)
+
+    def km_adjust(self, part, d):
+        p = self.state.params
+        k = f"dr.p{self.sel_pad + 1}.{part}"
+        sp = SPECS[k]
+        p.set_val(k, max(sp.lo, min(sp.hi, p.val[k] + d)))
+        self.state.dirty = True
+        self.audio.engine.note_on("dr", self.sel_pad, 110)
+
+    def km_match(self):
+        d = self.audio.engine.drums
+        lv = kitmaker.match_levels([s[0] if s else None for s in d.samples],
+                                   [(src.get("type") or self.pad_type(i)) for i, src in enumerate(d.sources)], d.sr)
+        for i, v in enumerate(lv):
+            if v is not None:
+                self.state.params.set_val(f"dr.p{i+1}.level", v)
+        self.state.dirty = True
+        self.play_pattern([[0], [4], [2], [4], [0], [3], [5], [9]], 150)
+        self.show_toast("LEVELS MATCHED", 1.2)
+
+    def km_set(self, key, v):
+        self.state.km[key] = v
+        self.state.dirty = True
+
+    def draw_kitmaker(self):
+        eng = self.audio.engine
+        ix = self.samples
+        km = self.state.km
+        nf = len([r for r in self.sample_roots() if r["path"] and os.path.isdir(r["path"])])
+        sub = (f"{len(ix.entries)} SOUNDS IN {nf} FOLDER{'S' if nf != 1 else ''}  ·  LOCKED PADS STAY" if ix.entries else
+               "READING YOUR SAMPLES..." if ix.busy else "ADD A SAMPLE FOLDER TO START")
+        self.overlay_base("Kit Maker", sub)
+        self.button(134, 172, 200, 64, "NEW KIT", lambda: self.km_new(), accent=True, px=22)
+        for j, m in enumerate(("MILD", "MEDIUM", "WILD")):
+            self.button(316 + j * 146, 172, 140, 64, f"ROLL {m}", lambda mm=m: self.km_roll(mm), px=15)
+        self.button(784, 172, 140, 64, "PREVIOUS KIT", self.km_back, px=14)
+        self.button(1000, 172, 236, 64, "SAMPLE FOLDERS", lambda: self.open_overlay(("ksources",)), px=16)
+        self.button(1192, 172, 120, 64, "CLOSE", self.close_overlay, px=17)
+        cur = self.km_cur()
+        if not ix.entries:
+            self.rect(34, 212, 820, 400, fill=T["well"])
+            if ix.busy:
+                self.text(444, 380, "Reading your samples...", 22, T["ink"], True)
+                self.text(444, 416, (ix.progress or "")[:50], 14, T["ink_dim"])
+            else:
+                self.text(444, 330, "Kit Maker builds kits from your own one-shots.", 20, T["ink"], True)
+                self.text(444, 366, "Tap SAMPLE FOLDERS to add a folder or copy your MPC's DRUM ONE SHOTS.", 14,
+                          T["ink_dim"])
+                self.button(444, 450, 360, 70, "SAMPLE FOLDERS", lambda: self.open_overlay(("ksources",)),
+                            accent=True, px=20)
+        else:
+            for i in range(16):
+                r, c = divmod(i, 8)
+                x0, y0 = 34 + c * 103, 212 + r * 140
+                self.km_tile(i, x0, y0, cur[i], eng)
+        # styles
+        self.text(34, 498, "STYLE  ·  TAP ONE FOR A NEW KIT IN THAT STYLE", 12, T["accent"], True, "w")
+        for j, st in enumerate(kitmaker.STYLES):
+            r, c = divmod(j, 6)
+            x0, y0 = 34 + c * 137, 512 + r * 54
+            on = st["name"] == km["style"]
+            self.rrect(x0, y0, 132, 48, 10, T["btn_on"] if on else T["btn_bg"])
+            self.text_fit(x0 + 66, y0 + 18, st["name"], 15, 124, T["btn_text"], True)
+            self.text_fit(x0 + 66, y0 + 36, st["desc"], 11, 124, T["btn_text"] if on else T["ink_dim"])
+            self.hit(x0, y0, 132, 48, lambda s=st["name"]: self.km_new(s))
+        # where sounds come from
+        self.text(34, 638, "DRAW FROM", 11, T["ink_dim"], True, "w")
+        for j, sc in enumerate(kitmaker.SCOPES):
+            on = sc == km["scope"]
+            self.rect(36 + j * 150, 654, 146, 48, fill=T["seg_active"] if on else T["seg_inactive"])
+            self.text_fit(34 + j * 150 + 75, 678, kitmaker.SCOPE_LABEL[sc], 13, 140,
+                          T["seg_active_tx"] if on else T["ink_dim"], on)
+            self.hit(34 + j * 150, 652, 150, 52, lambda v=sc: self.km_set("scope", v))
+        self.button(574, 678, 156, 52, "ONE SOURCE: ON" if km["one"] else "ONE SOURCE: OFF",
+                    lambda: self.km_set("one", not km["one"]), on=km["one"], px=13)
+        self.button(746, 678, 160, 52, "MATCH LEVELS", self.km_match, px=14)
+        self.text(34, 720, "ONE SOURCE: the whole kit from one drum machine or pack where it can", 12, T["ink_dim"],
+                  False, "w")
+        self.km_panel(cur)
+
+    def km_tile(self, i, x0, y0, c, eng):
+        on = i == self.sel_pad
+        locked = i in self.state.locked_pads
+        hit_now = eng.drums.active[i] > 0.05
+        fill = T["btn_on"] if hit_now else (T["seg_active"] if on else T["btn_bg"])
+        self.rrect(x0, y0, 98, 132, 10, fill, outline=T["accent"] if on else "")
+        tx = T["btn_text"] if hit_now else (T["accent"] if on else T["btn_text"])
+        t = (c or {}).get("type") or ("BUILT-IN" if c is None else "?")
+        self.text(x0 + 10, y0 + 16, str(i + 1), 14, tx, True, "w")
+        self.text_fit(x0 + 90, y0 + 16, SHORT_TYPE.get(t, t).upper(), 11, 56, T["ink_dim"] if not hit_now else tx,
+                      True, "e")
+        name = (c or {}).get("label") or eng.drums.names[i]
+        a, b = self.split2(name.upper(), 11)
+        self.text_fit(x0 + 49, y0 + 42, a, 12, 90, tx, True)
+        if b:
+            self.text_fit(x0 + 49, y0 + 58, b, 12, 90, tx, True)
+        self.text_fit(x0 + 49, y0 + 80, ((c or {}).get("src") or "built-in")[:22], 11, 90, T["ink_dim"])
+        self.hit(x0, y0, 98, 96, lambda j=i: self.km_select(j))
+        self.rrect(x0 + 6, y0 + 98, 86, 28, 8, T["btn_on"] if locked else T["well"])
+        self.text(x0 + 49, y0 + 112, "LOCKED" if locked else "LOCK", 11, T["btn_text"] if locked else T["ink_dim"], True)
+        self.hit(x0, y0 + 96, 98, 36, lambda j=i: self.toggle_pad_lock(j))
+
+    @staticmethod
+    def split2(s, n):
+        if len(s) <= n:
+            return s, ""
+        cut = s.rfind(" ", 0, n + 1)
+        if cut <= 0:
+            cut = n
+        return s[:cut].strip(), s[cut:].strip()
+
+    def km_panel(self, cur):
+        i = self.sel_pad
+        c = cur[i] or {}
+        p = self.state.params.val
+        x0, w = 870, 380
+        self.rect(x0, 212, w, 498, fill=T["well"], outline=T["line"])
+        t = self.pad_type(i)
+        self.text(x0 + 16, 234, f"PAD {i + 1}  ·  {t.upper()}", 17, T["accent"], True, "w")
+        self.text_fit(x0 + 16, 260, (c.get("label") or self.audio.engine.drums.names[i]).upper(), 14, w - 32, T["ink"],
+                      True, "w")
+        self.text_fit(x0 + 16, 282, c.get("src") or "built-in sound", 11, w - 32, T["ink_dim"], False, "w")
+        locked = i in self.state.locked_pads
+        self.button(x0 + 66, 320, 116, 46, "PLAY", lambda: self.test_pad(i), px=15)
+        self.button(x0 + 190, 320, 116, 46, "NEW " + SHORT_TYPE.get(t, t).upper()[:6], self.km_reroll, accent=True,
+                    px=13)
+        self.button(x0 + 314, 320, 116, 46, "UNLOCK" if locked else "LOCK", lambda: self.toggle_pad_lock(i),
+                    on=locked, px=14)
+        self.text(x0 + 16, 362, "TYPE  ·  TAP FOR A NEW SOUND OF THAT TYPE", 11, T["ink_dim"], True, "w")
+        counts = self.samples.type_counts()
+        for j, ty in enumerate(TYPES):
+            r, col = divmod(j, 6)
+            bx, by = x0 + 8 + col * 61, 374 + r * 44
+            on = ty == t
+            n = counts.get(ty, 0)
+            self.rrect(bx, by, 57, 40, 8, T["btn_on"] if on else (T["btn_bg"] if n else T["seg_inactive"]))
+            self.text_fit(bx + 28.5, by + 15, SHORT_TYPE.get(ty, ty).upper(), 11, 53,
+                          T["btn_text"] if (on or n) else T["ink_faint"], True)
+            self.text(bx + 28.5, by + 31, str(n), 10, T["btn_text"] if on else T["ink_dim"])
+            self.hit(bx, by, 57, 40, lambda tt=ty: self.km_type(tt))
+        rows = (("PITCH", "tune", 1, f"{int(p[f'dr.p{i+1}.tune']):+d} ST"),
+                ("LENGTH", "decay", 0.1, f"{int(round(p[f'dr.p{i+1}.decay'] * 100))} %"),
+                ("LEVEL", "level", 0.05, f"{int(round(p[f'dr.p{i+1}.level'] * 100))} %"))
+        for j, (lab, part, step, txt) in enumerate(rows):
+            y = 528 + j * 50
+            self.text(x0 + 16, y, lab, 13, T["ink"], True, "w")
+            self.button(x0 + 160, y, 70, 42, "−", lambda pp=part, s=step: self.km_adjust(pp, -s), px=22)
+            self.text(x0 + 245, y, txt, 14, T["accent"], True)
+            self.button(x0 + 330, y, 70, 42, "+", lambda pp=part, s=step: self.km_adjust(pp, s), px=22)
+        self.button(x0 + 96, 678, 176, 50, "SAVE MY KIT", lambda: self.open_overlay(("mykits",)), px=15)
+        self.button(x0 + 284, 678, 176, 50, "PICK FROM LIST", lambda: self.open_pad_editor(i), px=14)
+
+    # ---------------------------------------------------------------- sample folders
+    def draw_ksources(self):
+        ix = self.samples
+        self.overlay_base("Sample folders", "KIT MAKER AND THE PAD EDITOR USE EVERY ONE-SHOT IN THESE FOLDERS")
+        self.button(1000, 172, 236, 64, "KIT MAKER", lambda: self.open_overlay(("kitmaker",)), accent=True, px=17)
+        self.button(1192, 172, 120, 64, "CLOSE", self.close_overlay, px=17)
+        rows = [("DRUM MACHINES", self.state.library_root, "machines")] + \
+               [("FOLDER", f, "folder") for f in self.state.sample_folders]
+        now = time.time()
+        for j, (kind, path, k) in enumerate(rows[:7]):
+            y0 = 152 + j * 64 + (40 if j else 0)
+            if j == 1:
+                self.text(34, 236, "YOUR SAMPLE FOLDERS", 12, T["accent"], True, "w")
+            ok = bool(path) and os.path.isdir(path)
+            self.rect(34, y0, 820, 58, fill=T["seg_inactive"], outline=T["line"])
+            name = os.path.basename(os.path.normpath(path)) if path else "Drum Machine Collection (not found)"
+            self.text_fit(50, y0 + 20, name.upper(), 16, 520, T["ink"] if ok else T["ink_faint"], True, "w")
+            self.text_fit(50, y0 + 42, path or "Pick the folder that holds your machine folders", 10, 520, T["ink_dim"],
+                          False, "w")
+            n = ix.counts.get(path)
+            self.text(620, y0 + 29, ("MISSING" if path and not ok else f"{n} SOUNDS" if n is not None else "..."),
+                      13, T["accent"] if ok else T["ink_faint"], True, "e")
+            if k == "machines":
+                self.button(744, y0 + 29, 200, 44, "CHANGE", self.pick_library, px=14)
+            else:
+                armed = self.armed and self.armed[:2] == ("rmsrc", path) and now - self.armed[2] < 3
+                self.button(744, y0 + 29, 200, 44, "TAP AGAIN TO REMOVE" if armed else "REMOVE",
+                            lambda pp=path: self.remove_sample_folder(pp), px=12 if armed else 14)
+        if len(rows) == 1:
+            self.text(444, 300, "No folders yet. Add one, or copy your MPC's one-shots.", 15, T["ink_dim"])
+        # right column: add / MPC / rescan
+        x0 = 870
+        self.rect(x0, 212, 380, 498, fill=T["well"], outline=T["line"])
+        self.button(x0 + 190, 262, 340, 64, "ADD A FOLDER", self.add_sample_folder, px=18)
+        s = self.sync
+        busy = s is not None and s.busy
+        self.button(x0 + 190, 350, 340, 72, "STOP COPYING" if busy else "GET MPC ONE-SHOTS",
+                    self.stop_mpc_sync if busy else self.start_mpc_sync, accent=True, px=18)
+        msg = s.status if s else "Copies the DRUM ONE SHOTS folder MPC TOOLS makes on your MPC's SD card, over SSH. " \
+                                 "Tap again later to fetch only new sounds."
+        for k, line in enumerate(self.wrap(msg, 46)[:4]):
+            self.text(x0 + 20, 402 + k * 18, line, 11, T["ink"] if s else T["ink_dim"], False, "w")
+        if busy and s.total:
+            self.rect(x0 + 20, 478, 340, 10, fill=T["seg_inactive"])
+            self.rect(x0 + 20, 478, 340 * s.done / max(1, s.total), 10, fill=T["accent"])
+        self.button(x0 + 190, 530, 340, 56, "READING..." if ix.busy else "READ FOLDERS AGAIN",
+                    lambda: self.rescan_samples(quiet=False), px=15)
+        tc = ix.type_counts()
+        parts = [f"{SHORT_TYPE.get(t, t).upper()} {n}" for t, n in tc.items() if n]
+        for k, line in enumerate(self.wrap("  ·  ".join(parts) if parts else "No sounds yet", 48)[:5]):
+            self.text(x0 + 20, 584 + k * 18, line, 11, T["ink_dim"], False, "w")
+        if ix.skipped:
+            self.text(x0 + 20, 690, f"{ix.skipped} loops or long files left out", 10, T["ink_faint"], False, "w")
+
+    @staticmethod
+    def wrap(s, n):
+        out, line = [], ""
+        for w in s.split(" "):
+            if len(line) + len(w) + 1 > n and line:
+                out.append(line)
+                line = w
+            else:
+                line = (line + " " + w).strip()
+        if line:
+            out.append(line)
+        return out
+
+    def add_sample_folder(self):
+        folder = filedialog.askdirectory(title="Pick a folder of one-shot samples (subfolders are read too)")
+        if not folder:
+            return
+        folder = os.path.normpath(folder)
+        if folder in self.state.sample_folders or folder == self.state.library_root:
+            self.show_toast("ALREADY ADDED")
+            return
+        self.state.sample_folders.append(folder)
+        self.state.dirty = True
+        self.rescan_samples(quiet=False)
+
+    def remove_sample_folder(self, path):
+        now = time.time()
+        if not (self.armed and self.armed[:2] == ("rmsrc", path) and now - self.armed[2] < 3):
+            self.armed = ("rmsrc", path, now)
+            self.root.after(3100, self.request_redraw)
+            return
+        self.armed = None
+        if path in self.state.sample_folders:
+            self.state.sample_folders.remove(path)
+            self.state.dirty = True
+            self.rescan_samples()
+
+    def start_mpc_sync(self):
+        if self.sync is not None and self.sync.busy:
+            return
+        s = MpcSync(self.state.mpc_dest, host=self.state.mpc_host or None)
+        if not s.host:
+            from tkinter import simpledialog
+            h = simpledialog.askstring("Your MPC", "Your MPC's network address (it's on MPC TOOLS' first screen):",
+                                       parent=self.root)
+            if not h or not h.strip():
+                return
+            s.host = self.state.mpc_host = h.strip()
+            self.state.dirty = True
+        self.sync = s
+        self.sync_thread = threading.Thread(target=s.run, daemon=True)
+        self.sync_thread.start()
+        self.request_redraw()
+
+    def stop_mpc_sync(self):
+        if self.sync is not None:
+            self.sync.cancel = True
 
     # ---------------------------------------------------------------- my kits
     def draw_mykits(self):
@@ -2101,7 +2567,9 @@ class App:
         src = d.kit_name.rstrip(" *")
         if slot and src == slot.get("name"):
             src = slot.get("from", "")
-        self.state.mykits[i] = {"name": name, "from": src, "pads": [dict(x) for x in d.sources],
+        pv = self.state.params.val
+        knobs = {f"dr.p{j}.{x}": pv[f"dr.p{j}.{x}"] for j in range(1, 17) for x in ("tune", "decay", "level", "pan", "choke")}
+        self.state.mykits[i] = {"name": name, "from": src, "pads": [dict(x) for x in d.sources], "knobs": knobs,
                                 "saved": time.strftime("%Y-%m-%d %H:%M")}
         d.kit_name = name
         self.state.kit = {"pads": d.sources, "name": name}
@@ -2114,6 +2582,9 @@ class App:
             return
         d = self.audio.engine.drums
         d.load_sources(slot["pads"], slot["name"])
+        for k, v in (slot.get("knobs") or {}).items():  # saved by 1.10 and later: pitch, length, level, pan, choke
+            if k in SPECS:
+                self.state.params.set_val(k, v)
         self.state.kit = {"pads": d.sources, "name": slot["name"]}
         self.state.dirty = True
         self.play_pattern([[0], [4], [2], [4]], 130)
@@ -2169,6 +2640,8 @@ class App:
             pre = aid[-2:]
             self.preset_step(pre, 1)
             self.show_toast(f"SYNTH {pre[1]}: {self.state.preset_name[pre].upper()}", 1.2)
+        elif aid == "rand_kit" and self.samples.entries:  # Kit Maker: a new kit in the current style
+            self.km_new(preview=False)
         elif aid == "rand_kit":
             locked = self._locked_pad_data()
             if self.audio.library().ok():
@@ -2420,7 +2893,9 @@ class App:
         eng = self.audio.engine
         name, bpm, swing, steps, kit, fill, parts = GENRES[g % len(GENRES)]
         eng.beats.beat = Beat(g, bars=self.state.beat_bars)
-        if self.state.beat_kit:
+        if self.state.beat_kit == "samples" and self.samples.entries:
+            self.km_new(kitmaker.GENRE_STYLE.get(name, "CLASSIC"), preview=False, toast=False)
+        elif self.state.beat_kit:
             self.select_kit("factory", kit, preview=False)
         if not self.clock_live():
             eng.bpm = float(bpm)  # with CLOCK OUT on, the BeatStep follows this tempo
@@ -2651,8 +3126,9 @@ class App:
         self.button(612, cy2, 44, 44, "+", lambda: self.beat_tempo(1), px=20)
         self.button(732, cy2, 176, 44, f"LENGTH: {b.steps // 16} BAR{'S' if b.steps > 16 else ''}", self.beat_bars_step,
                     on=b.steps > 16, px=13)
-        self.button(916, cy2, 176, 44, "GENRE KIT: ON" if self.state.beat_kit else "GENRE KIT: OFF", self.toggle_beat_kit,
-                    on=self.state.beat_kit, px=13)
+        bk = self.state.beat_kit
+        self.button(916, cy2, 176, 44, "GENRE KIT: " + ("SAMPLES" if bk == "samples" else "BUILT-IN" if bk else "OFF"),
+                    self.toggle_beat_kit, on=bool(bk), px=12)
         self.button(1086, cy2, 152, 44, "CLOCK OUT: ON" if self.state.clock_master else "CLOCK OUT: OFF",
                     self.toggle_clock_master, on=self.state.clock_master, px=13)
         self.button(1210, cy2, 88, 44, "MIDI FILE", self.export_beat_midi, px=12)
@@ -2694,7 +3170,10 @@ class App:
         self.save_midi([self.audio.engine.beats.beat.to_json()], "Beat")
 
     def toggle_beat_kit(self):
-        self.state.beat_kit = not self.state.beat_kit
+        bk = self.state.beat_kit
+        self.state.beat_kit = "samples" if bk is True else False if bk == "samples" else True
+        self.show_toast({"samples": "GENRE KITS FROM YOUR SAMPLES", True: "BUILT-IN GENRE KITS",
+                         False: "GENRE KIT OFF"}[self.state.beat_kit], 1.4)
         self.state.dirty = True
 
     # ---------------------------------------------------------------- loop tab
@@ -3747,6 +4226,7 @@ class App:
             self.state.library_root = folder
             self.state.dirty = True
             self.lib_brand = self.lib_machine = None
+            self.rescan_samples(quiet=False)
             self.request_redraw()
 
     def load_kit(self):
@@ -3905,6 +4385,7 @@ class App:
                 else:
                     self.run_action(a)
             self.resample_tick()
+            self.samples_tick()
             self.loop_tick()
             self.beat_tick()
             now = time.time()

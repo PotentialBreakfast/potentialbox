@@ -13,7 +13,7 @@ os.environ.setdefault("APPDATA", "/tmp/pbman")
 sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from potentialbox.engine import PAGES, SPECS, MACROS, PRESETS, PUNCH_FX, DEFAULT_ROUTES, TABLE_NAMES, CHORDS  # noqa
-from potentialbox import kits, beats  # noqa
+from potentialbox import kits, beats, kitmaker  # noqa
 from potentialbox.app import (VERSION, ACTIONS, PAD_ACTIONS, LIVE_PADS, LOOP_PADS, BEAT_PADS, KNOB_GROUPS,  # noqa
                               SUBPAGES, TABS, TAB_LABEL)
 from desc import describe  # noqa
@@ -154,8 +154,9 @@ ul([f"{b('Sequencer 1')} plays {b('Synth 1')}, an analog-style synth for basslin
     "The BeatStep's 16 knobs control the 16 knobs of whichever page is open, and its pads run actions on MIDI channel 16."])
 p("Everything is pre-wired for the BeatStep Pro's factory settings, so you can plug it in and press play. Every control "
   "is a big key you can tap, and everything saves by itself: there is no typing anywhere in the app.")
-note(f"<b>New in {VERSION}:</b> cleaner sound (no more crackles from the master effects), a real look-ahead limiter, "
-     "a playable Arrangement, one-tap mute and solo, 8 working scenes, LOAD and DROPOUTS on the Setup tab. "
+note(f"<b>New in {VERSION}:</b> the <b>Kit Maker</b> (chapter 14) builds a new 16-pad kit from all your one-shots in one "
+     "tap, in 12 styles, and <b>GET MPC ONE-SHOTS</b> copies the sorted DRUM ONE SHOTS folder from your MPC. Genre "
+     "kits on the Beats tab can come from your own samples, and My Kits now keep each pad's pitch, length and level. "
      "The full list is in the CHANGELOG file that comes with PotentialBox.")
 end()
 
@@ -199,7 +200,7 @@ p("Download the new release and run its <b>Install PotentialBox.bat</b>. The ins
 h2("Uninstalling")
 p("Open <code>%LOCALAPPDATA%\\PotentialBox</code>, right-click <b>uninstall.ps1</b> and choose <b>Run with PowerShell</b>. "
   "This removes the app, its shortcuts <b>and your saved settings, sounds, kits and setups</b>, so copy them first if you "
-  "want to keep them (chapter 23). Your recordings and loops in the Music folder stay. Python 3.12 stays too; remove it "
+  "want to keep them (chapter 24). Your recordings and loops in the Music folder stay. Python 3.12 stays too; remove it "
   "in Windows Settings &gt; Apps if you like.")
 end()
 
@@ -253,7 +254,7 @@ p("If a knob does nothing, open SETUP, tap <b>LEARN KNOBS</b> and turn knobs 1 t
   "<b>KNOB MODE</b> to RELATIVE.")
 img("learn", "LEARN KNOBS: turn each BeatStep knob when asked.", "small")
 h2("The pads: channel 16")
-p("To use the pads for pad actions (chapter 22), set the BeatStep Pro's Control Mode pads to MIDI channel 16 in "
+p("To use the pads for pad actions (chapter 23), set the BeatStep Pro's Control Mode pads to MIDI channel 16 in "
   "Arturia's free MIDI Control Center app. Out of the box pads 1-16 send notes 36-51, which PotentialBox already "
   "expects. Any other notes or CCs work too: assign them in SETUP &gt; PAD ACTIONS.")
 end()
@@ -278,7 +279,7 @@ ul(["Tap the left or right half of a knob to step it down or up, drag up and dow
     f"Settings that are just on or off (mute, solo, hard sync, arp hold, glide mode) are {b('one-tap keys')} instead of "
     "knobs. The BeatStep knob for that spot still switches them.",
     "A knob that a macro is moving shows a small ring where your own setting is.",
-    f"{b('STEP LOCKS')} (top right of the knob area) gives a knob a different value on each step: chapter 19. A small L on "
+    f"{b('STEP LOCKS')} (top right of the knob area) gives a knob a different value on each step: chapter 20. A small L on "
     "a knob means it has step locks."])
 h2("Keyboard shortcuts")
 table(["Keys", "What they do"], [
@@ -433,7 +434,8 @@ table(["Pad", "Note", "Sound", "Pad", "Note", "Sound"], rows, "layout")
 p("Tap a pad on screen to hear it and select it. Pad 5 cuts off pad 6, like a real hi-hat; the CHOKE page (below) "
   "lets any pads cut each other off.")
 h2("Kit menu")
-p("Tap <b>KIT MENU</b> on the drum panel, or &lt; and &gt; to step through kits.")
+p("Tap <b>KITS</b> on the drum panel, or &lt; and &gt; to step through kits. <b>KIT MAKER</b> beside it builds a new "
+  "kit from your own samples (chapter 14).")
 img("kits", "The Kit menu: built-in kits, recent kits, My Kits and the drum machine library.")
 table(["Kit", "Sound"], [(b(k), d) for k, d in zip(kits.NAMES, [
     "The original all-rounder", "Round booming kick, classic metal hats", "Clicky driven kick, noisy snare, rides",
@@ -478,16 +480,19 @@ end()
 chapter("Build your own kit", "Put any single drum sound on any pad, shape it, and save the result as your own kit.")
 steps(["Tap a pad on the drum panel. It plays and gets highlighted.",
        "Tap <b>EDIT PAD</b>.",
-       "Pick a type on the left: Kick, Snare, Clap, Hats, Toms, Perc, Cymbal, FX or All. The list shows every matching "
-       "sound in your whole collection, with the machine it comes from.",
+       "Pick a type on the left: Kick, 808 / Bass, Snare, Clap, Hats, Toms, Perc, Cymbal, FX / Vox or All. The list shows "
+       "every matching sound in your drum machine collection and your sample folders, with the machine or pack it "
+       "comes from.",
        "Tap a sound. It goes on the pad and plays straight away. Keep tapping until you like it.",
        "Use the pad strip along the top to move to the next pad.",
        "Tap <b>SAVE MY KIT</b> and choose a slot."])
 img("pad", "The pad editor.")
 ul([f"{b('RANDOM')} picks a random sound of the chosen type: great for happy accidents.",
-    f"{b('ALL / MACHINE')}: MACHINE limits the list to the drum machine you have loaded.",
+    f"{b('ALL / THIS SOURCE')}: THIS SOURCE limits the list to the drum machine or sample pack the pad's sound comes "
+    "from.",
     f"{b('FROM FILE...')} takes any WAV file on your PC.",
-    f"{b('LOCK PAD')} keeps this pad's sound when you roll a {b('Random Drum Kit')} (pad action or Live pad 14).",
+    f"{b('LOCK PAD')} keeps this pad's sound when you make a new kit in the Kit Maker or roll a {b('Random Drum Kit')} "
+    "(pad action or Live pad 14).",
     "Silence at the start of every drum sound is trimmed automatically, so hits land exactly on the beat."])
 h2("Edit this pad's sound")
 table(["Key", "What it does"], [
@@ -497,12 +502,65 @@ table(["Key", "What it does"], [
     (b("PITCH −1 / PITCH +1"), "Re-pitches the sample by a semitone, like a sampler (it gets shorter or longer). "
                               "For tuning without changing the sample, use the pad's Tune knob.")])
 note("Sound edits last until you put another sound on the pad or close PotentialBox. They aren't saved in My Kits, which "
-     "remember the sample files themselves.", "warn")
+     "remember the sample files themselves (and, from version 1.10, each pad's pitch, length, level, pan and choke "
+     "knobs).", "warn")
 h2("My Kits")
 img("mykits", "My Kits: 8 slots for your own kits.", "small")
 p("Open it from the Kit menu or the pad editor. SAVE HERE stores every pad of the current kit; a full slot needs two "
   "taps to replace. LOAD brings the kit back. An edited kit shows a * after its name and comes back when you restart, "
   "even before you save it.")
+end()
+
+# ============================================================================ kit maker
+chapter("Kit Maker", "The Kit Maker builds a whole 16-pad kit from your own one-shots in one tap, the way PotentialKits "
+        "does on the MPC: a kick, a snare, hats, toms, percussion and a few surprises, from every drum machine and "
+        "sample folder you have. Lock the pads you like and roll the rest.")
+img("kitmaker", "The Kit Maker: the 16 pads, the styles, and the selected pad on the right.")
+h2("Make a kit")
+steps(["Tap <b>KIT MAKER</b> on the drum panel (or in the Kit menu).",
+       "Tap <b>NEW KIT</b>, or a <b>STYLE</b>. The kit loads and plays a short preview. Levels are evened out for you.",
+       "Tap a pad tile to hear it. Tap <b>LOCK</b> under a pad you want to keep.",
+       "Tap NEW KIT or ROLL again until you like it. <b>PREVIOUS KIT</b> goes back, up to 12 kits.",
+       "Tap <b>SAVE MY KIT</b> to keep it in a slot."])
+h2("Rolling")
+table(["Key", "What it does"], [
+    (b("ROLL MILD"), "Up to four unlocked pads get another sound of the same type. Their pitch and length stay."),
+    (b("ROLL MEDIUM"), "A new kit in the same style with a little pitch and length added."),
+    (b("ROLL WILD"), "A new kit where any pad (except the kick and snare) can be any type, pitched up to 7 semitones "
+                     "either way. Great for strange percussion kits.")])
+h2("Styles")
+p("A style decides what each pad draws from, how it is tuned, how long it rings, and which machines or packs it leans "
+  "towards (by words in their folder names, such as 808, SP-1200 or Jazz). Tap one for a new kit in that style.")
+table(["Style", "What you get"], [(b(st["name"]), E(st["desc"])) for st in kitmaker.STYLES])
+p("On the Beats tab, <b>GENRE KIT: SAMPLES</b> makes each genre's kit in the Kit Maker: Trap gets a TRAP kit with an 808 "
+  "on pad 2, Boom Bap a BOOM BAP kit, Afrobeats a PERCUSSION kit and so on.")
+h2("The selected pad")
+ul([f"{b('PLAY')} plays it, {b('NEW …')} puts another sound of the same type on it, {b('LOCK')} keeps it.",
+    f"{b('TYPE')}: tap any type (kick, 808, snare, clap, rim, closed or open hat, tom, conga, shaker, cowbell, clave, "
+    "perc, cymbal, FX, vox, stab, other) and the pad gets a sound of that type. The small number is how many you have.",
+    f"{b('PITCH')}, {b('LENGTH')} and {b('LEVEL')}: one tap per step. These are the same as the pad's knobs on the "
+    "Drums tabs.",
+    f"{b('PICK FROM LIST')} opens the pad editor (chapter 13) to choose a sound by name."])
+h2("Where the sounds come from")
+ul([f"{b('DRAW FROM')}: EVERYTHING, only your DRUM MACHINES (the Drum Machine Collection) or only MY FOLDERS.",
+    f"{b('ONE SOURCE')}: the whole kit from one drum machine or sample pack where it has the sounds.",
+    f"{b('MATCH LEVELS')} evens out every pad again (new kits do this by themselves), with hats and cymbals sitting a "
+    "little lower than kicks and snares.",
+    "The Random Drum Kit pad action (and Live pad 14) makes a Kit Maker kit in the current style once you have samples."])
+h2("Sample folders")
+img("ksources", "SAMPLE FOLDERS: your drum machines, your own folders, and GET MPC ONE-SHOTS.")
+p("Tap <b>SAMPLE FOLDERS</b> to choose where sounds come from. Your Drum Machine Collection is always there; "
+  "<b>ADD A FOLDER</b> adds any folder of one-shots (its subfolders are read too). PotentialBox sorts every sound by the "
+  "words in its folder and file names (Kicks, Snare, OH, Conga, 808 ...), and leaves out loops and long files. WAV and "
+  "AIFF files are read. Only new or changed files are looked at again, so it starts quickly.")
+h3("GET MPC ONE-SHOTS")
+p("MPC TOOLS' DRUM ONE SHOTS button gathers every drum one-shot on your MPC into one folder on its SD card, sorted into "
+  "Kicks, Snares, Claps, Hats, Cymbals, Toms and Percs. <b>GET MPC ONE-SHOTS</b> copies that folder to "
+  "<code>Music\\MPC Drum One Shots</code> on your PC and adds it to your sample folders.")
+ul(["It uses Windows' own SSH and the login MPC TOOLS already set up, so there's no password to type. The MPC's address "
+    "comes from MPC TOOLS (the first time only, if it can't find it, PotentialBox asks for it).",
+    "Tap it again any time: only sounds that aren't on the PC yet are copied.",
+    "FLAC and MP3 files are left on the MPC (PotentialBox plays WAV and AIFF)."])
 end()
 
 # ============================================================================ 14 macros
@@ -525,7 +583,8 @@ chapter("The Beats tab", "The Beats tab makes drum beats in the style of a genre
         "into the BeatStep's drum sequencer, where it carries on like a beat you programmed yourself.")
 img("beats", "The Beats tab: knobs on top, the genres, the beat (tap a dot to change it), and the keys.")
 h2("Make a beat")
-steps(["Tap a genre. With GENRE KIT: ON its usual kit loads too, and if the BeatStep is stopped the tempo is set for it.",
+steps(["Tap a genre. With GENRE KIT: BUILT-IN its usual kit loads too (GENRE KIT: SAMPLES makes one from your own "
+       "samples in the Kit Maker), and if the BeatStep is stopped the tempo is set for it.",
        "Tap <b>PLAY</b>. While the BeatStep plays, the beat locks to its clock; when it's stopped, the beat runs on its "
        "own tempo (change it with − and +).",
        "Tap <b>NEW BEAT</b> for a different take and <b>MUTATE</b> to change just one part.",
@@ -747,7 +806,7 @@ img("actions", "SETUP &gt; PAD ACTIONS.")
 steps(["Open SETUP and tap <b>PAD ACTIONS</b>.", "Tap the action you want to change. It lights up.",
        "Press the pad or step button on the BeatStep Pro you want to use for it. Notes and CCs both work, on any channel."])
 p("Each card flashes when its action runs. RESET TO CHANNEL 16 DEFAULTS puts the table above back. Actions 17-22 have no "
-  "pad out of the box. On the Beats, Live and Loop tabs the pads play those tabs' own pads instead (chapters 15, 17, 18).")
+  "pad out of the box. On the Beats, Live and Loop tabs the pads play those tabs' own pads instead (chapters 16, 18, 19).")
 end()
 
 # ============================================================================ 23 files
@@ -757,6 +816,8 @@ table(["What", "Where"], [
     (b("Settings (knobs, setup, pad actions, kit, beat, song)"), "<code>%APPDATA%\\PotentialBox\\state.json</code>"),
     (b("My Sounds"), "<code>%APPDATA%\\PotentialBox\\my-sounds.json</code>"),
     (b("My Kits"), "<code>%APPDATA%\\PotentialBox\\my-kits.json</code>"),
+    (b("The list of your samples (rebuilt by itself)"), "<code>%APPDATA%\\PotentialBox\\sample-index.json</code>"),
+    (b("Your MPC's one-shots"), "<code>Music\\MPC Drum One Shots</code>"),
     (b("My Setups"), "<code>%APPDATA%\\PotentialBox\\my-setups.json</code>"),
     (b("Resampled sounds"), "<code>%APPDATA%\\PotentialBox\\Resampled</code>"),
     (b("Your own wavetables"), "<code>%APPDATA%\\PotentialBox\\Wavetables</code>"),

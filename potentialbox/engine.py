@@ -1618,9 +1618,54 @@ class WaveSynth(MonoSynth):
         return self.finish(y, ae, mods, "s2.vol")
 
 
+def read_aiff(path):
+    """(rate, samples) from an AIFF / AIFF-C file (8/16/24/32-bit PCM, big or little endian ("sowt"), or float)."""
+    import struct
+    with open(path, "rb") as f:
+        data = f.read()
+    if data[:4] != b"FORM" or data[8:12] not in (b"AIFF", b"AIFC"):
+        raise ValueError("not an AIFF file")
+    pos, ch, frames, bits, rate, comp, snd = 12, 1, 0, 16, 44100.0, b"NONE", None
+    while pos + 8 <= len(data):
+        cid, size = data[pos:pos + 4], struct.unpack(">I", data[pos + 4:pos + 8])[0]
+        body = data[pos + 8:pos + 8 + size]
+        if cid == b"COMM":
+            ch, frames, bits = struct.unpack(">hIh", body[:8])
+            exp = ((body[8] & 0x7F) << 8) | body[9]
+            rate = int.from_bytes(body[10:18], "big") * 2.0 ** (exp - 16383 - 63)
+            if len(body) >= 22:
+                comp = body[18:22]
+        elif cid == b"SSND":
+            off = struct.unpack(">I", body[:4])[0]
+            snd = body[8 + off:]
+        pos += 8 + size + (size & 1)
+    if snd is None or ch < 1:
+        raise ValueError("no audio in AIFF")
+    nb = (bits + 7) // 8
+    if comp in (b"fl32", b"FL32"):
+        x = np.frombuffer(snd[:frames * ch * 4], dtype=">f4").astype(np.float64)
+    elif comp in (b"fl64", b"FL64"):
+        x = np.frombuffer(snd[:frames * ch * 8], dtype=">f8").astype(np.float64)
+    else:
+        le = comp == b"sowt"
+        raw = np.frombuffer(snd[:frames * ch * nb], dtype=np.uint8).reshape(-1, nb)
+        if le:
+            raw = raw[:, ::-1]
+        v = np.zeros(len(raw), dtype=np.int64)
+        for k in range(nb):
+            v = (v << 8) | raw[:, k]
+        v = np.where(v >= 1 << (nb * 8 - 1), v - (1 << (nb * 8)), v)
+        x = v / float(1 << (nb * 8 - 1))
+    x = x[: len(x) // ch * ch].reshape(-1, ch)
+    return int(round(rate)), x
+
+
 def load_wav(path, sr):
     from scipy.io import wavfile
-    fs, x = wavfile.read(path)
+    if path.lower().endswith((".aif", ".aiff")):
+        fs, x = read_aiff(path)
+    else:
+        fs, x = wavfile.read(path)
     if x.dtype.kind == "i":
         x = x / float(np.iinfo(x.dtype).max)
     elif x.dtype.kind == "u":
@@ -1692,11 +1737,30 @@ class Drums:
     def use_builtin(self):
         self.load_factory(0)
 
+    _cache = collections.OrderedDict()   # (path, sr, mtime) -> samples, shared by every engine (Kit Maker rolls)
+    _cache_bytes = 0
+    CACHE_MAX = 160 * 1024 * 1024
+
     def _read(self, path):
         import warnings
+        try:
+            key = (path, self.sr, os.path.getmtime(path))
+        except OSError:
+            key = None
+        c = Drums._cache
+        if key in c:
+            c.move_to_end(key)
+            return c[key]
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            return load_wav(path, self.sr)
+            x = load_wav(path, self.sr)
+        if key is not None:
+            c[key] = x
+            Drums._cache_bytes += x.nbytes
+            while Drums._cache_bytes > self.CACHE_MAX and len(c) > 1:
+                _, old = c.popitem(last=False)
+                Drums._cache_bytes -= old.nbytes
+        return x
 
     def load_sources(self, sources, name):
         """Rebuild a kit from 16 source entries (custom kits, My Kits). Returns pads loaded from files."""

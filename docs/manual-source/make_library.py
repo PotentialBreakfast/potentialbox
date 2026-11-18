@@ -24,4 +24,17 @@ for i, m in enumerate(machines):
             dk = os.path.join(d, k); os.makedirs(dk, exist_ok=True)
             for j, nm in enumerate(names):
                 write(os.path.join(dk, f"{nm}.wav"), np.asarray(smp[(j + 3) % 16], float), 22050)
+# a stand-in for the DRUM ONE SHOTS folder MPC TOOLS makes (copied to Music\MPC Drum One Shots)
+if len(sys.argv) > 2:
+    packs = ["Dusty Vinyl", "Trap Gold", "Jazz Brushes", "Afro Perc", "House Party", "Lo-Fi Tape"]
+    sort = {"Kicks": [0, 1], "Snares": [2, 9], "Claps": [3], "Hats": [4, 5], "Cymbals": [13], "Toms": [6, 7, 8],
+            "Percs": [10, 11, 12, 15]}
+    words = {0: "Kick", 1: "Kick Hard", 2: "Snare", 9: "Rimshot", 3: "Clap", 4: "Closed Hat", 5: "Open Hat",
+             13: "Crash", 6: "Tom Lo", 7: "Tom Mid", 8: "Tom Hi", 10: "Cowbell", 11: "Clave", 12: "Shaker", 15: "Conga"}
+    for i, pk in enumerate(packs):
+        _, smp = kits.build((i + 2) % len(kits.KITS), 22050)
+        for folder, pads in sort.items():
+            d = os.path.join(sys.argv[2], folder); os.makedirs(d, exist_ok=True)
+            for j in pads:
+                write(os.path.join(d, f"{pk} - {words[j]} {i + 1}.wav"), np.asarray(smp[j], float), 22050)
 print("ok", len(machines))

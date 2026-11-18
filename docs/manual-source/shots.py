@@ -32,9 +32,15 @@ def fonts(self):
     self.fam = "Barlow Semi Condensed"; self.fam_b = "Barlow Semi Condensed SemiBold"; self.fonts = {}; self._fit = {}
 A.App.pick_fonts = fonts
 _text = A.App.text
-def text(self, x, y, s, *a, **k):  # no sandbox paths in the pictures
-    if "pbhome" in str(s).lower():
-        s = "24 MACHINES  ·  DOWNLOADS \\ DRUM MACHINE COLLECTION"
+def clean(s):  # no sandbox paths in the pictures
+    s = str(s)
+    if s.lower().startswith("/tmp/pbhome/"):
+        return "C:\\Users\\You\\" + s[12:].replace("/", "\\")
+    if "pbhome" in s.lower():
+        return "24 MACHINES  ·  DOWNLOADS \\ DRUM MACHINE COLLECTION"
+    return s
+def text(self, x, y, s, *a, **k):
+    s = clean(s)
     return _text(self, x, y, s, *a, **k)
 A.App.text = text
 
@@ -59,7 +65,7 @@ def shot(name, setup=None, page=None, sub=None, overlay=None, wait=0.05):
         if app.cv.type(it) == "text":
             t = app.cv.itemcget(it, "text")
             if "PBHOME" in t.upper():
-                app.cv.itemconfigure(it, text="24 MACHINES  ·  DOWNLOADS \\ DRUM MACHINE COLLECTION")
+                app.cv.itemconfigure(it, text=clean(t))
     r.update(); time.sleep(0.05)
     subprocess.run(["import", "-window", "root", "-crop", f"{1280*S}x{800*S}+0+0", os.path.join(OUT, name + ".png")], check=True)
     print("shot", name)
@@ -123,11 +129,27 @@ def machine():
     app.pick_brand("Roland"); app.pick_machine("Roland TR-808")
 shot("machinekits", page="Perform", setup=machine, overlay=("machines",))
 app.select_kit("factory", 2, preview=False)
+def samples():
+    app.state.library_root = "/tmp/pbhome/Downloads/Drum Machine Collection"
+    app.state.sample_folders = ["/tmp/pbhome/Music/MPC Drum One Shots"]
+    app.rescan_samples()
+    for _ in range(400):
+        r.update(); time.sleep(0.05)
+        if app.samples.entries and not app.samples.busy: break
+samples()
 def pad():
     app.open_pad_editor(0)
-    for _ in range(100):
-        if app.sound_index is not None: break
-        time.sleep(0.05); r.update()
 shot("pad", page="Perform", setup=pad, wait=0.3)
+def kitmaker():
+    import random
+    app.km_rng = random.Random(11)
+    app.state.locked_pads = set()
+    app.km_new("BOOM BAP", preview=False)
+    app.state.locked_pads = {0, 4}; app.sel_pad = 2
+shot("kitmaker", page="Perform", setup=kitmaker, overlay=("kitmaker",))
+app.sync = type("S", (), {"busy": False, "status": "Copied 54 new one-shots.", "total": 0, "done": 0})()
+shot("ksources", page="Perform", overlay=("ksources",))
+app.sync = None
+app.state.locked_pads = set()
 shot("mykits", page="Perform", overlay=("mykits",))
 r.destroy()

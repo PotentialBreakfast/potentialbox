@@ -1,5 +1,5 @@
-POTENTIALBOX 1.4  -  BeatStep Pro groovebox for Windows
-=======================================================
+POTENTIALBOX 1.10  -  BeatStep Pro groovebox for Windows
+========================================================
 
 INSTALL: double-click "Install PotentialBox.bat".
 The full manual is PotentialBox-Manual.pdf (also in the Start menu after installing).
@@ -34,7 +34,7 @@ SAVING YOUR SYNTH SOUNDS
   They live in %APPDATA%\PotentialBox\my-sounds.json (copy it to back them up).
 
 DRUM KITS
-  Tap KIT MENU (or < > to step through). Kits: Potential, 808 Boom, 909 Punch,
+  Tap KITS (or < > to step through). Kits: Potential, 808 Boom, 909 Punch,
   606 Tight, Trap 808, SP Dust (12-bit), Electro 80s, Minimal Tech, Industrial.
   Same pad layout in every kit: 1 kick, 2 kick 2, 3 snare, 4 clap, 5 closed hat,
   6 open hat, 7-9 toms, 10 rim, 11-13 percussion, 14 cymbal, 15 FX, 16 perc.
@@ -43,12 +43,28 @@ DRUM KITS
   RESET PAD KNOBS puts every pad's tune / length / level back to normal.
 
 DRUM MACHINE COLLECTION (your sampled hardware)
-  KIT MENU > DRUM MACHINES. Pick a brand on the left, then a machine, then a kit.
+  KITS > DRUM MACHINES. Pick a brand on the left, then a machine, then a kit.
   RANDOM MACHINE picks any machine and kit for you.
   PotentialBox reads the samples straight from your folder (nothing is copied) and
   sorts them onto the pads by name: kick 1, snare 3, hats 5/6, toms 7-9 and so on.
   Once a machine kit is loaded, < and > step through that machine's kits, then the next machine.
   It looks in Downloads\Drum Machine Collection; CHANGE FOLDER picks another place.
+
+KIT MAKER (kits from all your own one-shots)
+  Tap KIT MAKER on the drum panel. NEW KIT builds a 16-pad kit from every one-shot
+  you have: the Drum Machine Collection plus any SAMPLE FOLDERS you add.
+  STYLES: Classic, Boom Bap, Lo-Fi, Trap, House, Techno, Jungle, Electro, Dusty Jazz,
+  Percussion, Dub, Weird. Tap one for a new kit in that style.
+  LOCK under a pad keeps it. ROLL MILD swaps up to 4 pads, MEDIUM makes a new kit with a
+  little pitch and length, WILD lets any pad be anything. PREVIOUS KIT goes back.
+  Tap a pad, then a TYPE (kick, 808, snare, clap, hats, toms, conga, vox ...) for a new
+  sound of that type; PITCH / LENGTH / LEVEL change it one step per tap.
+  Levels are evened out for you (MATCH LEVELS does it again). SAVE MY KIT keeps it.
+
+GET MPC ONE-SHOTS
+  KIT MAKER > SAMPLE FOLDERS > GET MPC ONE-SHOTS copies the DRUM ONE SHOTS folder that
+  MPC TOOLS makes on your MPC's SD card to Music\MPC Drum One Shots, over SSH with the
+  login MPC TOOLS set up (no password). Tap it again later: only new sounds are copied.
 
 MACROS (performance knobs)
   The MACROS tab: 16 knobs that each move several settings at once. Turning a macro back to

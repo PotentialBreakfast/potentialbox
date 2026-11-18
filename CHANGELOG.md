@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.10.0
+More drums: the **Kit Maker** builds kits from all your own one-shots, PotentialKits-style.
+
+**Kit Maker** (KIT MAKER on the drum panel, or in the Kit menu)
+- **NEW KIT** builds a 16-pad kit in one tap from every one-shot you have: the Drum Machine Collection plus any sample folders. It keeps PotentialBox's pad layout (kick 1, snare 3, hats 5/6, toms 7-9 ...), so BeatStep patterns and the Beats tab carry on working.
+- **12 styles**: Classic, Boom Bap, Lo-Fi, Trap, House, Techno, Jungle, Electro, Dusty Jazz, Percussion, Dub and Weird. A style sets what each pad draws from, its pitch and length, and the machines or packs it leans towards (808s for Trap, SP-1200 and MPC for Boom Bap, 909 and 707 for House ...).
+- **LOCK** any pad to keep it. **ROLL MILD** swaps up to 4 pads, **ROLL MEDIUM** makes a new kit with a little pitch and length, **ROLL WILD** lets any pad be any type. **PREVIOUS KIT** goes back (12 kits).
+- Tap a pad, then one of **18 types** (kick, 808, snare, clap, rim, closed / open hat, tom, conga, shaker, cowbell, clave, perc, cymbal, FX, vox, stab, other) for a new sound of that type. **PITCH**, **LENGTH** and **LEVEL** step with one tap each.
+- New kits have their **levels evened out** (hats and cymbals sit a little under kicks and snares); **MATCH LEVELS** does the whole kit again.
+- **DRAW FROM**: everything, only drum machines or only your folders. **ONE SOURCE** builds the whole kit from one machine or pack where it can.
+- The **Random Drum Kit** pad action (and Live pad 14) makes a Kit Maker kit once you have samples.
+
+**Sample folders**
+- **SAMPLE FOLDERS** (in the Kit Maker): add any folders of one-shots. Sounds are sorted by the words in their folder and file names, the way MPC TOOLS' drumsort does; loops and long files are left out. WAV and AIFF are read. Only new or changed files are read again, so it starts quickly.
+- **GET MPC ONE-SHOTS** copies the DRUM ONE SHOTS folder that MPC TOOLS makes on the MPC's SD card (Kicks, Snares, Claps, Hats, Cymbals, Toms, Percs) to *Music\MPC Drum One Shots*, over SSH with MPC TOOLS' key login and its saved MPC address. Tap it again later and only new sounds are copied.
+
+**Everywhere else**
+- The **pad editor** lists sounds from your sample folders too, with new 808 / Bass and FX / Vox groups, and THIS SOURCE (the machine or pack the pad's sound comes from).
+- **My Kits** now keep each pad's pitch, length, level, pan and choke.
+- Beats tab: **GENRE KIT** has three settings: OFF, BUILT-IN, and **SAMPLES**, which makes each genre's kit in the Kit Maker (Trap gets an 808 on pad 2, Boom Bap an SP-1200-leaning kit, Afrobeats a percussion kit ...).
+- The drum panel's keys are now < KITS > KIT MAKER EDIT.
+- Drum samples you've used are kept in memory, so rolling kits is quick.
+
 ## 1.9.2
 Fixes for the crackling audio and the screens added in 1.9.1.
 
