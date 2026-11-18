@@ -1,0 +1,100 @@
+/* PotentialBox manual — the Vintage look: warm grey and cream, dark brown ink, amber display, emerald. */
+@font-face { font-family: "Barlow"; src: url("file:///root/.fonts/Barlow-Regular.ttf"); font-weight: 400; }
+@font-face { font-family: "Barlow"; src: url("file:///root/.fonts/Barlow-Italic.ttf"); font-weight: 400; font-style: italic; }
+@font-face { font-family: "Barlow"; src: url("file:///root/.fonts/Barlow-Medium.ttf"); font-weight: 500; }
+@font-face { font-family: "Barlow"; src: url("file:///root/.fonts/Barlow-SemiBold.ttf"); font-weight: 600; }
+@font-face { font-family: "Barlow"; src: url("file:///root/.fonts/Barlow-Bold.ttf"); font-weight: 700; }
+@font-face { font-family: "Barlow"; src: url("file:///root/.fonts/Barlow-ExtraBold.ttf"); font-weight: 800; }
+@font-face { font-family: "Barlow Condensed"; src: url("file:///root/.fonts/BarlowCondensed-SemiBold.ttf"); font-weight: 600; }
+@font-face { font-family: "Barlow Condensed"; src: url("file:///root/.fonts/BarlowCondensed-Bold.ttf"); font-weight: 700; }
+
+:root {
+  --ink: #3a3428; --ink2: #5a5244; --faint: #8a8070; --line: #d8d0c0;
+  --panel: #c0b8a8; --grey: #b8b0a0; --cream: #f0e8d8; --paper: #fbf8f1;
+  --amber: #f2c879; --amber-soft: #fbedd0; --emerald: #0f6534; --emerald-soft: #e3efe6;
+}
+@page { size: A4; margin: 18mm 17mm 20mm 17mm;
+  @bottom-left { content: "PotentialBox user manual"; font: 500 8pt "Barlow"; color: #8a8070; letter-spacing: .08em; text-transform: uppercase; }
+  @bottom-right { content: counter(page); font: 600 9pt "Barlow"; color: #3a3428; }
+}
+@page cover { margin: 0; @bottom-left { content: none; } @bottom-right { content: none; } }
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; font: 400 10.4pt/1.5 "Barlow", sans-serif; color: var(--ink); }
+b { font-weight: 600; }
+code { font: 500 9.2pt "Barlow Condensed", "Barlow", sans-serif; background: var(--cream); padding: 0 .3em; border-radius: 3px;
+  letter-spacing: .01em; }
+
+/* cover */
+.cover { page: cover; height: 297mm; width: 210mm; background: var(--ink); color: var(--cream); position: relative;
+  padding: 30mm 20mm 0; overflow: hidden; }
+.cover::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 7mm;
+  background: linear-gradient(var(--amber) 0 62%, var(--emerald) 62% 100%); }
+.cover .kicker { font: 600 10pt "Barlow"; letter-spacing: .35em; text-transform: uppercase; color: var(--grey); }
+.cover .title { font: 700 66pt/1 "Barlow Condensed"; letter-spacing: .02em; color: var(--amber); margin: 8mm 0 5mm; }
+.cover .sub { font: 600 17pt/1.25 "Barlow"; color: var(--cream); max-width: 150mm; }
+.cover .meta { font: 400 10.5pt "Barlow"; color: var(--grey); margin-top: 4mm; }
+.cover .shot { margin-top: 18mm; }
+.cover .shot img { width: 100%; border-radius: 3mm; border: 1.2mm solid #2a251c; box-shadow: 0 4mm 12mm rgba(0,0,0,.45); }
+.cover .foot { position: absolute; left: 20mm; right: 20mm; bottom: 16mm; display: flex; justify-content: space-between;
+  font: 500 10pt "Barlow"; color: var(--grey); border-top: .3mm solid #5a5244; padding-top: 4mm; }
+
+/* contents */
+.toc { break-after: page; }
+h1.plain { font: 700 26pt "Barlow Condensed"; color: var(--ink); margin: 0 0 8mm; border-bottom: 1.4mm solid var(--amber);
+  display: inline-block; padding-bottom: 1mm; }
+.toc .cols { display: flex; gap: 12mm; }
+.toc ol { list-style: none; padding: 0; margin: 0; flex: 1; }
+.toc li { font: 500 12pt "Barlow"; padding: 2.4mm 0; border-bottom: .25mm solid var(--line); }
+.toc .n { display: inline-block; width: 11mm; font: 700 13pt "Barlow Condensed"; color: var(--emerald); }
+
+/* chapters */
+.chapter.np { break-before: page; }
+.chapter h1 { font: 700 25pt/1.1 "Barlow Condensed"; margin: 0 0 7mm; color: var(--ink); padding-bottom: 2mm;
+  border-bottom: 1.4mm solid var(--amber); display: inline-block; }
+.chapter h1 .num { color: var(--emerald); margin-right: 3.5mm; }
+.chapter:not(.np) { margin-top: 10mm; }
+h2 { font: 700 15pt "Barlow Condensed"; color: var(--ink); margin: 7mm 0 2.5mm; break-after: avoid; letter-spacing: .01em; }
+h2::before { content: ""; display: inline-block; width: 3mm; height: 3mm; background: var(--emerald); border-radius: .6mm;
+  margin-right: 2.5mm; vertical-align: .3mm; }
+h3 { font: 600 11.5pt "Barlow"; color: var(--emerald); margin: 5mm 0 1.5mm; break-after: avoid; }
+p { margin: 0 0 2.6mm; }
+ul { margin: 0 0 3mm; padding-left: 5mm; }
+ul li { margin: 0 0 1.2mm; padding-left: 1mm; }
+ul li::marker { color: var(--emerald); }
+ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 2mm 0 4mm; }
+ol.steps li { counter-increment: s; position: relative; padding: 1.1mm 0 1.1mm 10mm; margin-bottom: 1mm; break-inside: avoid; }
+ol.steps li::before { content: counter(s); position: absolute; left: 0; top: .8mm; width: 6.4mm; height: 6.4mm;
+  border-radius: 50%; background: var(--amber); color: var(--ink); font: 700 10pt/6.4mm "Barlow"; text-align: center; }
+
+figure { margin: 3mm 0 5mm; break-inside: avoid; text-align: center; }
+figure img { width: 100%; border-radius: 1.6mm; border: .5mm solid var(--ink); }
+figure.small img { width: 74%; }
+figcaption { font: italic 400 9pt "Barlow"; color: var(--ink2); margin-top: 1.6mm; }
+
+.note { background: var(--amber-soft); border-left: 1.4mm solid var(--amber); padding: 3mm 4mm; margin: 3mm 0 4mm;
+  border-radius: 0 1.5mm 1.5mm 0; break-inside: avoid; font-size: 10pt; }
+.note.warn { background: var(--emerald-soft); border-left-color: var(--emerald); }
+
+table { width: 100%; border-collapse: collapse; margin: 2mm 0 5mm; font-size: 9.6pt; }
+thead { display: table-header-group; }
+tr { break-inside: avoid; }
+th { background: var(--ink); color: var(--cream); font: 600 8pt "Barlow"; letter-spacing: .1em; text-transform: uppercase;
+  text-align: left; padding: 2mm 2.5mm; }
+td { padding: 1.7mm 2.5mm; border-bottom: .25mm solid var(--line); vertical-align: top; }
+tbody tr:nth-child(even) td { background: #f7f2e7; }
+table.knobs td:first-child, table.pads td:nth-child(odd) { width: 11mm; }
+table.knobs td:nth-child(2) { width: 38mm; }
+table.short td:nth-child(2) { width: auto; }
+table.compact td { padding: 1.1mm 2.5mm; }
+.kn { display: inline-block; min-width: 6.2mm; padding: 0 1mm; height: 5.2mm; border-radius: 2.6mm; background: var(--amber);
+  color: var(--ink); font: 700 8.6pt/5.2mm "Barlow"; text-align: center; }
+table.pads td:nth-child(3) { border-left: 2mm solid var(--paper); }
+.key { display: inline-block; border: .35mm solid var(--ink); border-bottom-width: .8mm; border-radius: 1.2mm;
+  padding: 0 1.6mm; font: 600 8.6pt "Barlow"; background: var(--cream); }
+
+.qa { break-inside: avoid; margin-bottom: 3.5mm; }
+.qa h4 { font: 700 10pt "Barlow"; text-transform: uppercase; letter-spacing: .05em; color: var(--emerald); margin: 0 0 1mm; }
+table.layout td:nth-child(1), table.layout td:nth-child(4) { width: 11mm; }
+table.layout td:nth-child(2), table.layout td:nth-child(5) { width: 13mm; color: var(--ink2); }
+table.layout td:nth-child(4) { border-left: 2mm solid var(--paper); }
