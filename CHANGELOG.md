@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.11.0
+- **Vintage look** rebuilt to match the BeatStep Pro: charcoal faceplate, walnut cabinet round the window, cream
+  keys and pads, amber LEDs, orange accents and a green VFD-style display in the readouts.
+- **Hi-fi skin drawing** (new `skins.py`): encoders, keys and displays are rendered with Pillow - domed knobs with a
+  cast shadow and specular highlight, moulded keys with gradient, lit top edge and drop shadow, glass display windows -
+  and cached, so a page redraws at the same speed. Needs Pillow (added to `requirements.txt`); without it the app falls
+  back to its flat vector drawing.
+- Small hardware touches on the Vintage look: serif logo, cross-head screws on the drum pads and a brighter core in the
+  value arcs.
+- The Kit Maker and Sample folders screens use the hi-fi keys too.
+
 ## 1.10.2
 - Fixed: 1.10.1 showed a blank window icon and Python's icon on the taskbar. The window now uses a small plain .ico of the PB logo.
 

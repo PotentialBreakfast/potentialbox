@@ -5,7 +5,7 @@ Seq 2 (MIDI ch 2)  -> Synth 2 (wavetable)
 Drum  (MIDI ch 10) -> Drums  (16 pads, notes 36-51)
 16 knobs (CNTRL mode) -> the 16 knobs on the current page
 
-Look: the three PotentialSuite looks (Print Plate, Night Rack, Colour Block), picked on the Setup tab.
+Look: the PotentialSuite looks (Print Plate, Night Rack, Colour Block, Vintage), picked on the Setup tab.
 """
 import os
 import sys
@@ -56,9 +56,13 @@ from potentialbox.samples import (SampleIndex, default_roots, GROUPS, TYPES,  # 
                                   SHORT as SHORT_TYPE, group_of_type)
 from potentialbox import kitmaker  # noqa: E402
 from potentialbox.mpcsync import MpcSync  # noqa: E402
+try:                                      # hi-fi sprites are optional; the app falls back to flat drawing
+    from potentialbox import skins
+except Exception:                         # pragma: no cover
+    skins = None
 
 APP = "PotentialBox"
-VERSION = "1.10.2"
+VERSION = "1.11.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
@@ -165,7 +169,8 @@ def log(*a):
 
 
 # ----------------------------------------------------------------------------- looks
-# The three PotentialSuite looks. PotentialBox's own colour is emerald. Each look is a palette (the same roles as the
+# The PotentialSuite looks (Print Plate, Night Rack, Colour Block, Vintage), picked on the Setup tab. Vintage adds a
+# walnut cabinet and raised panel plates on top of its palette. Each look is a palette (the same roles as the
 # old Potential theme) plus three shape numbers: round = how round the keys are (1 = as drawn), edge = an outline on
 # every key (0 = none), frame = how heavy panel outlines are. Colours that sit under text keep the text's contrast:
 # btn_on and seg_active are light where the text is dark and dark where the text is light.
@@ -188,17 +193,41 @@ LOOKS = {
         accent="0e1f1b", accent_hi="0e1f1b", knob_face="0e1f1b", knob_ring="0e1f1b", knob_dot="f2ecdd",
         seg_active="ffe14a", seg_inactive="f2ecdd", seg_active_tx="0e1f1b", btn_text="0e1f1b", btn_bg="f2ecdd",
         btn_on="ffe14a", tab_on="0e1f1b", tab_on_tx="f2ecdd", lcd="f2ecdd", well="f2ecdd", chrome_ink="0e1f1b"),
-    "vintage": dict(  # warm grey panel, cream keys, amber display, emerald as the plugin's own colour
-        name="Vintage", round=0.5, edge=1.0, frame=1.0, narrow=False,
-        bg="b8b0a0", panel="c0b8a8", line="3a3428", ink="3a3428", ink_dim="5a5244", ink_faint="8a8070",
-        accent="0f6534", accent_hi="0f6534", knob_face="3a3428", knob_ring="3a3428", knob_dot="f0e8d8",
-        seg_active="f2c879", seg_inactive="d8d0c0", seg_active_tx="3a3428", btn_text="3a3428", btn_bg="d8d0c0",
-        btn_on="f2c879", tab_on="3a3428", tab_on_tx="f0e8d8", lcd="f2c879", well="d8d0c0", chrome_ink="3a3428"),
+    "vintage": dict(  # BeatStep-style dark panel, walnut cabinet, cream keys, amber LEDs, green display.
+        # Optional keys read with T.get() so a look only needs them if it wants them:
+        #   wood     - width of the walnut cabinet border drawn round the window (0 = none)
+        #   screen   - display glass behind readouts (falls back to well)
+        #   lcd_ink  - text on the display glass (falls back to accent)
+        #   logo     - the app name in the header (falls back to accent)
+        #   title    - frame headings (falls back to accent)
+        name="Vintage", round=0.42, edge=1.0, frame=1.0, narrow=False, wood=15, plate=True, pointer=True, dome=True,
+        bevel=True, glass=True, serif=True, screw=True,
+        bg="17181b", panel="202127", line="5d5a50", ink="ece6d6", ink_dim="8f8a7d", ink_faint="746f63",
+        accent="e0803c", accent_hi="ffab63", knob_face="24252a", knob_ring="4b4942", knob_dot="f4efe0",
+        knob_pointer="f2ecdc", knob_hub="efe8d6", knob_hi="6a6b75", knob_shadow="0f1013",
+        seg_active="f2c879", seg_inactive="2a2b2f", seg_active_tx="241d12", btn_text="241d12", btn_bg="d8d2c2",
+        btn_on="f2c879", tab_on="f2c879", tab_on_tx="1a1610", lcd="0b140e", well="24252a", chrome_ink="ece6d6",
+        screen="0b140e", lcd_ink="8cffb0", logo="f4efe0", title="f4efe0", key_dim="8b8272"),
 }
 USER_LOOK_FILE = os.path.join(CFG_DIR, "user-look.json")
 LOOK_ORDER = ["print", "rack", "block", "vintage"] + (["user"] if os.path.isfile(USER_LOOK_FILE) else [])
 T = {}        # the current look's colours, "#rrggbb"
 STYLE = {}    # the current look's name and shape numbers
+
+
+def shade(c, k):
+    """Lighten (k > 1) or darken (k < 1) a #rrggbb colour, clamped."""
+    c = c.lstrip("#")
+    r, g, b = (int(c[i:i + 2], 16) for i in (0, 2, 4))
+    return "#%02x%02x%02x" % (min(255, int(r * k)), min(255, int(g * k)), min(255, int(b * k)))
+
+
+def mix2(a, b, t):
+    """Blend two #rrggbb colours, 0 = a, 1 = b."""
+    a, b = a.lstrip("#"), b.lstrip("#")
+    ra, ga, ba = (int(a[i:i + 2], 16) for i in (0, 2, 4))
+    rb, gb, bb = (int(b[i:i + 2], 16) for i in (0, 2, 4))
+    return "#%02x%02x%02x" % (int(ra + (rb - ra) * t), int(ga + (gb - ga) * t), int(ba + (bb - ba) * t))
 
 
 def _load_user_look():
@@ -233,6 +262,8 @@ def apply_look(look):
             T[k] = "#" + v
         else:
             STYLE[k] = v
+    T.setdefault("key_dim", T["ink_dim"])     # muted print on a key (dark looks use ink_dim for that too)
+    T.setdefault("key_text", T["btn_text"])
 
 
 apply_look("print")
@@ -1063,6 +1094,7 @@ class App:
         self.scale, self.ox, self.oy = s, 0, 0
         self.fonts = {}
         self.pick_fonts()
+        self._sprites = {}      # PhotoImages by key (hi-fi knobs, cabinet); kept alive here
         self.hits = []
         self.redraw_wanted = True
         self.drag = None
@@ -1163,11 +1195,13 @@ class App:
             bold = ("Bahnschrift SemiBold SemiCondensed", "Bahnschrift SemiBold SemiConden") + bold
         self.fam = next((f for f in base if f in fams), "TkDefaultFont")
         self.fam_b = next((f for f in bold if f in fams), self.fam)
+        self.fam_serif = next((f for f in ("Georgia", "Constantia", "Cambria", "Times New Roman", "DejaVu Serif")
+                               if f in fams), None)
         self.fonts = {}
         self._fit = {}
 
     def cycle_look(self):
-        """Setup tab: the LOOK key steps Print Plate > Night Rack > Colour Block. Shows at once and is saved."""
+        """Setup tab: the LOOK key steps Print Plate > Night Rack > Colour Block > Vintage. Shows at once and is saved."""
         cur = self.state.look if self.state.look in LOOK_ORDER else "print"
         self.state.look = LOOK_ORDER[(LOOK_ORDER.index(cur) + 1) % len(LOOK_ORDER)]
         apply_look(self.state.look)
@@ -1190,6 +1224,16 @@ class App:
 
     def rrect(self, x, y, w, h, r, fill, outline=""):
         X, Y, s = self.X, self.Y, self.scale
+        if STYLE.get("bevel") and skins is not None and getattr(skins, "HAVE", False) and w > 3 and h > 3:
+            rr = min(r * STYLE["round"], w / 2, h / 2)
+            ol = outline or (T["line"] if STYLE["edge"] else None)
+            pw, ph = max(4, int(round(w * s))), max(4, int(round(h * s)))
+            img = self.photo(("key", pw, ph, round(rr * s, 1), fill, ol),
+                             lambda: skins.key(pw, ph, rr * s, fill, ol))
+            if img is not None:
+                m = skins.KEY_MARGIN
+                self.cv.create_image(X(x) - m, Y(y) - m, image=img, anchor="nw")
+                return
         x0, y0, x1, y1 = X(x), Y(y), X(x + w), Y(y + h)
         r = min(r * s, (x1 - x0) / 2, (y1 - y0) / 2)
         r *= STYLE["round"]                      # the look: rounder or squarer keys
@@ -1210,6 +1254,27 @@ class App:
     def text(self, x, y, s, px, color, bold=False, anchor="center"):
         self.cv.create_text(self.X(x), self.Y(y), text=s, font=self.font(px, bold), fill=color, anchor=anchor)
 
+    def logo(self, x, y, s, px, color):
+        """The app name: the look's serif face when it has one (Vintage), otherwise the normal bold face."""
+        fam = getattr(self, "fam_serif", None) if STYLE.get("serif") else None
+        if not fam:
+            self.text(x, y, s, px, color, True, "w")
+            return
+        key = ("logo", s, px, round(self.scale, 3))
+        f = self.fonts.get(key)
+        if f is None:
+            f = tkfont.Font(family=fam, size=-max(6, int(px * self.scale)), weight="bold")
+            self.fonts[key] = f
+        self.cv.create_text(self.X(x), self.Y(y), text=s, font=f, fill=color, anchor="w")
+
+    def screw(self, cx, cy):
+        """The little cross-head screw that holds the key plates down."""
+        r = 2.6
+        self.cv.create_oval(self.X(cx - r), self.Y(cy - r), self.X(cx + r), self.Y(cy + r),
+                            fill="#6f695d", outline="#2e2b26", width=max(1, round(self.scale)))
+        self.cv.create_line(self.X(cx - r * 0.55), self.Y(cy - r * 0.55), self.X(cx + r * 0.55), self.Y(cy + r * 0.55),
+                            fill="#2e2b26", width=max(1, round(self.scale)))
+
     def text_fit(self, x, y, s, px, maxw, color, bold=False, anchor="center", minpx=8):
         """Text that shrinks (down to `minpx`) to fit `maxw` design pixels instead of running into its neighbours."""
         key = (s, px, maxw, bold, round(self.scale, 3), self.fam)
@@ -1228,8 +1293,16 @@ class App:
 
     # ---------------------------------------------------------------- widgets (theme)
     def frame(self, x, y, w, h, title, sub="", led=None):
-        self.rect(x, y, w, h, outline=T["line"])
-        self.text(x + 18, y + 30, title.upper(), 22, T["accent"], True, "w")
+        if STYLE.get("plate"):                       # looks with raised panel plates (Vintage)
+            n = 22
+            top, bot = shade(T["panel"], 1.12), shade(T["panel"], 0.88)
+            for i in range(n):
+                self.rect(x + 1, y + 1 + (h - 2) * i / n, w - 2, (h - 2) / n + 1,
+                          fill=mix2(top, bot, i / (n - 1)))
+            self.rect(x, y, w, h, outline=T["line"])
+        else:
+            self.rect(x, y, w, h, outline=T["line"])
+        self.text(x + 18, y + 30, title.upper(), 22, T.get("title", T["accent"]), True, "w")
         tw = self.font(22, True).measure(title.upper()) / self.scale
         if led is not None:
             self.led(x + 18 + tw + 16, y + 30, led)
@@ -1239,8 +1312,18 @@ class App:
             self.text(x + w - 18, y + 22, sub, 12, T["ink_dim"], False, "e")
 
     def readout(self, cx, cy, w, h, s, label="", above=False):
-        self.rect(cx - w / 2, cy - h / 2, w, h, fill=T["well"], outline=T["line"])
-        self.text(cx, cy, s.upper(), 16, T["accent"], True)
+        x0, y0 = cx - w / 2, cy - h / 2
+        glass = T.get("screen", T["well"])
+        img = None
+        if STYLE.get("glass") and skins is not None and getattr(skins, "HAVE", False):
+            pw, ph = max(8, int(round(w * self.scale))), max(8, int(round(h * self.scale)))
+            img = self.photo(("scr", pw, ph, glass), lambda: skins.screen(pw, ph, glass))
+        if img is not None:
+            self.cv.create_image(self.X(x0), self.Y(y0), image=img, anchor="nw")
+            self.rect(x0, y0, w, h, outline=T["line"])
+        else:
+            self.rect(x0, y0, w, h, fill=glass, outline=T["line"])
+        self.text(cx, cy, s.upper(), 16, T.get("lcd_ink", T["accent"]), True)
         if label and above:
             self.text(cx - w / 2, cy - h / 2 - 10, label.upper(), 11, T["ink_dim"], True, "w")
         elif label:
@@ -1312,21 +1395,62 @@ class App:
         rr = r + 10
         self.arc(cx, cy, rr, 225, -270, T["ink_faint"], 3)
         bip = spec.lo < 0 < spec.hi or spec.unit in ("djm", "sw")
+        core = T.get("accent_hi", T["accent"])
         if bip:
             zero = spec.to_norm(0.0) if spec.lo < 0 < spec.hi else 0.5
             a0, a1 = 225 - 270 * zero, 225 - 270 * n
             self.arc(cx, cy, rr, a0, a1 - a0, T["accent"], 5)
+            self.arc(cx, cy, rr, a0, a1 - a0, core, 2)
         else:
             self.arc(cx, cy, rr, 225, -270 * n, T["accent"], 5)
-        self.cv.create_oval(X(cx - r), Y(cy - r), X(cx + r), Y(cy + r), fill=T["knob_face"],
-                            outline=T["accent"] if hot else T["knob_ring"], width=max(1, int(2 * s)))
+            self.arc(cx, cy, rr, 225, -270 * n, core, 2)
+        dome = T.get("knob_hi")
+        hot_ring = T["accent"] if hot else T["knob_ring"]
+        sprite = None
+        if dome and STYLE.get("dome") and skins is not None and getattr(skins, "HAVE", False):
+            px = max(8, int(round(2 * r * s)))
+            sprite = self.photo(("knob", px, T["knob_face"], dome, T["knob_ring"], bool(hot)),
+                                lambda: skins.knob(px, T["knob_face"], dome, hot_ring))
+        if sprite is not None:   # hi-fi: a rendered dome with its own shadow and highlight
+            self.cv.create_image(X(cx), Y(cy), image=sprite, anchor="center")
+        elif dome:               # fallback: nested circles shifted to the light, on a soft cast shadow
+            self.cv.create_oval(X(cx - r * 1.03), Y(cy - r * 0.97 + 4), X(cx + r * 1.03), Y(cy + r * 1.05 + 4),
+                                fill=T.get("knob_shadow", "#101114"), outline="")
+            for i in range(18):
+                t = i / 17.0
+                rr = r * (1.0 - 0.64 * t)
+                off = -r * 0.12 * t
+                self.cv.create_oval(X(cx - rr + off), Y(cy - rr + off), X(cx + rr + off), Y(cy + rr + off),
+                                    fill=mix2(T["knob_face"], dome, t), outline="")
+            self.cv.create_oval(X(cx - r), Y(cy - r), X(cx + r), Y(cy + r),
+                                outline=hot_ring, width=max(1, int(2 * s)))
+        else:
+            self.cv.create_oval(X(cx - r), Y(cy - r), X(cx + r), Y(cy + r), fill=T["knob_face"],
+                                outline=hot_ring, width=max(1, int(2 * s)))
         if moved:  # where your own setting is, while a macro pushes the knob
             ab = math.radians(225 - 270 * p.norm[key])
             bx, by = cx + (r - 12) * math.cos(ab), cy - (r - 12) * math.sin(ab)
             self.cv.create_oval(X(bx - 4), Y(by - 4), X(bx + 4), Y(by + 4), fill="", outline=T["ink_faint"], width=max(1, int(2 * s)))
         a = math.radians(225 - 270 * n)
-        dx, dy = cx + (r - 12) * math.cos(a), cy - (r - 12) * math.sin(a)
-        self.cv.create_oval(X(dx - 7), Y(dy - 7), X(dx + 7), Y(dy + 7), fill=T["knob_dot"], outline="")
+        if STYLE.get("pointer"):   # domed encoder: cream pointer from a cream hub (Vintage / BeatStep)
+            pc = T.get("knob_pointer", T["knob_dot"])
+            pimg = None
+            if sprite is not None and skins is not None:
+                angle = round((-135 + 270 * n) / 2.5) * 2.5
+                px2 = max(8, int(round(2 * r * s)))
+                pimg = self.photo(("ptr", px2, angle, pc), lambda: skins.pointer(px2, pc, angle))
+            if pimg is not None:
+                self.cv.create_image(X(cx), Y(cy), image=pimg, anchor="center")
+            else:
+                ca, sa = math.cos(a), math.sin(a)
+                self.cv.create_line(X(cx + r * 0.30 * ca), Y(cy - r * 0.30 * sa),
+                                    X(cx + r * 0.84 * ca), Y(cy - r * 0.84 * sa),
+                                    fill=pc, width=max(2, round(r * 0.17 * s)), capstyle="round")
+                hr = r * 0.18
+                self.cv.create_oval(X(cx - hr), Y(cy - hr), X(cx + hr), Y(cy + hr), fill=pc, outline="")
+        else:
+            dx, dy = cx + (r - 12) * math.cos(a), cy - (r - 12) * math.sin(a)
+            self.cv.create_oval(X(dx - 7), Y(dy - 7), X(dx + 7), Y(dy + 7), fill=T["knob_dot"], outline="")
         self.text_fit(cx, cy + r + 24, self.knob_label(key), 13, 150, T["ink"], True)
         shown = spec.fmt(spec.to_val(n) if p.lock_step is not None else p.val[key])
         if key[2:5] in (".l1", ".l2") and key.endswith("rate") and p.val[key[:5] + "sync"] >= 0.5:
@@ -1381,7 +1505,9 @@ class App:
         cw, ch = cv.winfo_width(), cv.winfo_height()
         self.scale = min(cw / W, ch / H)
         self.ox, self.oy = (cw - W * self.scale) / 2, (ch - H * self.scale) / 2
-        self.rect(0, 0, W, H, fill=T["bg"])
+        if not self.draw_cabinet_image():
+            self.rect(0, 0, W, H, fill=T["bg"])
+            self.draw_cabinet()
         self.draw_header()
         if self.state.page == "Setup":
             self.draw_setup()
@@ -1459,7 +1585,7 @@ class App:
                 self.text(x0 + 16, y0 + 22, str(i + 1), 13, T["accent"] if not now else T["btn_text"], True, "w")
                 self.text(x0 + 106, y0 + 40, GENRE_NAMES[g].upper(), 17, T["btn_text"], True)
                 self.text(x0 + 106, y0 + 64, f"{bars} BAR{'S' if bars > 1 else ''}" + ("  ·  PLAYING" if now else ""),
-                          11, T["btn_text"] if now else T["ink_dim"], now)
+                          11, T["btn_text"] if now else T["key_dim"], now)
                 self.hit(x0, y0, 212, 86, lambda j=i: self.arr_pick(j))
             else:
                 self.rect(x0, y0, 212, 86, outline=T["ink_faint"])
@@ -1597,9 +1723,80 @@ class App:
             return
         self.show_toast("SAVED IN MUSIC > POTENTIALBOX RECORDINGS", 2.5)
 
+    def photo(self, key, build):
+        """A cached Tk image. `build` returns a PIL image (or None if Pillow isn't there)."""
+        img = self._sprites.get(key)
+        if img is not None:
+            return img
+        pil = build()
+        if pil is None:
+            return None
+        try:
+            from PIL import ImageTk
+            img = ImageTk.PhotoImage(pil)
+        except Exception:
+            return None
+        if len(self._sprites) > 800:
+            self._sprites.clear()
+        self._sprites[key] = img
+        return img
+
+    def draw_cabinet_image(self):
+        """The hi-fi backdrop: walnut cabinet + brushed plate, rendered once per size and cached."""
+        if skins is None or not getattr(skins, "HAVE", False) or not STYLE.get("wood"):
+            return False
+        s = self.scale
+        w, h = max(4, int(round(W * s))), max(4, int(round(H * s)))
+        band = max(2, int(round(STYLE["wood"] * s)))
+        key = ("cab", w, h, band, T.get("panel", ""), T["accent"])
+        img = self.photo(key, lambda: skins.cabinet(w, h, band, "#6d4527", "#3a2413",
+                                                    shade(T["panel"], 0.90), shade(T["panel"], 1.08), T["accent"]))
+        if img is None:
+            return False
+        self.cv.create_image(self.X(0), self.Y(0), image=img, anchor="nw")
+        return True
+
+    def draw_cabinet(self):
+        """Vintage look: walnut cabinet round the window, brushed panel, orange pinstripe."""
+        wood = STYLE.get("wood", 0) or 0
+        if not wood:
+            return
+        cv, s = self.cv, self.scale
+        import random as _r
+        rnd = _r.Random(7)
+        wood = min(wood, 40)
+        for bx0, by0, bx1, by1 in ((0, 0, W, wood), (0, H - wood, W, H),
+                                   (0, 0, wood, H), (W - wood, 0, W, H)):
+            cv.create_rectangle(self.X(bx0), self.Y(by0), self.X(bx1), self.Y(by1), fill="#5a3820", outline="")
+        tones = ("#472a16", "#6d4527", "#3c2413", "#7c5230")
+        for _ in range(130):
+            tone = tones[rnd.randrange(len(tones))]
+            ph, amp = rnd.uniform(0, 6.28), rnd.uniform(0.4, 1.5)
+            pts = []
+            if rnd.random() < 0.5:          # grain across the top / bottom rails
+                yy = rnd.uniform(0, wood) if rnd.random() < 0.5 else rnd.uniform(H - wood, H)
+                for xx in range(0, W + 40, 40):
+                    pts += [self.X(min(xx, W)), self.Y(yy + amp * math.sin(xx / 90.0 + ph))]
+            else:                           # grain down the two cheeks
+                xx = rnd.uniform(0, wood) if rnd.random() < 0.5 else rnd.uniform(W - wood, W)
+                for yy in range(0, H + 40, 40):
+                    pts += [self.X(xx + amp * math.sin(yy / 90.0 + ph)), self.Y(min(yy, H))]
+            cv.create_line(*pts, fill=tone, width=1)
+        # brushed panel inside the cabinet
+        for yy in range(int(wood) + 2, int(H - wood) - 2, 3):
+            cv.create_line(self.X(wood), self.Y(yy), self.X(W - wood), self.Y(yy),
+                           fill="#1d1e22" if (yy // 3) % 2 else "#191a1e", width=1)
+        # bevelled edge and the orange pinstripe along the bottom
+        cv.create_rectangle(self.X(wood), self.Y(wood), self.X(W - wood), self.Y(H - wood),
+                            outline="#20130a", width=max(1, round(2 * s)))
+        cv.create_line(self.X(wood), self.Y(wood + 1), self.X(W - wood), self.Y(wood + 1),
+                       fill="#8a5c34", width=1)
+        cv.create_line(self.X(wood), self.Y(H - wood - 3), self.X(W - wood), self.Y(H - wood - 3),
+                       fill="#c2591f", width=max(1, round(2 * s)))
+
     def draw_header(self):
         self.rect(0, 0, W, 90, fill=T["bg"])
-        self.text(24, 34, APP, 30, T["accent"], True, "w")
+        self.logo(24, 34, APP, 30, T.get("logo", T["accent"]))
         rec = self.audio.engine.recorder
         if rec is not None:
             sec = int(rec.seconds())
@@ -1704,8 +1901,10 @@ class App:
             on = act > 0.05
             self.rrect(bx, by, 44, 44, 8, T["btn_on"] if on else T["btn_bg"],
                        outline=T["accent"] if i == self.sel_pad else "")
+            if STYLE.get("screw"):
+                self.screw(bx + 35, by + 9)
             self.text(bx + 22, by + 15, str(i + 1), 11, T["btn_text"], True)
-            self.text(bx + 22, by + 32, eng.drums.names[i][:5].upper(), 8, T["ink_dim"] if not on else T["btn_text"])
+            self.text(bx + 22, by + 32, eng.drums.names[i][:5].upper(), 8, T["ink_faint"] if not on else T["btn_text"])
             self.hit(bx, by, 44, 44, lambda p=i: self.test_pad(p))
         self.button(x + 40, y + 222, 52, 42, "<", lambda: self.kit_step(-1), px=20)
         self.button(x + 114, y + 222, 88, 42, "KITS", lambda: self.open_overlay(("kits",)), px=15)
@@ -1904,7 +2103,7 @@ class App:
             on = i == p
             self.rrect(bx, 150, 70, 46, 8, T["seg_active"] if on else T["btn_bg"])
             self.text(bx + 35, 164, str(i + 1), 12, T["accent"] if on else T["btn_text"], True)
-            self.text(bx + 35, 184, eng.drums.names[i][:7].upper(), 8, T["ink_dim"])
+            self.text(bx + 35, 184, eng.drums.names[i][:7].upper(), 8, T["key_dim"])
             self.hit(bx, 150, 70, 46, lambda j=i: self.pe_pick_pad(j))
         # categories
         for j, (g, _) in enumerate(GROUPS):
@@ -2769,11 +2968,50 @@ class App:
         X, Y = self.X, self.Y
         self.arc(cx, cy, r + 5, 225, -270, T["ink_faint"], 2)
         self.arc(cx, cy, r + 5, 225, -270 * n, T["accent"], 3)
-        self.cv.create_oval(X(cx - r), Y(cy - r), X(cx + r), Y(cy + r), fill=T["knob_face"],
-                            outline=T["accent"] if hot else T["knob_ring"], width=max(1, int(2 * self.scale)))
+        self.arc(cx, cy, r + 5, 225, -270 * n, T.get("accent_hi", T["accent"]), 1)
+        dome = T.get("knob_hi")
+        hot_ring = T["accent"] if hot else T["knob_ring"]
+        sprite = None
+        if dome and STYLE.get("dome") and skins is not None and getattr(skins, "HAVE", False):
+            px = max(8, int(round(2 * r * self.scale)))
+            sprite = self.photo(("knob", px, T["knob_face"], dome, T["knob_ring"], bool(hot)),
+                                lambda: skins.knob(px, T["knob_face"], dome, hot_ring))
+        if sprite is not None:
+            self.cv.create_image(X(cx), Y(cy), image=sprite, anchor="center")
+        elif dome:
+            self.cv.create_oval(X(cx - r * 1.03), Y(cy - r * 0.97 + 3), X(cx + r * 1.03), Y(cy + r * 1.05 + 3),
+                                fill=T.get("knob_shadow", "#101114"), outline="")
+            for i in range(10):
+                t = i / 9.0
+                rr = r * (1.0 - 0.58 * t)
+                off = -r * 0.09 * t
+                self.cv.create_oval(X(cx - rr + off), Y(cy - rr + off), X(cx + rr + off), Y(cy + rr + off),
+                                    fill=mix2(T["knob_face"], dome, t), outline="")
+            self.cv.create_oval(X(cx - r), Y(cy - r), X(cx + r), Y(cy + r),
+                                outline=hot_ring, width=max(1, int(2 * self.scale)))
+        else:
+            self.cv.create_oval(X(cx - r), Y(cy - r), X(cx + r), Y(cy + r), fill=T["knob_face"],
+                                outline=hot_ring, width=max(1, int(2 * self.scale)))
         a = math.radians(225 - 270 * n)
-        dx, dy = cx + (r - 7) * math.cos(a), cy - (r - 7) * math.sin(a)
-        self.cv.create_oval(X(dx - 4), Y(dy - 4), X(dx + 4), Y(dy + 4), fill=T["knob_dot"], outline="")
+        if STYLE.get("pointer"):
+            pc = T.get("knob_pointer", T["knob_dot"])
+            pimg = None
+            if sprite is not None and skins is not None:
+                angle = round((-135 + 270 * n) / 3.0) * 3.0
+                px2 = max(8, int(round(2 * r * self.scale)))
+                pimg = self.photo(("ptr", px2, angle, pc), lambda: skins.pointer(px2, pc, angle))
+            if pimg is not None:
+                self.cv.create_image(X(cx), Y(cy), image=pimg, anchor="center")
+            else:
+                ca, sa = math.cos(a), math.sin(a)
+                self.cv.create_line(X(cx + r * 0.30 * ca), Y(cy - r * 0.30 * sa),
+                                    X(cx + r * 0.82 * ca), Y(cy - r * 0.82 * sa),
+                                    fill=pc, width=max(2, round(r * 0.17 * self.scale)), capstyle="round")
+                hr = r * 0.17
+                self.cv.create_oval(X(cx - hr), Y(cy - hr), X(cx + hr), Y(cy + hr), fill=pc, outline="")
+        else:
+            dx, dy = cx + (r - 7) * math.cos(a), cy - (r - 7) * math.sin(a)
+            self.cv.create_oval(X(dx - 4), Y(dy - 4), X(dx + 4), Y(dy + 4), fill=T["knob_dot"], outline="")
         lab = SPECS[key].label
         lab = {"Build-Up": "Build-up", "Dub Throw": "Dub throw"}.get(lab, lab)
         if key.startswith("lp.t"):
@@ -2805,7 +3043,7 @@ class App:
             rest = " ".join(name.split(" ")[1:])
             if rest:
                 self.text(x0 + 72, 362, rest.upper(), 18, T["btn_text"], True)
-            self.text(x0 + 72, 430, f"PAD {i + 1}", 11, T["btn_text"] if on else T["ink_dim"], True)
+            self.text(x0 + 72, 430, f"PAD {i + 1}", 11, T["btn_text"] if on else T["key_dim"], True)
             self.hit(x0, 276, 143, 180, lambda on, j=i: self.live_pad(j, on), "hold")
         # scenes: 8 snapshots, morph between any two
         y = 482
@@ -3327,14 +3565,14 @@ class App:
             nxt = {"empty": "REC", "armed": "CANCEL", "rec": "PLAY", "ending": "...", "play": "DUB", "dub": "PLAY",
                    "stopped": "PLAY", "paused": "PLAY", "cued": "CANCEL"}.get(st, "REC")
             self.rrect(x0 + 14, y0 + 106, 164, 120, 14, col or T["btn_bg"])
-            self.text(x0 + 96, y0 + 126, "TAP TO", 10, "#111111" if col else T["ink_dim"], True)
+            self.text(x0 + 96, y0 + 126, "TAP TO", 10, "#111111" if col else T["key_dim"], True)
             self.text(x0 + 96, y0 + 160, nxt, 30, "#111111" if col else T["btn_text"], True)
-            self.text(x0 + 96, y0 + 200, f"PAD {i + 1}", 11, "#111111" if col else T["ink_dim"], True)
+            self.text(x0 + 96, y0 + 200, f"PAD {i + 1}", 11, "#111111" if col else T["key_dim"], True)
             self.hit(x0 + 14, y0 + 106, 164, 120, lambda j=i: self.loop_pad(j, True))
             held = i in self.loop_held
             self.rrect(x0 + 14, y0 + 236, 164, 62, 12, T["btn_on"] if held else T["btn_bg"])
             self.text(x0 + 96, y0 + 258, "STOP", 18, T["btn_text"], True)
-            self.text(x0 + 96, y0 + 282, f"HOLD = CLEAR · PAD {9 + i}", 10, T["btn_text"] if held else T["ink_dim"], True)
+            self.text(x0 + 96, y0 + 282, f"HOLD = CLEAR · PAD {9 + i}", 10, T["btn_text"] if held else T["key_dim"], True)
             self.hit(x0 + 14, y0 + 236, 164, 62, lambda on, j=i: self.loop_pad(8 + j, on), "hold")
             src = SOURCES[tr.src] if self.audio.in_chans or tr.src == 1 else "PotentialBox"
             self.button(x0 + 96, y0 + 330, 164, 40, ("FROM: " + src).upper()[:22], lambda j=i: self.loop_set("src", j), px=12)
