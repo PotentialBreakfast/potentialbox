@@ -3171,7 +3171,7 @@ class App:
             pts = [(782 - 18, cy - 9 * d), (782 + 18, cy - 9 * d), (782, cy + 12 * d)]
             self.cv.create_polygon([c for x, y in pts for c in (self.X(x), self.Y(y))], fill=T["ink"], outline="")
         self.text(34, 498, "BUFFER (SMALLER = LESS LAG)", 12, T["ink_dim"], False, "w")
-        self.seg(34, 512, 110, 44, [64, 128, 256, 512], self.state.blocksize, self.pick_buffer, vertical=False)
+        self.seg(34, 512, 110, 44, [64, 128, 256, 512, 1024, 2048], self.state.blocksize, self.pick_buffer, vertical=False)
         lat = f"{self.audio.latency_ms:.1f} ms" if self.audio.stream else "-"
         self.readout(650, 534, 220, 44, f"LAG {lat}")
         if self.audio.error:
