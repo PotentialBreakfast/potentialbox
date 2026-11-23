@@ -12,10 +12,12 @@ REPO, IMG, OUT = sys.argv[1], os.path.abspath(sys.argv[2]), os.path.abspath(sys.
 os.environ.setdefault("APPDATA", "/tmp/pbman")
 sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from potentialbox.engine import PAGES, SPECS, MACROS, PRESETS, PUNCH_FX, DEFAULT_ROUTES, TABLE_NAMES, CHORDS  # noqa
+from potentialbox.engine import (PAGES, SPECS, MACROS, PRESETS, PRESET_CAT, PRESET_CATS, PUNCH_FX,  # noqa
+                                 DEFAULT_ROUTES, TABLE_NAMES, CHORDS)
 from potentialbox import kits, beats, kitmaker  # noqa
+from potentialbox import projects as projmod  # noqa
 from potentialbox.app import (VERSION, ACTIONS, PAD_ACTIONS, LIVE_PADS, LOOP_PADS, BEAT_PADS, KNOB_GROUPS,  # noqa
-                              SUBPAGES, TABS, TAB_LABEL)
+                              SUBPAGES, SECTIONS, CAPTURE_PADS, PROJECT_PADS)
 from desc import describe  # noqa
 
 E = html.escape
@@ -90,7 +92,8 @@ def label_for(page, k):
         pad = int(k.split(".")[1][1:])
         return f"Pad {pad} {lab.lower()}"
     if k[:2] in ("s1", "s2") and "Synth" not in lab and page in ("Perform", "Mix", "Mix EQ", "FX", "Track Mute/Solo",
-                                                                    "Master FX", "Live", "Beats", "Arrangement"):
+                                                                    "Master FX", "Live", "Beats", "Arrangement",
+                                                                    "Capture"):
         lab = k[:2].upper() + " " + lab
     return lab
 
@@ -130,36 +133,39 @@ def pads_table(names, head="Pad", what="Does"):
 add(f"""<section class="cover">
 <div class="kicker">User manual</div>
 <div class="title">POTENTIALBOX</div>
-<div class="sub">A groovebox for Windows, played by the Arturia BeatStep Pro</div>
-<div class="meta">Version {VERSION} · two synths · 16-pad drum sampler · beat generator · looper · ASIO</div>
-<div class="shot"><img src="file://{IMG}/perform.png"></div>
+<div class="sub">A groovebox for jamming on Windows, played by the Arturia BeatStep Pro</div>
+<div class="meta">Version {VERSION} · two synths · 16-pad drum sampler · 16 genre projects · stem bouncing · looper · ASIO</div>
+<div class="shot"><img src="file://{IMG}/projects.png"></div>
 <div class="foot"><span>by PotentialBreaks</span><span>Free and open source · MIT licence</span></div>
 </section>""")
 add("@@TOC@@")
-
 # ============================================================================ 1 welcome
-chapter("Welcome", "PotentialBox turns your Arturia BeatStep Pro into a complete groovebox. The BeatStep Pro is the "
-        "sequencer and the controller; PotentialBox makes the sound on your Windows PC.", newpage=False)
-ul([f"{b('Sequencer 1')} plays {b('Synth 1')}, an analog-style synth for basslines, acid, leads and supersaws.",
-    f"{b('Sequencer 2')} plays {b('Synth 2')}, a wavetable synth for leads, pads and bells.",
-    f"The {b('Drum sequencer')} plays a {b('16-pad drum sampler')}: 9 built-in kits, your own samples, and a browser "
-    "for whole drum machine collections.",
-    "Each synth has 2 LFOs (with a 16-step mode), a mod envelope, 12 mod slots, seven filter types, chords and an "
-    "arpeggiator.",
-    f"The {b('Beats')} tab makes beats in 24 genres and can record them straight into the BeatStep's drum sequencer; "
-    f"the {b('Arrangement')} tab chains beats into a song.",
-    f"The {b('Live')} tab has hold-to-play effects, 8 scenes you can morph between, recording to WAV and resampling.",
-    f"The {b('Loop')} tab is a 5-track looper in the style of a BOSS RC-505.",
-    "Step locks, mute and solo, side-chain ducking, EQ, delay, reverb and a master effects chain.",
+chapter("Welcome", "PotentialBox turns your Arturia BeatStep Pro into a groovebox for jamming. The BeatStep Pro is the "
+        "sequencer and the controller; PotentialBox makes the sound on your Windows PC, and catches what you play as "
+        "loops and stems.", newpage=False)
+p("Everything lives under five big keys along the bottom of the screen:")
+table(["Section", "What's there"], [
+    (b("JAM"), "PROJECTS (sounds for your 16 BeatStep genre sets, MUTATE, voice), LIVE FX (punch-in effects, scenes, "
+               "fill), KNOBS and MACROS."),
+    (b("SOUNDS"), "SYNTH 1 and SYNTH 2 (a sound browser first, every setting under EDIT SOUND), DRUMS (kits, Kit Maker, "
+                  "pad knobs), MIX and FX."),
+    (b("BEATS"), "The beat generator in 24 genres, and ARRANGE to chain beats into a song."),
+    (b("CAPTURE"), "STEMS: bounce what's playing as bar-exact loops (the mix and each part) and send them to your MPC. "
+                   "LOOPER: a 5-track looper."),
+    (b("SETUP"), "Audio, MIDI, knobs, pad actions and My Setups.")])
+ul([f"{b('Sequencer 1')} plays {b('Synth 1')}, an analog-style synth: basses, acid, leads, supersaws, chords.",
+    f"{b('Sequencer 2')} plays {b('Synth 2')}, a wavetable synth: leads, keys, pads, plucks and bells.",
+    f"The {b('Drum sequencer')} plays a {b('16-pad drum sampler')}: built-in kits, your own samples, whole drum machine "
+    "collections and the Kit Maker.",
     "The BeatStep's 16 knobs control the 16 knobs of whichever page is open, and its pads run actions on MIDI channel 16."])
 p("Everything is pre-wired for the BeatStep Pro's factory settings, so you can plug it in and press play. Every control "
   "is a big key you can tap, and everything saves by itself: there is no typing anywhere in the app.")
-note(f"<b>New in {VERSION}:</b> the <b>Kit Maker</b> (chapter 14) builds a new 16-pad kit from all your one-shots in one "
-     "tap, in 12 styles, and <b>GET MPC ONE-SHOTS</b> copies the sorted DRUM ONE SHOTS folder from your MPC. Genre "
-     "kits on the Beats tab can come from your own samples, and My Kits now keep each pad's pitch, length and level. "
-     "The full list is in the CHANGELOG file that comes with PotentialBox.")
+note(f"<b>New in {VERSION}:</b> a new layout with five sections instead of fourteen tabs; the Hi-Fi look, refreshed; "
+     "a <b>sound browser</b> for each synth with sounds sorted by type; <b>77 new presets</b> made for the current synth "
+     "engine, all level-matched; a new <b>PROJECTS</b> screen for jamming; and <b>CAPTURE &gt; STEMS</b>, which bounces "
+     "bar-exact loops (mix + each part) and can send them straight to your MPC. The full list is in the CHANGELOG "
+     "file that comes with PotentialBox.")
 end()
-
 # ============================================================================ 2 what you need
 chapter("What you need")
 table(["You need", "Notes"], [
@@ -175,7 +181,7 @@ table(["Optional", "Why"], [
     (b("A folder of drum samples"), "For example a drum machine collection: one folder per machine, named after the "
                                     "hardware. PotentialBox reads them where they are."),
     (b("Arturia MIDI Control Center"), "Arturia's free app, to put the BeatStep's Control Mode pads on MIDI channel 16 "
-                                       "for pad actions (chapter 5).")])
+                                       "for pad actions (see Setting up the BeatStep Pro).")])
 end()
 
 # ============================================================================ 3 installing
@@ -200,13 +206,13 @@ p("Download the new release and run its <b>Install PotentialBox.bat</b>. The ins
 h2("Uninstalling")
 p("Open <code>%LOCALAPPDATA%\\PotentialBox</code>, right-click <b>uninstall.ps1</b> and choose <b>Run with PowerShell</b>. "
   "This removes the app, its shortcuts <b>and your saved settings, sounds, kits and setups</b>, so copy them first if you "
-  "want to keep them (chapter 24). Your recordings and loops in the Music folder stay. Python 3.12 stays too; remove it "
+  "want to keep them (see Your files). Your recordings and loops in the Music folder stay. Python 3.12 stays too; remove it "
   "in Windows Settings &gt; Apps if you like.")
 end()
 
 # ============================================================================ 4 setup
-chapter("First start: Setup", "Open the SETUP tab (bottom right) the first time you start PotentialBox.")
-img("setup", "The Setup tab: audio outputs on the left, MIDI on the right, knob settings at the bottom.")
+chapter("First start: Setup", "Tap SETUP (bottom right) the first time you start PotentialBox.")
+img("setup", "SETUP: audio outputs on the left, MIDI on the right, knobs, pad actions and My Setups at the bottom.")
 h2("Audio output")
 p("Tap an output to use it. The list is sorted best first:")
 table(["Output type", "When to use it"], [
@@ -229,11 +235,11 @@ h2("MIDI in")
 p("PotentialBox finds the BeatStep Pro by itself and listens to every port it offers. Tap a port to switch it off or on, "
   "and tap <b>RESCAN MIDI</b> after plugging in. The channel boxes set which MIDI channel plays each instrument "
   "(factory: Synth 1 = 1, Synth 2 = 2, Drums = 10).")
-h2("Look")
-p("The <b>LOOK</b> key (bottom right) steps through the looks: <b>Print Plate</b> (the default), <b>Night Rack</b>, "
-  "<b>Colour Block</b>, <b>Vintage</b> (used for the pictures in this manual) and <b>Hi-Fi</b>. The change shows at once and is remembered. "
-  "If you make a file called <code>user-look.json</code> in <code>%APPDATA%\\PotentialBox</code>, it becomes a sixth "
-  "look the next time PotentialBox starts; any colour it leaves out comes from Print Plate.")
+h2("My Setups")
+p("<b>MY SETUPS</b> (bottom right) stores everything at once: both synth sounds, the drum kit, every knob, step locks, "
+  "scenes and the beat. Tap SAVE HERE on a slot (tap twice to replace one); LOAD brings the whole setup back, for "
+  "example one per song.")
+img("setups", "My Setups: 8 slots for complete setups.", "small")
 end()
 
 # ============================================================================ 5 beatstep
@@ -241,7 +247,7 @@ chapter("Setting up the BeatStep Pro")
 h2("The sequencers")
 p("Nothing to set up: on factory settings Sequencer 1 sends on channel 1, Sequencer 2 on channel 2 and the Drum "
   "sequencer on channel 10 with notes 36-51, which is exactly what PotentialBox listens to.")
-ul(["Press PLAY on the BeatStep Pro. PotentialBox follows its tempo (shown in the header), so the delay, LFOs, arp and "
+ul(["Press PLAY on the BeatStep Pro. PotentialBox follows its tempo (shown at the top), so the delay, LFOs, arp and "
     "step locks always land on the beat.",
     "Stop also sends All Notes Off, so no note hangs.",
     "Tied and slid steps glide from note to note. Set the slide time with the synth's Glide knob.",
@@ -254,52 +260,228 @@ p("If a knob does nothing, open SETUP, tap <b>LEARN KNOBS</b> and turn knobs 1 t
   "<b>KNOB MODE</b> to RELATIVE.")
 img("learn", "LEARN KNOBS: turn each BeatStep knob when asked.", "small")
 h2("The pads: channel 16")
-p("To use the pads for pad actions (chapter 23), set the BeatStep Pro's Control Mode pads to MIDI channel 16 in "
+p("To use the pads for pad actions (see Pad actions), set the BeatStep Pro's Control Mode pads to MIDI channel 16 in "
   "Arturia's free MIDI Control Center app. Out of the box pads 1-16 send notes 36-51, which PotentialBox already "
   "expects. Any other notes or CCs work too: assign them in SETUP &gt; PAD ACTIONS.")
 end()
 
 # ============================================================================ 6 the screen
 chapter("The screen")
-img("perform", "The Perform tab with the BeatStep Pro connected.")
-h2("Header")
-ul([f"{b('AUDIO')}: the output in use and its lag. Messages also pop up here for a moment.",
-    f"{b('MIDI')}: whether the BeatStep Pro is connected. The light flashes when MIDI arrives.",
-    f"{b('TEMPO')}: the tempo PotentialBox is playing at. {b('LEVEL')}: the output meter (red means you are pushing the "
-    "limiter or soft clip)."])
-h2("Tabs and pages")
-p("The tabs along the bottom choose what the 16 knobs control. The knob area is laid out like the BeatStep's knobs: "
-  "top row 1-8, bottom row 9-16, in labelled groups. Some tabs have more than one page: the page keys sit at the top "
-  "of the knob area, and tapping the tab again goes to the next page.")
-table(["Tab", "Pages"], [(b(TAB_LABEL.get(t, t)) + ("" if TAB_LABEL.get(t, t) == t else f" ({E(t)})"),
-                          " · ".join(lab.upper() for lab, _ in SUBPAGES[t])) for t in TABS if t in SUBPAGES])
+img("projects", "JAM &gt; PROJECTS, the screen you jam from.")
+h2("The five sections")
+p("The five big keys along the bottom are the sections. Each section has a few sub-tabs, shown as keys at the top left "
+  "of the screen. A section remembers the sub-tab you were on, so going back lands where you left it.")
+table(["Section", "Sub-tabs"], [(b(sec), " · ".join(lab for lab, _ in subs)) for sec, subs in SECTIONS])
+h2("The display and the lights")
+ul([f"The {b('display')} at the top says what's loaded: the project, Synth 1's and Synth 2's sounds and the kit. While "
+    "you record or bounce it shows that first, and messages pop up in it for a moment.",
+    f"{b('BPM')}: the tempo PotentialBox is playing at. The {b('level meter')} beside it turns red when you push the "
+    "limiter or soft clip.",
+    f"The {b('AUDIO')} and {b('MIDI')} lights (under the meter) are green when the audio output and the BeatStep are "
+    "working; the MIDI light flickers when MIDI arrives. Tap either to go to Setup. If the audio has a problem, the "
+    "display says so in red."])
+h2("Pages inside a sub-tab")
+p("Some sub-tabs have pages of knobs: the synths' edit pages, Drums, Mix and FX. The page keys sit at the top of the "
+  "knob area. The knobs are laid out like the BeatStep's: top row 1-8, bottom row 9-16, in labelled groups.")
+table(["Sub-tab", "Pages"], [(b(t.upper()), " · ".join(lab.upper() for lab, _ in SUBPAGES[t])) for t in SUBPAGES])
 h2("Using the controls")
 ul(["Tap the left or right half of a knob to step it down or up, drag up and down, or use the mouse wheel.",
     "The coloured ring round a knob shows its value. Settings that go both ways (pan, EQ, tuning) fill from the top.",
     f"Settings that are just on or off (mute, solo, hard sync, arp hold, glide mode) are {b('one-tap keys')} instead of "
     "knobs. The BeatStep knob for that spot still switches them.",
     "A knob that a macro is moving shows a small ring where your own setting is.",
-    f"{b('STEP LOCKS')} (top right of the knob area) gives a knob a different value on each step: chapter 20. A small L on "
-    "a knob means it has step locks."])
+    f"{b('STEP LOCKS')} (top right of the knob area) gives a knob a different value on each step (see Step locks). A "
+    "small L on a knob means it has step locks."])
 h2("Keyboard shortcuts")
 table(["Keys", "What they do"], [
+    (key("Ctrl") + " + " + key("1") + " … " + key("5"), " · ".join(sec for sec, _ in SECTIONS) + "."),
     (key("Ctrl") + " + " + key("Z"), "Undo the last change: a whole knob turn, sound load or scene load at a time."),
     (key("Ctrl") + " + " + key("Y"), "Redo."),
-    (key("Ctrl") + " + " + key("1") + " … " + key("9"), " · ".join(TAB_LABEL.get(t, t) for t in TABS[:9]) + "."),
     (key("F11"), "Full screen on and off."),
     (key("Esc"), "Closes a menu.")])
-h2("The three panels")
-p("Under the knobs, Synth 1, Synth 2 and Drums each have a panel. The light next to a synth's name shows when it is "
-  "playing; drum pads light up when they hit. The keys are explained in chapters 11 and 12.")
+end()
+# ============================================================================ projects
+chapter("JAM: Projects", "PROJECTS is the screen to jam from. It gives your 16 BeatStep Pro genre sets their sounds: "
+        "load a project here and Synth 1 gets a bass, Synth 2 a lead, the drums a genre kit, and the effects and tempo "
+        "change to suit. MUTATE then changes the sounds while the music plays.")
+img("projects", "JAM &gt; PROJECTS with project 7, Acid, loaded.")
+h2("Load a project")
+steps(["On the BeatStep, choose the project: hold PROJECT and press the step button with its number.",
+       "In PotentialBox, tap the same number. With PROJECTS open you can also press the BeatStep pad with that number "
+       "(Control Mode pads on MIDI channel 16), or tap TALK and say “project seven”.",
+       "Press PLAY on the BeatStep. Seq 1 plays the bass, Seq 2 the melody as chords and the drum sequencer the kit."])
+p("NOW PLAYING shows the project's tempo and key and the three sounds it loaded. Each has its own MUTATE key. "
+  "Tapping the project that's already loaded loads it again, which puts back any knobs you've turned. PREVIOUS and NEXT "
+  "step through the projects in order.")
+h2("Chords and bass")
+p("Each pattern of a genre set is 4 bars long, with a chord for each bar. Seq 1's bassline follows the chord roots. Seq "
+  "2 plays a 4-bar melody, and every project's Synth 2 sound plays it as chords in the project's key: drum tracks 9-15 "
+  "carry the progression (the Chord lane, see Modulation, step LFOs and chords), so each bar is voiced as the right "
+  "chord with the melody on top. The basses keep a clean sine sub, and the chords leave the low end to them.")
+h2("What each project loads")
+rows = []
+for i, pr in enumerate(projmod.PROJECTS):
+    rows.append((f'<span class="kn">{i + 1}</span>', b(pr["name"]), str(pr["bpm"]), E(pr["key"]),
+                 E(" / ".join(n for n, _ in pr["bass"])), E(" / ".join(n for n, _ in pr["lead"])),
+                 E(" / ".join(kits.NAMES[k] for k in pr["kits"]))))
+table(["#", "Genre", "BPM", "Key", "Synth 1 (Seq 1)", "Synth 2 (Seq 2)", "Kit"], rows, "compact")
+h2("New sounds")
+ul([f"{b('NEW SOUNDS')} steps through pairings of each project's two basses, two leads and two kits.",
+    f"{b('KIT: MY SAMPLES')} makes the kit with the Kit Maker from your own one-shots, in a style that suits the genre. "
+    f"{b('KIT: BUILT-IN')} goes back to the built-in kits.",
+    f"{b('PROJECT FX + TEMPO')} on: a project also sets the delay, reverb, lo-fi, chorus, ducking, drum drive and "
+    "filter, and the tempo. Turn it off to keep your own effects and tempo and change only the sounds.",
+    "The BeatStep's knobs here are the same 16 as on JAM &gt; KNOBS: Synth 1's filter, resonance, envelope and drive, "
+    "Synth 2's filter, wave position, envelope and decay, kick and snare tune, the drum filter and drive, delay, reverb, "
+    "lo-fi and master."])
+h2("Mutate: change the sounds while it plays")
+p("MUTATE gives the bass, the lead and the drums new sounds without stopping the music. It stays inside the project's "
+  "own sounds: each synth moves somewhere between the project's two sounds for that part, with a little randomness. So "
+  "a Trap 808 stays an 808, and an acid line stays acid.")
+ul([f"{b('MUTATE ALL')} changes all three; the MUTATE key on a NOW PLAYING row changes just that part.",
+    f"{b('MILD')} nudges the sound, {b('MEDIUM')} moves it further and may swap a couple of drum sounds, {b('WILD')} goes "
+    "to the edges and can swap the kick and snare too.",
+    "While the BeatStep plays, the change waits for the next bar. New drums land on the one, and the synths glide to "
+    "their new sound over a bar, so nothing jumps.",
+    f"{b('BACK')} goes back to the sounds before the last mutation (16 steps of history).",
+    f"{b('AUTO')}: every 8 or 16 bars, a mild mutation of the bass, lead or drums, so a long set keeps changing by itself.",
+    "Project basses keep their clean sine sub: MUTATE never makes a bass grittier or takes sub away."])
+h2("The drums are in the sets' order")
+p("The genre sets play their drums on these BeatStep drum tracks, and a project kit puts the right sound on each one:")
+table(["Drum track", "Plays"], [("1", "Kick"), ("2", "Clap"), ("3", "Snare"), ("4", "Percussion (conga, cowbell or clave)"),
+                                ("5", "Closed hat"), ("6", "Open hat"), ("7", "Rim"), ("8", "Shaker"),
+                                ("9-16", "The kit's other sounds: 808, toms, clave, cymbal, FX")], "knobs short")
+h2("Play: tempo, clock, talk")
+ul([f"{b('−')} and {b('+')} set the tempo while PotentialBox is its own clock.",
+    f"{b('CLOCK OUT')} makes PotentialBox the clock: the BeatStep (SYNC set to USB) plays at each project's tempo.",
+    f"{b('TALK (MIC)')} turns the microphone on. Say any of these; tap it again or say “stop listening” to turn it off."])
+table(["Say", "What happens"], [
+    ("“project one” … “project sixteen”", "Loads that project"),
+    ("A genre: " + ", ".join(f"“{n.lower()}”" for n in projmod.NAMES), "Loads that genre's project"),
+    ("“next project”, “previous project”", "Steps through the projects"),
+    ("“new sounds”", "Same as NEW SOUNDS"),
+    ("“mutate”, “mutate bass”, “mutate lead”, “mutate drums”", "Mutates at the next bar"),
+    ("“mild”, “medium”, “wild”", "Sets how far MUTATE goes"),
+    ("“go back”", "Same as BACK"),
+    ("“auto mutate”, “stop mutating”", "Auto mutate every 8 bars, or off"),
+    ("“stop listening”", "Turns the mic off")])
+note("Voice uses Windows' own speech recognition and your default microphone. It works offline. If it says speech "
+     "recognition isn't installed, add an English speech language in Windows: Settings &gt; Time &amp; language &gt; Speech.")
+h2("The BeatStep's pads on PROJECTS")
+pads_table(PROJECT_PADS, "Pad", "Projects pad")
+end()
+# ============================================================================ 17 live
+chapter("JAM: Live FX", "JAM &gt; LIVE FX is for playing: hold-to-play effects over the whole mix, scenes you can "
+        "morph between, fill and record, all one tap away.")
+img("live", "JAM &gt; LIVE FX.")
+h2("Knobs")
+knob_table("Live", with_desc=False)
+h2("Punch-in effects")
+p("Hold a pad to play an effect over the whole mix; let go and the music carries on as before.")
+table(["Pad", "Effect", "What it does"], [(f'<span class="kn">{i + 1}</span>', b(n), d) for i, (n, d) in enumerate(zip(PUNCH_FX, [
+    "Loops the eighth note you pressed on, over and over (beat repeat).", "The same with a sixteenth: a stutter.",
+    "A fast drum-roll buzz.", "The music slows to a stop over one beat, like a turntable switched off.",
+    "Plays the music backwards from the moment you pressed.", "A resonant low-pass closes over two beats; it opens again when you let go.",
+    "Chops the sound on and off in sixteenths (trance gate).", "Sends the mix into a long dub echo that keeps ringing after you let go."]))],
+    "knobs")
+p("Only one of pads 1-5 works at a time (the last one you pressed); pads 6-8 can be held on top.")
+h2("Scenes")
+p("A scene is a snapshot of every setting. There are 8, and the morph bar blends between any two of them.")
+steps(["Get a sound you like and tap <b>SAVE 1</b>.",
+       "Change anything: filters, effects, levels, drum tuning, macros. Then tap <b>SAVE 2</b>.",
+       "<b>FROM</b> and <b>TO</b> choose the two scenes to morph between (1 and 2 out of the box; tap to step through 1-8).",
+       "Drag the morph bar, or turn BeatStep knob 1, to blend from one to the other. Only the settings that differ move; "
+       "the line under the bar says how many.",
+       "<b>HOLD FOR SCENE</b> (Live pad 10) jumps to the TO scene while held and goes back when you let go: an instant drop."])
+ul([f"{b('LOAD')} 1-8 puts a saved scene back straight away. Empty slots say EMPTY.",
+    "Morphing sets the knobs it moves. If you change one of them by hand, moving the morph again takes it back to the "
+    "blend. Save the scene again to keep your change.",
+    "Scenes saved by version 1.9.0 or earlier (A and B) come back as scenes 1 and 2."])
+h2("Fill and record")
+ul([f"{b('HOLD FOR FILL')} (pad 9) plays the drum pads set to Fill only and silences those set to Not in fill.",
+    f"{b('RECORD')} (pad 11) starts and stops recording, the same as RECORD on CAPTURE &gt; STEMS.",
+    f"{b('RESAMPLE TO A PAD')} and {b('MY SETUPS')} open the same screens as on CAPTURE and SETUP."])
+h2("The BeatStep's pads on LIVE FX")
+p("While LIVE FX is open, the 16 pads that normally run pad actions play the Live pads instead:")
+pads_table(LIVE_PADS, "Pad", "Live pad")
 end()
 
+# ============================================================================ 14 macros
+chapter("JAM: Knobs and Macros", "JAM &gt; KNOBS shows the BeatStep's 16 knobs as they work on PROJECTS: the "
+        "moves you reach for first while jamming.")
+img("perform", "JAM &gt; KNOBS.")
+knob_table("Perform")
+h2("Macros")
+p("JAM &gt; MACROS turns the BeatStep's 16 knobs into performance controls. Each macro moves several "
+  "settings at once in a musical way: sweeps, throws, risers and drops.")
+img("macros", "JAM &gt; MACROS. The top of the page describes the last macro you touched.")
+note("<b>Macros never overwrite your sound.</b> They work on top of your settings, so turning a macro back to zero puts "
+     "everything back exactly where it was. DJ Filter rests in the centre. ZERO ALL MACROS resets them all at once.")
+knob_table("Macros")
+h2("Ideas")
+ul(["Build-Up then back to zero gives an instant drop: the kick comes back on the way down.",
+    "Ride Dub Throw on the last beat of a phrase, then pull it back.",
+    "DJ Filter left for a muffled breakdown, right for a thin, tense one.",
+    "Acid plus a little Glide on Synth 1 basslines."])
+end()
+
+# ============================================================================ 11 sounds
+chapter("SOUNDS: the sound browser", "SOUNDS &gt; SYNTH 1 and SYNTH 2 open on a sound browser: every preset, "
+        "sorted by type, one tap to load. The deep settings are one tap further, under EDIT SOUND.")
+img("browser-s1", "SOUNDS &gt; SYNTH 1: the sound browser, showing the basses.")
+ul([f"Tap a {b('type')} on the left (ALL, BASS, LEAD, KEYS, PAD, PLUCK, STAB, FX or MY SOUNDS) and the display "
+    "shows its sounds. The number beside a type is how many sounds it has.",
+    f"Tap a {b('sound')} to load it; it plays a test note. The loaded sound is lit.",
+    f"{b('◂ PREV')} and {b('NEXT ▸')} step through the type you're looking at. ◂ PAGE and PAGE ▸ at the bottom of the "
+    "display turn the page when a type has more than 24 sounds.",
+    f"{b('TEST')} plays a note; {b('RANDOM')} rolls a brand-new playable sound.",
+    f"{b('SAVE SOUND')} opens your 8 save slots (My Sounds). Saved sounds appear under MY SOUNDS.",
+    f"{b('EDIT SOUND ▸')} opens the synth's edit pages (see Synth 1 and Synth 2). {b('◂ SOUNDS')} on the edit pages, or "
+    "tapping the SYNTH sub-tab again, comes back here."])
+h2("The knobs under the browser")
+p("Under the browser are the 16 knobs you'll reach for most, and the BeatStep's knobs turn them while the browser is "
+  "open. They're the same settings as on the edit pages.")
+h3("Synth 1")
+knob_table("Synth 1 Quick", with_desc=False)
+h3("Synth 2")
+knob_table("Synth 2 Quick", with_desc=False)
+h2("The sounds")
+p("Every sound was made for the current engine: unison and supersaw, clean subs, filter drive, the five distortions, "
+  "the synth's own chorus, ensemble, dimension, phaser and flanger, comb and formant filters, FM, ring mod and sync on "
+  "Synth 1, and the 30 wavetables with the warp modes on Synth 2. They are level-matched: each sound has its own "
+  "Sound level (the last knob of the ENV page), so moving between them doesn't jump in volume, and your volume "
+  "knob stays where you put it.")
+for pre, title in (("s1", "Synth 1"), ("s2", "Synth 2")):
+    h3(title)
+    rows = []
+    for cat in PRESET_CATS[1:]:
+        names = [n for n, _ in PRESETS[pre] if PRESET_CAT[pre][n] == cat]
+        if names:
+            rows.append((b(cat), E(", ".join(names))))
+    table(["Type", "Sounds"], rows)
+note("Most stabs, pads and keys play <b>chords</b> from one note (Synth 1 and Synth 2 are mono synths that play up to "
+     "4-note chords). Chord Memory, Scale 7th Keys and Scale 9th Pad use scale chords: set Chord key and Chord scale on "
+     "the OSC+ page to your song's key (C minor out of the box).")
+h2("My Sounds")
+img("sounds", "My Sounds: 8 slots for each synth.", "small")
+ul([f"{b('SAVE HERE')} stores the sound you are hearing. No typing: slots are named My Sound 1 to 8 and remember which "
+    "sound they were made from.",
+    "On a full slot, SAVE HERE asks you to tap again within 3 seconds, so one slip can't overwrite a sound.",
+    f"{b('LOAD')} plays the saved sound back."])
+p("The Synth panels on other pages (under the knobs) have < PREV, NEXT >, TEST, RANDOM and MY SOUNDS too; their PREV "
+  "and NEXT step through every sound: Init, the presets, then your saved sounds.")
+note("<b>Start from scratch:</b> tap INIT SYNTH on the synth's MAIN edit page, or <b>RESET ALL TO INIT</b> on SOUNDS &gt; "
+     "MIX (tap twice) to reset every knob in the app. Saved sounds, kits and setups are kept.")
+end()
 # ============================================================================ 7 synth 1
-chapter("Synth 1", "An analog-style synth: two oscillators that blend from saw to square, a supersaw, a sub "
-        "oscillator, a resonant filter with its own envelope, and drive. It is played by Sequencer 1.")
-p("The Synth 1 tab has eight pages: MAIN, OSC+, MOD, MOD2, ARP+, ENV and the two LFO step pages. This chapter covers "
-  "MAIN, OSC+ and ENV; chapter 9 covers modulation and chapter 10 the arpeggiator.")
+chapter("Synth 1", "An analog-style synth: two oscillators that blend from saw to square, a supersaw, unison, a sub "
+        "oscillator, a resonant filter with seven types, drive, distortion and its own effects. It is played by "
+        "Sequencer 1.")
+p("Tap <b>EDIT SOUND ▸</b> in the sound browser to open Synth 1's nine pages: MAIN, OSC+, UNI+FX, MOD, MOD2, ARP+, "
+  "ENV and the two LFO step pages. <b>◂ SOUNDS</b> goes back to the browser. This chapter covers MAIN, OSC+, UNI+FX "
+  "and ENV; modulation and the arpeggiator have their own chapters.")
 note("<b>Start again in one tap:</b> each page has an <b>INIT</b> key beside the page keys. On MAIN it resets the whole "
-     "synth; on every other page it resets only that page (INIT OSC+ PAGE, INIT MODULATION, INIT ARP, INIT ENVELOPES, "
+     "synth; on every other page it resets only that page (INIT OSC+ PAGE, INIT UNI+FX, INIT MODULATION, INIT ARP, INIT ENVELOPES, "
      "INIT LFO STEPS). Afterwards <b>UNDO INIT</b> appears for a few seconds.")
 img("synth1-main", "Synth 1, MAIN page.")
 h2("MAIN page")
@@ -307,6 +489,20 @@ knob_table("Synth 1")
 h2("OSC+ page")
 img("synth1-oscplus", "Synth 1, OSC+ page.")
 knob_table("Synth 1 Osc+")
+h2("UNI+FX page: unison, drive, distortion and effects")
+p("This page is where a sound gets the width, weight and character of a big software synth.")
+img("synth1-uniplusfx", "Synth 1, UNI+FX page.")
+ul([f"{b('Unison voices')}: 1, 2, 3, 4, 5 or 7 copies of the whole oscillator pair, each slightly detuned and spread "
+    "across the stereo field. Unison detune sets how far apart (a little = thick, a lot = a reese or hoover), Unison "
+    "width how wide. The sub stays in the middle, so basses keep a solid low end.",
+    f"{b('Filter drive')} pushes the signal into the filter: the grit and thickness of an overdriven analog filter.",
+    f"{b('Distortion')}: Tube (warm), Tape (soft and round), Fold (a wavefolder: buzzy, metallic, great on basses), "
+    "Crush (fewer bits, lower sample rate), Hard clip. It's level-matched, so turning it up adds grit, not volume.",
+    f"{b('Synth FX')}: Chorus, Ensemble (lush string-machine chorus), Dimension (subtle, wide), Phaser or Flanger, on "
+    "this synth only.",
+    f"{b('Sub mode')}: “-1 oct, filtered” goes through the filter; “-1 oct, clean” and “Root, clean” add a pure sine "
+    "after the filter and distortion, so the low end stays deep however gritty the rest is."])
+knob_table("Synth 1 Uni+FX")
 h2("ENV page")
 p("All the envelopes in one place, including the multi-stage amp envelope: with Decay 2 above zero the note falls to "
   "Sustain over Decay, then moves on to Sustain 2 over Decay 2 (a pluck that settles into a quieter pad, for example).")
@@ -315,15 +511,24 @@ knob_table("Synth 1 Env")
 end()
 
 # ============================================================================ 8 synth 2
-chapter("Synth 2", "A wavetable synth: tables that morph as you move the wave position, an LFO that sweeps it, two "
-        "detuned unison voices in stereo, and a resonant filter. It is played by Sequencer 2.")
-p("Synth 2 has the same eight pages as Synth 1.")
+chapter("Synth 2", "A wavetable synth: 30 tables that morph as you move the wave position, an LFO that sweeps it, "
+        "warp modes, unison in stereo, a resonant filter, distortion and its own effects. It is played by Sequencer 2.")
+p("Synth 2 has the same nine pages as Synth 1, under EDIT SOUND ▸ in its sound browser.")
 img("synth2-main", "Synth 2, MAIN page.")
 h2("MAIN page")
 knob_table("Synth 2")
 h2("OSC+ page")
 img("synth2-oscplus", "Synth 2, OSC+ page.")
 knob_table("Synth 2 Osc+")
+h2("UNI+FX page: unison, warp, distortion and effects")
+img("synth2-uniplusfx", "Synth 2, UNI+FX page.")
+p("Unison, filter drive, distortion and the synth FX work as on Synth 1. Synth 2's unison detune is its Unison knob, and "
+  "it starts with 2 voices.")
+p("<b>Warp</b> reshapes how the wave is read, for new tones from any table: Bend + and Bend − push the wave's shape to "
+  "one end, Mirror folds it into a symmetrical wave, Sync is classic hard sync (bright and tearing), Squeeze narrows it "
+  "like pulse width, Phase FM adds FM-style overtones and Quantize steps it for a lo-fi, digital edge. Warp amount sets "
+  "how far; mod slots can move it (target Warp).")
+knob_table("Synth 2 Uni+FX")
 h2("ENV page")
 knob_table("Synth 2 Env")
 h2("The 30 wavetables")
@@ -379,14 +584,22 @@ table(["Sound", "How"], [
     (b("Sync scream"), "Hard sync On, Osc 2 pitch +12, then a slot routed Mod env &gt; Osc 2 pitch at +60%."),
     (b("Auto-pan"), "Slot 6 (LFO 2 &gt; Pan) at +50%, LFO 2 sync 1/2."),
     (b("Acid sequence"), "LFO 1 shape Step, slot 2 (LFO 1 &gt; Cutoff) at +50%, then draw a pattern on LFO1 STEPS."),
-    (b("Supersaw lead"), "Supersaw (Synth 1 OSC+, knob 16) at 70%, a little reverb, slot routed LFO 2 &gt; Supersaw for movement."),
+    (b("Supersaw lead"), "Supersaw (Synth 1 UNI+FX, knob 4) at 70%, a little reverb, slot routed LFO 2 &gt; Supersaw for movement."),
     (b("Evolving pad"), "Synth 2: LFO 2 shape Smooth random, slow speed, slot 3 (LFO 2 &gt; Wave position) at +40%.")])
 h2("Chords")
 p("The BeatStep's sequencers play one note at a time, but <b>Chord</b> on the OSC+ page turns every step into a chord: "
   + ", ".join(c[0] for c in CHORDS[1:]) + ". <b>Chord voicing</b> spreads it: Close, Open, Wide. All the chord's notes "
   "go through the same filter and envelopes, like a classic paraphonic synth.")
+h2("Chords in the key")
+p("<b>Scale triad</b>, <b>Scale 7th</b> and <b>Scale 9th</b> build each chord from a scale instead of a fixed shape, "
+  "with the note you play on top. Set <b>Chord key</b> and <b>Chord scale</b> on the OSC+ page to the key of your "
+  "pattern and every note gets a chord that fits: a one-note melody on Seq 2 becomes a chord progression.")
+p("<b>Chord lane</b> goes one step further. Turn it on and BeatStep drum tracks 9 to 15 stop playing drums and instead "
+  "say which chord the music is on: track 9 is chord I, track 10 chord II, up to track 15, chord VII. Put one hit on the "
+  "first step of a bar and every note in that bar is voiced as that chord, with the melody on top. The 16 genre sets "
+  "have their chord progression written into these tracks.")
 note("<b>Heavy patches</b> (chords and supersaw on both synths with lots of modulation) use more of your PC. Watch LOAD "
-     "on the Setup tab and choose the next buffer size up if you hear crackles.")
+     "on SETUP and choose the next buffer size up if you hear crackles.")
 end()
 
 # ============================================================================ 10 arp
@@ -402,26 +615,6 @@ ul(["Turn Arp on and play a long note on the BeatStep (a tied step or a long gat
     "INIT ARP turns the arpeggiator off and resets it in one tap. Synth 2's ARP+ page works the same way."])
 end()
 
-# ============================================================================ 11 sounds
-chapter("Sounds and save slots")
-h2("The synth panels")
-ul([f"{b('< PREV')} and {b('NEXT >')} step through sounds and play a test note. The list starts with Init (a plain "
-    "starting point), then the presets, then your saved sounds.",
-    f"{b('TEST')} plays a note so you can hear the synth without the BeatStep.",
-    f"{b('RANDOM')} rolls a brand-new playable sound.",
-    f"{b('MY SOUNDS')} opens your save slots."])
-p(f"<b>Synth 1 presets:</b> {', '.join(n for n, _ in PRESETS['s1'])}.")
-p(f"<b>Synth 2 presets:</b> {', '.join(n for n, _ in PRESETS['s2'])}.")
-h2("My Sounds")
-img("sounds", "My Sounds: 8 slots for each synth.", "small")
-ul([f"{b('SAVE HERE')} stores the sound you are hearing. No typing: slots are named My Sound 1 to 8 and remember which "
-    "sound they were made from.",
-    "On a full slot, SAVE HERE asks you to tap again within 3 seconds, so one slip can't overwrite a sound.",
-    f"{b('LOAD')} plays the saved sound back. Saved sounds also appear in PREV / NEXT."])
-note("<b>Start from scratch:</b> pick Init with PREV / NEXT, tap INIT SYNTH on the synth's MAIN page, or tap "
-     "<b>RESET ALL TO INIT</b> on the Mix tab (tap twice) to reset every knob in the app. Saved sounds, kits and setups are kept.")
-end()
-
 # ============================================================================ 12 drums
 chapter("Drums and kits", "The drum sampler has 16 pads, played by the BeatStep's Drum sequencer (notes 36-51). Every "
         "kit uses the same pad layout, so a drum pattern keeps making sense when you change kits.")
@@ -434,8 +627,8 @@ table(["Pad", "Note", "Sound", "Pad", "Note", "Sound"], rows, "layout")
 p("Tap a pad on screen to hear it and select it. Pad 5 cuts off pad 6, like a real hi-hat; the CHOKE page (below) "
   "lets any pads cut each other off.")
 h2("Kit menu")
-p("Tap <b>KITS</b> on the drum panel, or &lt; and &gt; to step through kits. <b>KIT MAKER</b> beside it builds a new "
-  "kit from your own samples (chapter 14).")
+p("Tap <b>KITS</b> on the drum panel (under the knobs on SOUNDS &gt; DRUMS), or &lt; and &gt; to step through kits. <b>KIT MAKER</b> beside it builds a new "
+  "kit from your own samples (see Kit Maker).")
 img("kits", "The Kit menu: built-in kits, recent kits, My Kits and the drum machine library.")
 table(["Kit", "Sound"], [(b(k), d) for k, d in zip(kits.NAMES, [
     "The original all-rounder", "Round booming kick, classic metal hats", "Clicky driven kick, noisy snare, rides",
@@ -458,13 +651,13 @@ ul(["Pick a brand, then a machine, then one of its kits. Brands with fewer than 
     "With a machine kit loaded, &lt; and &gt; step through that machine's kits, then on to the next machine."])
 img("machinekits", "The kits inside one machine. Tap one to load and hear it.", "small")
 h2("Drum knobs")
-p("The Drums 1-8 and Drums 9-16 tabs each have four pages:")
-ul([f"{b('MAIN')}: a tune knob (semitones) and a length knob (shortens the sound) for each pad.",
-    f"{b('MIX')}: a level and a pan knob for each pad.",
-    f"{b('GROOVE')}: chance and plays-when for each pad (below).",
+p("SOUNDS &gt; DRUMS has seven pages, each for pads 1-8 or 9-16:")
+ul([f"{b('TUNE 1-8')} and {b('TUNE 9-16')}: a tune knob (semitones) and a length knob (shortens the sound) for each pad.",
+    f"{b('MIX 1-8')} and {b('MIX 9-16')}: a level and a pan knob for each pad.",
+    f"{b('GROOVE 1-8')} and {b('GROOVE 9-16')}: chance and plays-when for each pad (below).",
     f"{b('CHOKE')}: a choke group (1-8) for each of the 16 pads. When a pad plays, it cuts off every other pad in its "
     "group: put an open hat and a pedal hat together, or a long 808 and a second 808."])
-img("drums1-8-groove", "Drums 1-8, GROOVE page.")
+img("drums-groove1-8", "SOUNDS &gt; DRUMS, GROOVE 1-8 page.")
 h3("Chance and conditions")
 p("These make a short BeatStep pattern feel longer and more alive, like Elektron's trig conditions.")
 ul([f"{b('Chance')}: at 100% the pad always plays. At 70% about 3 hits in 10 are skipped, at random. Great on hats and "
@@ -473,7 +666,7 @@ ul([f"{b('Chance')}: at 100% the pad always plays. At 70% about 3 hits in 10 are
     "1st of 4 means “only in the first bar of every four”: build a crash on bar 1 or a fill on bar 4 from a one-bar "
     "pattern. Bars are counted from when you press Play on the BeatStep.",
     "Fill only pads play only while you hold FILL; Not in fill pads drop out while you hold it."])
-img("drums1-8-choke", "Drums 1-8, CHOKE page.")
+img("drums-choke", "SOUNDS &gt; DRUMS, CHOKE page.")
 end()
 
 # ============================================================================ 13 build your own kit
@@ -492,7 +685,7 @@ ul([f"{b('RANDOM')} picks a random sound of the chosen type: great for happy acc
     "from.",
     f"{b('FROM FILE...')} takes any WAV file on your PC.",
     f"{b('LOCK PAD')} keeps this pad's sound when you make a new kit in the Kit Maker or roll a {b('Random Drum Kit')} "
-    "(pad action or Live pad 14).",
+    "(pad action or LIVE FX pad 14).",
     "Silence at the start of every drum sound is trimmed automatically, so hits land exactly on the beat."])
 h2("Edit this pad's sound")
 table(["Key", "What it does"], [
@@ -532,21 +725,21 @@ h2("Styles")
 p("A style decides what each pad draws from, how it is tuned, how long it rings, and which machines or packs it leans "
   "towards (by words in their folder names, such as 808, SP-1200 or Jazz). Tap one for a new kit in that style.")
 table(["Style", "What you get"], [(b(st["name"]), E(st["desc"])) for st in kitmaker.STYLES])
-p("On the Beats tab, <b>GENRE KIT: SAMPLES</b> makes each genre's kit in the Kit Maker: Trap gets a TRAP kit with an 808 "
+p("On BEATS, <b>GENRE KIT: SAMPLES</b> makes each genre's kit in the Kit Maker: Trap gets a TRAP kit with an 808 "
   "on pad 2, Boom Bap a BOOM BAP kit, Afrobeats a PERCUSSION kit and so on.")
 h2("The selected pad")
 ul([f"{b('PLAY')} plays it, {b('NEW …')} puts another sound of the same type on it, {b('LOCK')} keeps it.",
     f"{b('TYPE')}: tap any type (kick, 808, snare, clap, rim, closed or open hat, tom, conga, shaker, cowbell, clave, "
     "perc, cymbal, FX, vox, stab, other) and the pad gets a sound of that type. The small number is how many you have.",
     f"{b('PITCH')}, {b('LENGTH')} and {b('LEVEL')}: one tap per step. These are the same as the pad's knobs on the "
-    "Drums tabs.",
-    f"{b('PICK FROM LIST')} opens the pad editor (chapter 13) to choose a sound by name."])
+    "Drums tab.",
+    f"{b('PICK FROM LIST')} opens the pad editor (see Build your own kit) to choose a sound by name."])
 h2("Where the sounds come from")
 ul([f"{b('DRAW FROM')}: EVERYTHING, only your DRUM MACHINES (the Drum Machine Collection) or only MY FOLDERS.",
     f"{b('ONE SOURCE')}: the whole kit from one drum machine or sample pack where it has the sounds.",
     f"{b('MATCH LEVELS')} evens out every pad again (new kits do this by themselves), with hats and cymbals sitting a "
     "little lower than kicks and snares.",
-    "The Random Drum Kit pad action (and Live pad 14) makes a Kit Maker kit in the current style once you have samples."])
+    "The Random Drum Kit pad action (and LIVE FX pad 14) makes a Kit Maker kit in the current style once you have samples."])
 h2("Sample folders")
 img("ksources", "SAMPLE FOLDERS: your drum machines, your own folders, and GET MPC ONE-SHOTS.")
 p("Tap <b>SAMPLE FOLDERS</b> to choose where sounds come from. Your Drum Machine Collection is always there; "
@@ -563,25 +756,49 @@ ul(["It uses Windows' own SSH and the login MPC TOOLS already set up, so there's
     "FLAC and MP3 files are left on the MPC (PotentialBox plays WAV and AIFF)."])
 end()
 
-# ============================================================================ 14 macros
-chapter("Macros", "The MACROS tab turns the BeatStep's 16 knobs into performance controls. Each macro moves several "
-        "settings at once in a musical way: sweeps, throws, risers and drops.")
-img("macros", "The Macros tab. The top of the page describes the last macro you touched.")
-note("<b>Macros never overwrite your sound.</b> They work on top of your settings, so turning a macro back to zero puts "
-     "everything back exactly where it was. DJ Filter rests in the centre. ZERO ALL MACROS resets them all at once.")
-knob_table("Macros")
-h2("Ideas")
-ul(["Build-Up then back to zero gives an instant drop: the kick comes back on the way down.",
-    "Ride Dub Throw on the last beat of a phrase, then pull it back.",
-    "DJ Filter left for a muffled breakdown, right for a thin, tense one.",
-    "Acid plus a little Glide on Synth 1 basslines."])
+# ============================================================================ 20 mix
+chapter("SOUNDS: Mix", "SOUNDS &gt; MIX has three pages: MAIN (levels, ducking, glue), EQ and MUTE/SOLO.")
+img("mix-main", "The Mix tab, MAIN page.")
+knob_table("Mix")
+note("<b>RESET ALL TO INIT</b> at the top of MIX resets every knob in the app (both synths, all pads, mix, "
+     "effects and macros) and clears step locks and scenes. Tap it twice. Saved sounds, kits, setups and the audio setup "
+     "are kept.")
+h2("Side-chain duck")
+p("Ducking makes the synths dip each time the kick plays, so the kick punches through: the “pumping” sound of house and "
+  "techno. Duck Synth 1, Duck Synth 2 and Duck FX returns set how far each one dips; Duck from chooses the trigger pad (or "
+  "Every beat, to pump without any kick); Duck release sets how quickly the sound comes back.")
+h2("EQ page")
+img("mix-eq", "The Mix tab, EQ page.")
+knob_table("Mix EQ", with_desc=False)
+p("Each EQ has a low shelf, a mid band around 1 kHz and a high shelf, from -12 to +12 dB. Low EQ freq and High EQ freq "
+  "set where the shelves start, for all four EQs.")
+h2("MUTE/SOLO page")
+p("One-tap mute and solo for Synth 1, Synth 2 and the drums. While anything is soloed, only soloed tracks play. Muted "
+  "tracks keep running in time, so they come back exactly in place.")
+img("mix-mutesolo", "The Mix tab, MUTE/SOLO page.")
+knob_table("Track Mute/Solo", with_desc=False)
+end()
+
+# ============================================================================ 21 FX
+chapter("SOUNDS: FX", "SOUNDS &gt; FX has two pages: SENDS (delay and reverb) and MASTER (the effects on the whole mix).")
+img("fx-sends", "The FX tab, SENDS page.")
+knob_table("FX")
+ul([f"{b('Delay')}: a ping-pong delay locked to the tempo, with a send from each instrument.",
+    f"{b('Reverb')}: a smooth room-to-hall reverb with a send from each instrument.",
+    f"{b('DJ filter')}: centre is off, left is low-pass, right is high-pass, on the whole mix."])
+h2("MASTER page")
+img("fx-master", "The FX tab, MASTER page.")
+knob_table("Master FX")
+p("The master chain runs in this order: chorus, flanger, phaser, compressor, distortion, DJ filter and lo-fi, EQ, glue, "
+  "width, LIVE FX's punch-in effects, then master level and drive into the limiter. With the limiter at 0 a gentle "
+  "soft clip catches the peaks instead.")
 end()
 
 # ============================================================================ 15 beats
-chapter("The Beats tab", "The Beats tab makes drum beats in the style of a genre. Tap a genre and you get a beat; tap "
+chapter("BEATS: the beat generator", "The BEATS makes drum beats in the style of a genre. Tap a genre and you get a beat; tap "
         "NEW BEAT for another take, as often as you like. When you have one you like, SEND TO BEATSTEP records it "
         "into the BeatStep's drum sequencer, where it carries on like a beat you programmed yourself.")
-img("beats", "The Beats tab: knobs on top, the genres, the beat (tap a dot to change it), and the keys.")
+img("beats", "BEATS: knobs on top, the genres, the beat (tap a dot to change it), and the keys.")
 h2("Make a beat")
 steps(["Tap a genre. With GENRE KIT: BUILT-IN its usual kit loads too (GENRE KIT: SAMPLES makes one from your own "
        "samples in the Kit Maker), and if the BeatStep is stopped the tempo is set for it.",
@@ -612,7 +829,7 @@ h2("Clock out: PotentialBox sets the tempo")
 p("Turn on <b>CLOCK OUT</b> and PotentialBox becomes the clock: it sends MIDI clock, Start and Stop, so the BeatStep "
   "plays at the beat's tempo.")
 steps(["Once, on the BeatStep: press its SYNC button until <b>USB</b> is chosen.",
-       "Tap <b>CLOCK OUT</b> on the Beats tab (it stays on next time).",
+       "Tap <b>CLOCK OUT</b> on BEATS (it stays on next time).",
        "PLAY now starts the BeatStep and the beat together; STOP stops both.",
        "Sending is easier too: tap SEND TO BEATSTEP, press REC on the BeatStep during the 4-second countdown, and "
        "PotentialBox starts everything and plays the beat in."])
@@ -631,19 +848,19 @@ h2("Knobs")
 knob_table("Beats", with_desc=False)
 p("Random hits makes the ? hits more or less likely; Variation adds the odd extra hit now and then; Swing at “Genre” "
   "uses the genre's own swing; Humanize loosens the timing and velocity a little.")
-h2("The BeatStep's pads on the Beats tab")
+h2("The BeatStep's pads on BEATS")
 pads_table(BEAT_PADS, "Pad", "Beats pad")
 end()
 
 # ============================================================================ 16 arrangement
-chapter("The Arrangement tab", "The Arrangement tab chains beats into a song: they play in order, each for its own "
-        "length (1, 2 or 4 bars), then round again. The tab bar calls it ARRANGE.")
-img("arrangement", "The Arrangement tab: the song on the left, the keys on the right. Beat 3 is playing.")
-steps(["Make a beat on the Beats tab.",
-       "On the Arrangement tab, tap <b>ADD CURRENT BEAT</b> (or the “+ ADD THE BEAT” space). Up to 16 beats.",
-       "Go back to the Beats tab, make the next beat, add it, and so on.",
+chapter("BEATS: Arrange", "BEATS &gt; ARRANGE chains beats into a song: they play in order, each for its own "
+        "length (1, 2 or 4 bars), then round again.")
+img("arrangement", "BEATS &gt; ARRANGE: the song on the left, the keys on the right. Beat 3 is playing.")
+steps(["Make a beat on BEATS.",
+       "On ARRANGE, tap <b>ADD CURRENT BEAT</b> (or the “+ ADD THE BEAT” space). Up to 16 beats.",
+       "Go back to BEATS, make the next beat, add it, and so on.",
        "Tap <b>PLAY SONG</b>. With CLOCK OUT on, it starts the BeatStep too."])
-ul([f"{b('Tap a beat')} while the song plays to jump to it. While it's stopped, tapping a beat puts it on the Beats tab "
+ul([f"{b('Tap a beat')} while the song plays to jump to it. While it's stopped, tapping a beat puts it on BEATS "
     "to hear and change (add it again to keep the change).",
     f"{b('REMOVE LAST')} takes the last beat off; {b('CLEAR SONG')} (tap twice) empties the song.",
     f"{b('SAVE SONG AS MIDI FILE')} saves the whole song as one .mid file in Music &gt; PotentialBox Recordings.",
@@ -653,57 +870,56 @@ h2("Knobs")
 knob_table("Arrangement")
 end()
 
-# ============================================================================ 17 live
-chapter("The Live tab", "The Live tab is for playing: hold-to-play effects, scenes, fill, recording and resampling, all "
-        "one tap away.")
-img("live", "The Live tab.")
-h2("Knobs")
-knob_table("Live", with_desc=False)
-h2("Punch-in effects")
-p("Hold a pad to play an effect over the whole mix; let go and the music carries on as before.")
-table(["Pad", "Effect", "What it does"], [(f'<span class="kn">{i + 1}</span>', b(n), d) for i, (n, d) in enumerate(zip(PUNCH_FX, [
-    "Loops the eighth note you pressed on, over and over (beat repeat).", "The same with a sixteenth: a stutter.",
-    "A fast drum-roll buzz.", "The music slows to a stop over one beat, like a turntable switched off.",
-    "Plays the music backwards from the moment you pressed.", "A resonant low-pass closes over two beats; it opens again when you let go.",
-    "Chops the sound on and off in sixteenths (trance gate).", "Sends the mix into a long dub echo that keeps ringing after you let go."]))],
-    "knobs")
-p("Only one of pads 1-5 works at a time (the last one you pressed); pads 6-8 can be held on top.")
-h2("Scenes")
-p("A scene is a snapshot of every setting. There are 8, and the morph bar blends between any two of them.")
-steps(["Get a sound you like and tap <b>SAVE 1</b>.",
-       "Change anything: filters, effects, levels, drum tuning, macros. Then tap <b>SAVE 2</b>.",
-       "<b>FROM</b> and <b>TO</b> choose the two scenes to morph between (1 and 2 out of the box; tap to step through 1-8).",
-       "Drag the morph bar, or turn BeatStep knob 1, to blend from one to the other. Only the settings that differ move; "
-       "the line under the bar says how many.",
-       "<b>HOLD FOR SCENE</b> (Live pad 10) jumps to the TO scene while held and goes back when you let go: an instant drop."])
-ul([f"{b('LOAD')} 1-8 puts a saved scene back straight away. Empty slots say EMPTY.",
-    "Morphing sets the knobs it moves. If you change one of them by hand, moving the morph again takes it back to the "
-    "blend. Save the scene again to keep your change.",
-    "Scenes saved by version 1.9.0 or earlier (A and B) come back as scenes 1 and 2."])
-h2("Fill, record and resample")
-ul([f"{b('HOLD FOR FILL')} (Live pad 9) plays the drum pads set to Fill only and silences those set to Not in fill.",
-    f"{b('RECORD')} (Live pad 11) starts and stops recording. Recordings go into Music &gt; PotentialBox Recordings, one "
-    "folder per take, as 24-bit WAV files. MIX + STEMS also saves Drums, Synth 1, Synth 2, FX returns and Looper as "
-    "separate files that line up; MIX ONLY saves just the master.",
-    f"{b('RESAMPLE TO A PAD')} records Synth 1, Synth 2, both synths, the FX returns or everything, for half a bar to 4 "
-    "bars, onto a drum pad. If the BeatStep is playing it waits for the next bar so the loop lines up. Save the kit in "
-    "My Kits to keep it."])
+# ============================================================================ capture
+chapter("CAPTURE: stems, recording and the MPC", "CAPTURE &gt; STEMS turns a jam into samples: one tap bounces what's "
+        "playing as loops that are exactly 1, 2, 4 or 8 bars long, the mix plus a file for each part, ready to chop on "
+        "your MPC or drop into a DAW.")
+img("capture", "CAPTURE &gt; STEMS.")
+h2("Bounce stems")
+steps(["Play something: the BeatStep, a project, BEATS or the looper.",
+       "Tap a <b>LENGTH</b>: 1, 2, 4 or 8 bars.",
+       "Tap <b>BOUNCE</b>. While the BeatStep (or CLOCK OUT) is playing it waits for the next bar, then records exactly "
+       "that many bars. The display and the progress bar show which bar it's on. CANCEL stops it.",
+       "It says SAVED and the bounce appears under YOUR BOUNCES. Tap its name to open its folder."])
+p("Each bounce is a folder in <b>Music &gt; PotentialBox Loops</b>, named with the project, tempo, length and time, "
+  "for example <code>Acid 126bpm 4bar 211405</code>. Inside are 24-bit WAV files:")
+table(["File", "What's in it"], [
+    (b("… - Mix.wav"), "Everything you hear, after the master effects."),
+    (b("… - Drums.wav"), "The drum sampler, with its EQ and ducking."),
+    (b("… - Synth 1.wav, … - Synth 2.wav"), "Each synth with its own effects, EQ and ducking, dry of the delay and reverb."),
+    (b("… - FX.wav"), "The delay and reverb returns."),
+    (b("… - Looper.wav"), "The looper's tracks.")])
+ul(["Every file is exactly the same length, sample for sample, so they loop and line up.",
+    "Parts that were silent are left out.",
+    "The parts are dry of the master effects (compressor, glue, limiter), which are on the mix only.",
+    "When nothing is playing, BOUNCE records straight away instead of waiting for a bar."])
+h2("Send to MPC")
+p("PotentialBox can copy bounces to your MPC over Wi-Fi, the way MPC TOOLS does. They go to a "
+  "<b>PotentialBox Loops</b> folder on the MPC's SD card (the drive with MPC TOOLS' DRUM ONE SHOTS or a MYMPC folder), "
+  "one folder per bounce, so you'll find them in the MPC's browser.")
+ul([f"{b('SEND LAST BOUNCE')} sends the newest one; {b('SEND')} beside any bounce in YOUR BOUNCES sends that one.",
+    f"{b('AUTO-SEND: ON')} sends every bounce as soon as it's saved.",
+    "It uses Windows' own SSH and the key login MPC TOOLS already set up, and the MPC's address from MPC TOOLS, so "
+    "there's nothing to type. The status line says where the files went, or what went wrong."])
+h2("Record and resample")
+ul([f"{b('RECORD (ANY LENGTH)')} records until you tap it again: the mix plus Drums, Synth 1, Synth 2, FX returns "
+    "and Looper as separate files that line up, in Music &gt; PotentialBox Recordings, one folder per take. The "
+    "Record On/Off pad action and LIVE FX pad 11 do the same.",
+    f"{b('RESAMPLE PAD')} records Synth 1, Synth 2, both synths, the FX returns or everything, for half a bar to 4 bars, "
+    "onto a drum pad. Save the kit in My Kits to keep it.",
+    f"{b('OPEN LOOPS')} opens the PotentialBox Loops folder."])
 img("resample", "Resample: choose what to record, how long, and which pad.", "small")
-h2("My setups")
-p("A setup stores everything at once: both synth sounds, the drum kit, every knob, step locks, scenes and the beat. Tap "
-  "<b>MY SETUPS</b>, then SAVE HERE on a slot (tap twice to replace one). LOAD brings the whole setup back, for "
-  "example one per song.")
-img("setups", "My setups: 8 slots for complete setups.", "small")
-h2("The BeatStep's pads on the Live tab")
-p("While the Live tab is open, the 16 pads that normally run pad actions play the Live pads instead:")
-pads_table(LIVE_PADS, "Pad", "Live pad")
+h2("Knobs")
+p("While STEMS is open the BeatStep's knobs ride the levels, sends and filters, so you can shape a bounce as it records:")
+knob_table("Capture", with_desc=False)
+h2("The BeatStep's pads on STEMS")
+pads_table([n or "–" for n in CAPTURE_PADS], "Pad", "Stems pad")
 end()
-
 # ============================================================================ 18 loop
-chapter("The Loop tab", "A 5-track looper, inspired by the BOSS RC-505: record a phrase, it plays round and round, add "
+chapter("CAPTURE: Looper", "A 5-track looper, inspired by the BOSS RC-505: record a phrase, it plays round and round, add "
         "more on top or on other tracks, and build a song live. It records the inputs of your audio interface (mic, "
         "guitar, keys) and PotentialBox's own synths and drums.")
-img("loop", "The Loop tab: five tracks, the 16 knobs on top, settings on the right.")
+img("loop", "CAPTURE &gt; LOOPER: five tracks, the 16 knobs on top, settings on the right.")
 h2("First loop in four taps")
 steps(["Tap <b>INPUT OFF</b> at the top right and pick the input your mic or instrument is plugged into (for example "
        "IN 1, or IN 1+2 STEREO). This needs your interface's ASIO driver chosen in SETUP.",
@@ -733,7 +949,7 @@ ul([f"{b('UNDO / REDO')} (pad 6) takes back the last overdub on the last track y
     f"{b('MY LOOPS')} saves all five tracks in one of 8 slots, as WAV files in Music &gt; PotentialBox Loops, ready for a "
     "DAW or an MPC. LOAD brings them back stopped."])
 img("myloops", "My loops: 8 loop sets.", "small")
-h2("The BeatStep's pads on the Loop tab")
+h2("The BeatStep's pads on the LOOPER")
 pads_table(LOOP_PADS, "Pad", "Loop pad")
 note("With a mic, use headphones so the speakers don't feed back into it. If you hear yourself twice, turn down HEAR "
      "INPUT (knob 7).")
@@ -756,46 +972,8 @@ ul(["Locks play while the BeatStep is playing and follow its clock: step 1 is th
     "Locks are saved with your settings and in My Setups, but not in My Sounds."])
 end()
 
-# ============================================================================ 20 mix
-chapter("Mix", "The Mix tab has three pages: MAIN (levels, ducking, glue), EQ and MUTE/SOLO.")
-img("mix-main", "The Mix tab, MAIN page.")
-knob_table("Mix")
-note("<b>RESET ALL TO INIT</b> at the top of the Mix tab resets every knob in the app (both synths, all pads, mix, "
-     "effects and macros) and clears step locks and scenes. Tap it twice. Saved sounds, kits, setups and the audio setup "
-     "are kept.")
-h2("Side-chain duck")
-p("Ducking makes the synths dip each time the kick plays, so the kick punches through: the “pumping” sound of house and "
-  "techno. Duck Synth 1, Duck Synth 2 and Duck FX returns set how far each one dips; Duck from chooses the trigger pad (or "
-  "Every beat, to pump without any kick); Duck release sets how quickly the sound comes back.")
-h2("EQ page")
-img("mix-eq", "The Mix tab, EQ page.")
-knob_table("Mix EQ", with_desc=False)
-p("Each EQ has a low shelf, a mid band around 1 kHz and a high shelf, from -12 to +12 dB. Low EQ freq and High EQ freq "
-  "set where the shelves start, for all four EQs.")
-h2("MUTE/SOLO page")
-p("One-tap mute and solo for Synth 1, Synth 2 and the drums. While anything is soloed, only soloed tracks play. Muted "
-  "tracks keep running in time, so they come back exactly in place.")
-img("mix-mutesolo", "The Mix tab, MUTE/SOLO page.")
-knob_table("Track Mute/Solo", with_desc=False)
-end()
-
-# ============================================================================ 21 FX
-chapter("FX", "The FX tab has two pages: SENDS (delay and reverb) and MASTER (the effects on the whole mix).")
-img("fx-sends", "The FX tab, SENDS page.")
-knob_table("FX")
-ul([f"{b('Delay')}: a ping-pong delay locked to the tempo, with a send from each instrument.",
-    f"{b('Reverb')}: a smooth room-to-hall reverb with a send from each instrument.",
-    f"{b('DJ filter')}: centre is off, left is low-pass, right is high-pass, on the whole mix."])
-h2("MASTER page")
-img("fx-master", "The FX tab, MASTER page.")
-knob_table("Master FX")
-p("The master chain runs in this order: chorus, flanger, phaser, compressor, distortion, DJ filter and lo-fi, EQ, glue, "
-  "width, the Live tab's punch-in effects, then master level and drive into the limiter. With the limiter at 0 a gentle "
-  "soft clip catches the peaks instead.")
-end()
-
 # ============================================================================ 22 pad actions
-chapter("Pad actions", "With the BeatStep Pro's Control Mode pads on MIDI channel 16 (chapter 5), each pad runs a "
+chapter("Pad actions", "With the BeatStep Pro's Control Mode pads on MIDI channel 16 (see Setting up the BeatStep Pro), each pad runs a "
         "PotentialBox action. Notes on channel 16 never play the synths.")
 rows = []
 for i, (aid, name) in enumerate(ACTIONS):
@@ -805,8 +983,10 @@ h2("Changing them")
 img("actions", "SETUP &gt; PAD ACTIONS.")
 steps(["Open SETUP and tap <b>PAD ACTIONS</b>.", "Tap the action you want to change. It lights up.",
        "Press the pad or step button on the BeatStep Pro you want to use for it. Notes and CCs both work, on any channel."])
-p("Each card flashes when its action runs. RESET TO CHANNEL 16 DEFAULTS puts the table above back. Actions 17-22 have no "
-  "pad out of the box. On the Beats, Live and Loop tabs the pads play those tabs' own pads instead (chapters 16, 18, 19).")
+p("Each card flashes when its action runs. RESET TO CHANNEL 16 DEFAULTS puts the table above back. Actions 17 and "
+  "up have no pad out of the box. On PROJECTS, LIVE FX, BEATS, STEMS and the LOOPER the pads play those screens' own "
+  "pads instead (listed in their chapters). The old Drums 1-8 and Drums 9-16 tab actions open SOUNDS &gt; DRUMS on "
+  "those pads' pages.")
 end()
 
 # ============================================================================ 23 files
@@ -821,9 +1001,8 @@ table(["What", "Where"], [
     (b("My Setups"), "<code>%APPDATA%\\PotentialBox\\my-setups.json</code>"),
     (b("Resampled sounds"), "<code>%APPDATA%\\PotentialBox\\Resampled</code>"),
     (b("Your own wavetables"), "<code>%APPDATA%\\PotentialBox\\Wavetables</code>"),
-    (b("Your own look"), "<code>%APPDATA%\\PotentialBox\\user-look.json</code>"),
     (b("Recordings and MIDI files"), "<code>Music\\PotentialBox Recordings</code>"),
-    (b("My Loops"), "<code>Music\\PotentialBox Loops</code> (one folder per loop set)"),
+    (b("Bounced stems and My Loops"), "<code>Music\\PotentialBox Loops</code> (one folder per bounce or loop set)"),
     (b("Log (what went wrong, if anything)"), "<code>%APPDATA%\\PotentialBox\\log.txt</code>")])
 p("To open one of these folders, paste the path (for example <code>%APPDATA%\\PotentialBox</code>) into the File "
   "Explorer address bar and press Enter.")
@@ -834,9 +1013,9 @@ end()
 # ============================================================================ 24 troubleshooting
 chapter("Troubleshooting")
 for q, a in [
-    ("The header says AUDIO ERROR", "Open SETUP and tap another output. If your interface's ASIO driver won't open, close "
+    ("The display says AUDIO PROBLEM", "Open SETUP and tap another output. If your interface's ASIO driver won't open, close "
      "any DAW, FL Studio or Voicemeeter that might be using it, then tap it again. WASAPI always works as a fallback."),
-    ("I hear crackles", "Look at LOAD and DROPOUTS on the Setup tab. If DROPOUTS climbs, tap the next BUFFER size up "
+    ("I hear crackles", "Look at LOAD and DROPOUTS on SETUP. If DROPOUTS climbs, tap the next BUFFER size up "
      "(256 or 512). If LOAD is high, ease off chords and supersaw on both synths, or close heavy apps."),
     ("MIDI says NO BEATSTEP FOUND", "Check the USB cable, wait a few seconds after plugging in, then tap RESCAN MIDI in "
      "SETUP. A DAW can hold the BeatStep's MIDI port open; close it and rescan."),
@@ -845,19 +1024,25 @@ for q, a in [
     ("The pads don't run actions", "Set the BeatStep's Control Mode pads to MIDI channel 16 in MIDI Control Center, or "
      "teach PotentialBox your pads in SETUP &gt; PAD ACTIONS."),
     ("Step locks, step LFOs, the arp or “1st of 4” don't follow the BeatStep", "They follow the BeatStep's MIDI clock. "
-     "Press Play on the BeatStep and check the header shows its tempo. Stop and Play again to reset the step count."),
+     "Press Play on the BeatStep and check the BPM at the top shows its tempo. Stop and Play again to reset the step count."),
     ("With CLOCK OUT on, the BeatStep doesn't start", "Its SYNC must be on USB. In SETUP, make sure the BeatStep's MIDI "
      "port is on."),
     ("SEND TO BEATSTEP says no MIDI out was found", "Check the BeatStep is plugged in and switched on, then try again. "
      "The beat goes out on the drum channel set in SETUP (10 out of the box)."),
     ("The scene morph does nothing", "Save two different scenes and check FROM and TO point at them. The line under the "
      "morph bar says how many settings move."),
-    ("The Loop tab says INPUT OFF, or lists no inputs", "Inputs come from the output chosen in SETUP. Pick your "
-     "interface's ASIO driver there (WASAPI outputs have no inputs), then choose the input on the Loop tab."),
+    ("The LOOPER says INPUT OFF, or lists no inputs", "Inputs come from the output chosen in SETUP. Pick your "
+     "interface's ASIO driver there (WASAPI outputs have no inputs), then choose the input on the LOOPER."),
     ("A synth or drum sounds wrong", "A macro may be turned up (tap ZERO ALL MACROS), a track may be muted or another "
-     "soloed (Mix &gt; MUTE/SOLO), or the master effects may be on (FX &gt; MASTER). For a fresh start, RESET ALL TO INIT."),
+     "soloed (SOUNDS &gt; MIX &gt; MUTE/SOLO), or the master effects may be on (SOUNDS &gt; FX &gt; MASTER). For a fresh start, RESET ALL TO INIT."),
     ("A machine kit has odd sounds on some pads", "The sorter goes by file names. Use EDIT PAD to swap any pad, then save "
      "it in My Kits."),
+    ("SEND TO MPC says the MPC didn't answer, or wants a password", "PotentialBox uses MPC TOOLS' SSH "
+     "login: open MPC TOOLS once and check it can reach the MPC. The MPC and the PC must be on the same network."),
+    ("SEND TO MPC says there's no SD card", "Put an SD card or USB drive in the MPC. Bounces go to a PotentialBox Loops "
+     "folder on it."),
+    ("A bounce is shorter or longer than the bars", "It's timed from the tempo. If the BeatStep's tempo changes during "
+     "a bounce, bounce again once it's steady."),
     ("PotentialBox won't start", "Run the installer again. If it still won't start, the last lines of "
      "<code>%APPDATA%\\PotentialBox\\log.txt</code> say why; include them if you report a problem on GitHub.")]:
     add(f'<div class="qa"><h4>{E(q)}</h4><p>{a}</p></div>')

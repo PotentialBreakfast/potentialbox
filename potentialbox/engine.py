@@ -338,6 +338,8 @@ def _build_specs():
         a(Param(pre + ".release", "Release", 0.005, 3, 0.15 if pre == "s1" else 0.4, "exp", unit="s"))
         a(Param(pre + ".glide", "Glide (slides)", 0.005, 1, 0.06, "exp", unit="s"))
         a(Param(pre + ".vol", name + " volume", 0, 1, 0.7, unit="%"))
+        # v2.0: each sound's own level, so presets come out level-matched without moving your volume knob
+        a(Param(pre + ".trim", "Sound level", -12, 12, 0.0, unit="dB"))
         # ---- v1.5: oscillator extras, chords, filter types, modulation (all neutral by default)
         if pre == "s1":
             a(Param("s1.osc2", "Osc 2 pitch", -24, 24, 0, step=1, unit="st"))
@@ -521,13 +523,13 @@ PAGES = collections.OrderedDict([
     ("Synth 1 Arp", ["s1.arp", "s1.arprate", "s1.arpoct", "s1.arpgate", "s1.arpswing", "s1.arphold", "s1.arpchance",
                      "s1.arpacc", "dk.s1", "eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "s1.pan", "fx.s1", "rv.s1", "s1.vol"]),
     ("Synth 1 Env", ["s1.attack", "s1.decay", "s1.sustain", "s1.release", "s1.decay2", "s1.sustain2", "s1.fdecay", "s1.envamt",
-                    "s1.mea", "s1.med", "s1.penv", "s1.pdec", "s1.glide", "s1.glmode", "s1.velamp", "s1.vol"]),
+                    "s1.mea", "s1.med", "s1.penv", "s1.pdec", "s1.glide", "s1.glmode", "s1.velamp", "s1.trim"]),
     ("Synth 1 LFO1 Steps", [f"s1.l1step{i}" for i in range(16)]),
     ("Synth 1 LFO2 Steps", [f"s1.l2step{i}" for i in range(16)]),
     ("Synth 2 Arp", ["s2.arp", "s2.arprate", "s2.arpoct", "s2.arpgate", "s2.arpswing", "s2.arphold", "s2.arpchance",
                      "s2.arpacc", "dk.s2", "eq.s2.lo", "eq.s2.mid", "eq.s2.hi", "s2.pan", "fx.s2", "rv.s2", "s2.vol"]),
     ("Synth 2 Env", ["s2.attack", "s2.decay", "s2.sustain", "s2.release", "s2.decay2", "s2.sustain2", "s2.posenv", "s2.envamt",
-                    "s2.mea", "s2.med", "s2.penv", "s2.pdec", "s2.glide", "s2.glmode", "s2.velamp", "s2.vol"]),
+                    "s2.mea", "s2.med", "s2.penv", "s2.pdec", "s2.glide", "s2.glmode", "s2.velamp", "s2.trim"]),
     ("Synth 2 LFO1 Steps", [f"s2.l1step{i}" for i in range(16)]),
     ("Synth 2 LFO2 Steps", [f"s2.l2step{i}" for i in range(16)]),
     ("Drums", [f"dr.p{i}.tune" for i in range(1, 9)] + [f"dr.p{i}.decay" for i in range(1, 9)]),
@@ -772,6 +774,7 @@ class ParamStore:
 
     def _randomize(self, pre, rng=None):
         rng = rng or np.random.default_rng()
+        self.set_val(pre + ".trim", 0.0)   # a random sound starts at its natural level, not the last preset's
         for k in PAGES["Synth 1" if pre == "s1" else "Synth 2"]:
             if not k.endswith(".vol") and not k.endswith(".octave"):
                 self.set_norm(k, rng.random())
@@ -1466,7 +1469,8 @@ class MonoSynth:
         v = self.eng.p.val
         pre = self.pre
         va = v[pre + ".velamp"]
-        gain = ae * ((1.0 - va + va * self.vel_raw) * v[vol_key] * 0.6)
+        trim = v[pre + ".trim"]
+        gain = ae * ((1.0 - va + va * self.vel_raw) * v[vol_key] * 0.6 * (10.0 ** (trim / 20.0) if trim else 1.0))
         if "Volume" in mods:
             gain = gain * np.clip(1.0 + mods["Volume"], 0.0, 2.0)
         pan = np.clip(v[pre + ".pan"] + mods.get("Pan", 0.0), -1.0, 1.0)
@@ -1771,6 +1775,7 @@ class WaveSynth(MonoSynth):
         self.ph = np.zeros((self.MAXV, 3))
         self.uph = np.random.default_rng(13).random((self.MAXV, 7))  # unison voices' own phases
         self.lfo = 0.0
+        self.dc_zi = np.zeros((1, 2))   # v2.0: DC blocker state (warped waves can sit off centre)
 
     def render(self, n):
         v = self.eng.p.val
@@ -1846,6 +1851,7 @@ class WaveSynth(MonoSynth):
             L += nz
             R += nz
         x = np.stack([L, R], axis=1)
+        x, self.dc_zi = lfilter([1.0, -1.0], [1.0, -0.9985], x, axis=0, zi=self.dc_zi)  # ~10 Hz high-pass
         y = self.filt(self.pre_drive(x), fe, mods)
         y = np.tanh(y * 1.2)
         y = self.distortion(y, mods)

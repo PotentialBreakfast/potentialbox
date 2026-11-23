@@ -62,8 +62,29 @@ SYN = {
     "lfoamt": "How far that LFO moves the wave position.",
     "table": "Chooses the wavetable: 30 built in (list below), plus any you add yourself.",
 }
+# v1.12-2.0 settings
+SYN.update({
+    "uni": "How many copies of the sound play at once (1-7), detuned and spread across the stereo field.",
+    "unidet": "How far apart the unison voices are tuned. A little = thick, a lot = a reese or hoover.",
+    "uniwid": "How wide the unison voices spread across the stereo field. 0 = all in the middle.",
+    "fdrive": "Pushes the sound into the filter for an overdriven analog filter's grit and weight.",
+    "dist": "Distortion type: Tube, Tape, Fold (wavefolder), Crush (bits and sample rate) or Hard clip.",
+    "distamt": "How much distortion. Level-matched, so it adds grit rather than volume.",
+    "sfx": "This synth's own effect: Chorus, Ensemble, Dimension, Phaser or Flanger.",
+    "sfxamt": "How much of the synth's own effect.",
+    "subtype": "Where the sub sits: an octave down through the filter, an octave down kept clean, or a clean sine at "
+               "the note itself (a deep, solid sub that skips the filter and distortion).",
+    "hkey": "The key the Scale chords are built in (C to B).",
+    "hscale": "The scale the Scale chords are built from: Minor, Major, Dorian, Phrygian, Mixolydian or Harmonic minor.",
+    "lane": "On: BeatStep drum tracks 9-15 pick the chord (track 9 = chord I ... track 15 = chord VII) instead of "
+            "playing drums.",
+    "trim": "This sound's own level, set by each preset so sounds play at the same loudness. Your volume knob stays "
+            "where it is.",
+})
 SYN_OVERRIDE = {
-    "s2.detune": "Unison: two detuned voices spread left and right. More = wider and thicker.",
+    "s2.detune": "Unison detune: how far apart the unison voices are tuned. More = wider and thicker.",
+    "s2.warp": "Reshapes how the wave is read: Bend +/-, Mirror, Sync, Squeeze, Phase FM or Quantize.",
+    "s2.warpamt": "How far the warp goes.",
     "s2.envamt": "How far each note opens the filter (Synth 2 uses the amp envelope's decay for it).",
 }
 for j in range(1, 13):

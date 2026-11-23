@@ -65,7 +65,7 @@ except Exception:                         # pragma: no cover
     skins = None
 
 APP = "PotentialBox"
-VERSION = "1.13.0"
+VERSION = "2.0.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 # v2.0: five big sections along the bottom; each has a few sub-tabs (shown in the header). A sub-tab is one of the
@@ -4637,8 +4637,7 @@ class App:
         if b:
             if b["state"] == "wait" and (not eng.playing or time.time() - b["t0"] > 12):
                 b["state"], b["bar_at"] = "rec", 0
-            if self.state.page == "Capture" or SECTION_OF.get(self.state.page):
-                self.request_redraw()
+            self.request_redraw()   # the display at the top shows the bounce on every screen
             if b["state"] == "done":
                 eng.bounce = None
                 pr = self.state.project

@@ -1,4 +1,4 @@
-"""Screenshots for the manual: Vintage look, Barlow Semi Condensed standing in for Bahnschrift,
+"""Screenshots for the manual: the Hi-Fi look, Barlow Semi Condensed standing in for Bahnschrift,
 stand-in audio and MIDI device names (nothing from a real PC)."""
 import sys, os, time, subprocess
 os.environ["HOME"] = "/tmp/pbhome"; os.environ["APPDATA"] = "/tmp/pbhome/AppData"
@@ -46,7 +46,7 @@ A.App.text = text
 
 app = A.App(); r = app.root
 r.geometry(f"{1280*S}x{800*S}+0+0")
-A.apply_look("vintage"); app.state.look = "vintage"; app.pick_fonts(); r.configure(bg=A.T["bg"]); app.cv.configure(bg=A.T["bg"])
+A.apply_look("hifi"); app.state.look = "hifi"; app.pick_fonts(); r.configure(bg=A.T["bg"]); app.cv.configure(bg=A.T["bg"])
 for _ in range(30): r.update(); time.sleep(0.02)
 app.audio.start(); app.midi.open_all(); app.midi.last_clock = time.perf_counter()
 eng = app.audio.engine; p = app.state.params
@@ -71,13 +71,38 @@ def shot(name, setup=None, page=None, sub=None, overlay=None, wait=0.05):
     print("shot", name)
 
 flash = lambda *idx: [app.midi.flash.__setitem__(i, time.time() + 30) for i in idx]
+# --- v2.0: the jam home, the sound browsers, capture
+def project():
+    app.load_project(6, toast=False); app.mut_count["bass"] = 1
+shot("projects", page="Projects", setup=project)
+def browser1():
+    app.browse_cat("s1", "BASS"); app.browse_load("s1", "Reese Rumble", dict(A.PRESETS["s1"])["Reese Rumble"])
+shot("browser-s1", page="Synth 1", setup=browser1)
+def browser2():
+    app.browse_cat("s2", "ALL"); app.browse_load("s2", "Tremolo E-Piano", dict(A.PRESETS["s2"])["Tremolo E-Piano"])
+shot("browser-s2", page="Synth 2", setup=browser2)
+def capture():
+    import numpy as np
+    from potentialbox import capture as cap
+    parts = {k: np.zeros((4410, 2)) + (0.1 if k in ("mix", "dr", "s1", "s2") else 0) for k in ("mix", "dr", "s1", "s2", "fx", "lp")}
+    app.state.bounces = []
+    for nm in ("Acid 126bpm 4bar 211405", "Acid 126bpm 8bar 211932", "Techno 130bpm 4bar 213010"):
+        f, _ = cap.save_bounce(parts, 44100, nm)
+        app.state.bounces.insert(0, f)
+    app.state.mpc_host = "192.168.1.50"
+    app.mpc_sender = type("S", (), {"busy": False, "error": None,
+                                    "status": "On the MPC: MPC-SD > PotentialBox Loops > Techno 130bpm 4bar 213010"})()
+shot("capture", page="Capture", setup=capture)
+app.mpc_sender = None
 # --- knob pages
 shot("perform", page="Perform", setup=lambda: (flash(1), eng.s1.amp.gate_on()))
 eng.s1.amp.stage = 0
+app.state.synth_edit = {"s1": True, "s2": True}
 for t, subs in A.SUBPAGES.items():
     for i, (lab, pg) in enumerate(subs):
         nm = (t + "-" + lab).lower().replace(" ", "").replace("/", "").replace("+", "plus")
         shot(nm, page=t, sub=i)
+app.state.synth_edit = {"s1": False, "s2": False}
 for t in ("Macros",):
     shot("macros", page=t, setup=lambda: setattr(app, "last_macro", 11))
 # --- step locks
@@ -85,7 +110,9 @@ def locks():
     app.state.subpage["Synth 1"] = 0
     app.lock_mode = True; app.lock_pick(2); p.set_val("s1.cutoff", 2400); p.set_norm("s1.reso", 0.7)
     app.lock_pick(10); p.set_val("s1.cutoff", 600); app.lock_pick(2)
+app.state.synth_edit["s1"] = True
 shot("locks", page="Synth 1", sub=0, setup=locks)
+app.state.synth_edit["s1"] = False
 app.lock_off()
 # --- beats
 def beats():
@@ -118,7 +145,9 @@ shot("actions", page="Setup", overlay=("actions",))
 shot("setups", page="Live", overlay=("setups",))
 shot("resample", page="Live", overlay=("resample",))
 shot("sounds", page="Perform", overlay=("sounds", "s1"))
-shot("route", page="Synth 1", sub=2, overlay=("route", "s1", 2))
+app.state.synth_edit["s1"] = True
+shot("route", page="Synth 1", sub=3, overlay=("route", "s1", 2))
+app.state.synth_edit["s1"] = False
 shot("kits", page="Perform", overlay=("kits",))
 def lib():
     app.state.library_root = "/tmp/pbhome/Downloads/Drum Machine Collection"

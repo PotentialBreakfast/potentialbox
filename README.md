@@ -1,69 +1,56 @@
 # PotentialBox
 
-A free groovebox for **Windows**, played by the **Arturia BeatStep Pro**. Made by **PotentialBreaks** for my own beat-making and shared for anyone who wants it.
+A free groovebox for **Windows**, made for **jamming** with the **Arturia BeatStep Pro**, and for catching what you play as loops and stems for your MPC. Made by **PotentialBreaks** for my own beat-making and shared for anyone who wants it.
 
 The BeatStep Pro is the sequencer and controller, and PotentialBox makes the sound:
 
 | BeatStep Pro | Plays in PotentialBox |
 |---|---|
-| **Sequencer 1** (MIDI ch 1) | **Synth 1**: analog-style synth for basslines, acid, leads and chords |
-| **Sequencer 2** (MIDI ch 2) | **Synth 2**: wavetable synth with 30 morphing tables |
-| **Drum sequencer** (MIDI ch 10) | **Drums**: 16-pad sampler with 9 built-in kits, a drum machine library browser and the **Kit Maker**, which builds kits from all your own one-shots |
-| **16 knobs** (Control Mode) | The 16 knobs on whichever PotentialBox page is open, including **16 performance macros** |
-| **16 pads** (Control Mode, ch 16) | Actions: random sounds, switch pages, next kit and more |
+| **Sequencer 1** (MIDI ch 1) | **Synth 1**: analog-style synth with unison, supersaw, clean sub, filter drive, distortion and its own effects |
+| **Sequencer 2** (MIDI ch 2) | **Synth 2**: wavetable synth with 30 morphing tables and 7 warp modes |
+| **Drum sequencer** (MIDI ch 10) | **Drums**: 16-pad sampler with built-in kits, a drum machine library browser and the **Kit Maker** |
+| **16 knobs** (Control Mode) | The 16 knobs of whichever screen is open |
+| **16 pads** (Control Mode, ch 16) | Actions, or the open screen's own pads (load projects, punch-in FX, bounce stems ...) |
 
 It's pre-wired for the BeatStep Pro's factory settings, so you can plug it in and press play. Every control is a big button you can tap, and everything saves by itself.
 
 **[Download the latest release](../../releases/latest)** · **[Read the manual (PDF)](docs/PotentialBox-Manual.pdf)**
 
-![PotentialBox Perform page](docs/images/perform.png)
+![PotentialBox: JAM > PROJECTS](docs/images/projects.png)
 
 ---
 
+## Five sections
+
+Everything lives under five big keys along the bottom; each has a few sub-tabs.
+
+| Section | Sub-tabs |
+|---|---|
+| **JAM** | **PROJECTS**: sounds for the 16 BeatStep genre sets, MUTATE (new sounds on the next bar), talk to it · **LIVE FX**: punch-in effects, 8 morphing scenes, fill · **KNOBS** · **MACROS** |
+| **SOUNDS** | **SYNTH 1 / SYNTH 2**: a sound browser (77 presets by type) with every setting under EDIT SOUND · **DRUMS**: kits, Kit Maker, pad tune / mix / groove / choke · **MIX** · **FX** |
+| **BEATS** | Beat generator in 24 genres, Send to BeatStep, Clock out · **ARRANGE**: chain beats into a song |
+| **CAPTURE** | **STEMS**: one tap bounces 1, 2, 4 or 8 bar-exact loops (mix + drums + each synth + FX + looper) and can send them straight to your MPC · **LOOPER**: 5-track RC-505-style looper |
+| **SETUP** | Audio (ASIO), MIDI, knobs, pad actions, My Setups |
+
+| Sound browser | Capture: bounce stems | Live FX |
+|---|---|---|
+| ![Synth 1 sound browser](docs/images/browser-s1.png) | ![Capture stems](docs/images/capture.png) | ![Live FX](docs/images/live.png) |
+
+| Beats | Looper | Kit Maker |
+|---|---|---|
+| ![Beats](docs/images/beats.png) | ![Looper](docs/images/loop.png) | ![Kit Maker](docs/images/kitmaker.png) |
+
 ## Features
 
-- **Two synths** with resonant filters, envelopes, glide on tied/slid steps, drive and unison
-- **Modulation**: on each synth, 2 tempo-syncable LFOs (7 shapes), a mod envelope and 8 mod slots routing LFOs, envelopes, velocity, note or random to pitch, filter, wave position, FM, pan, volume and more
-- **Filters and oscillators**: LP 24, LP 12, HP, band-pass and notch with key tracking; Synth 1 adds osc 2 tuning, FM, ring mod, hard sync and noise; both have pitch envelope, analog drift and pan
-- **Chord mode**: turn every step into a chord (13 chord types, 3 voicings), even though the BeatStep sequences one note at a time
-- **30 wavetables** on Synth 2, including 24 from the free AKWF single-cycle collection
-- **Beat generator** (Beats tab): 24 genres (techno, house, UK garage, drum & bass, jungle, dubstep, grime, UK drill, trap, hip hop, boom bap, lo-fi, reggae one drop, steppers, dancehall, reggaeton, afrobeats, breakbeat, electro, disco, funk, footwork and more). One tap for a new take, mutate, busier/simpler, fills, mutes, tap-to-edit grid, and **Send to BeatStep** records the beat straight into the BeatStep's drum sequencer over MIDI. Beats are 1, 2 or 4 bars with an ending that leads back to the top, and **Clock out** makes the BeatStep follow PotentialBox's tempo
-- **5-track looper** (Loop tab), inspired by the BOSS RC-505: record your interface's inputs (mic, guitar, keys) and PotentialBox itself, overdub, undo/redo, per-track FX, reverse and half/double speed, loops snapped to the BeatStep's bars and following its Play/Stop, played from the BeatStep's pads, saved as WAV loop sets
-- **Arpeggiator** on each synth: 5 patterns, tempo-synced rate, octaves, gate, swing, hold, chance and accents; arpeggiates chord mode
-- **Live tab**: 8 hold-to-play punch-in effects (beat repeat, roll, tape stop, reverse, filter sweep, gate, echo throw), Scene A/B with a morph knob and hold-for-B drops, a fill button, and the BeatStep's pads switch to these while the tab is open
-- **Step locks**: give any knob its own value on any of the 16 steps, following the BeatStep's clock (like Elektron parameter locks)
-- **Drum groove**: per-pad chance and play conditions (fill only, not in fill, 1st of 4 and more), plus per-pad pan
-- **Mix**: kick-triggered side-chain ducking (or every beat), 3-band EQ on each synth, the drums and the master, a one-knob glue compressor and stereo width
-- **Record to WAV**: the mix plus separate drum, synth and FX stems, 24-bit, into Music > PotentialBox Recordings
-- **Resample to a pad**: record half a bar to 4 bars of a synth or the whole mix, in time with the bar, straight onto a drum pad
-- **My Setups**: 8 slots that save everything at once (sounds, kit, mix, effects, locks and scenes)
-- **Drum sampler**: 9 synthesized kits (808 Boom, 909 Punch, 606 Tight, Trap 808, SP Dust 12-bit, Electro 80s, Minimal Tech, Industrial, Potential), all with the same pad layout so patterns carry over
-- **Drum machine library**: point it at a collection of sampled machines (one folder per machine) and browse brand > machine > kit. Sounds are sorted onto the right pads by their file names, and silence at the start of every hit is trimmed
-- **Kit Maker** (new in 1.10): one tap builds a 16-pad kit from every one-shot you have (your drum machine collection plus any sample folders), like PotentialKits on the MPC. 12 styles (Classic, Boom Bap, Lo-Fi, Trap, House, Techno, Jungle, Electro, Dusty Jazz, Percussion, Dub, Weird), lock the pads you like, roll the rest Mild / Medium / Wild, one-tap type per pad (kick, 808, snare, clap, rim, hats, toms, congas, shakers, vox ...), pitch / length / level, and levels evened out for you. The Beats tab's genre kits can come from your own samples too
-- **GET MPC ONE-SHOTS**: copies the sorted DRUM ONE SHOTS folder that MPC TOOLS makes on an MPC's SD card to the PC over SSH (no password with MPC TOOLS' key login), and fetches only new sounds after that
-- **Build your own kits**: put any one-shot from your collection or sample folders on any pad, with a random pick per pad type, and save 8 of your own kits (with each pad's pitch, length, level, pan and choke)
-- **16 performance macros**: S1 Sweep, S2 Sweep, Acid, Wobble, Bright, Pluck, Glide, Wide, Dub Throw, Space, DJ Filter, Build-Up, Lo-Fi, Drum Smash, Tighten, Glue. Turn one back to zero and your sound is exactly as it was
-- **Effects**: tempo-synced ping-pong delay, reverb, DJ filter and lo-fi crusher
-- **Save slots**: 8 sounds per synth, plus Init sounds and Reset All to start fresh
-- **Five looks**: Print Plate (the default), Night Rack, Colour Block, Vintage and Hi-Fi (walnut cabinet, domed knobs, green glass displays). Tap LOOK on the Setup tab; it changes at once and is remembered
-- **Low lag**: ASIO support (your interface's own driver is chosen first), WASAPI exclusive and WASAPI
-- Follows the BeatStep Pro's tempo, and Stop sends All Notes Off
-
-| Beats tab | Loop tab | Live tab |
-|---|---|---|
-| ![Beats tab](docs/images/beats.png) | ![Loop tab](docs/images/loop.png) | ![Live tab](docs/images/live.png) |
-
-| Macros | Synth modulation | Mod routing |
-|---|---|---|
-| ![Macros](docs/images/macros.png) | ![Synth 1 Mod page](docs/images/s1mod.png) | ![Mod routing menu](docs/images/route.png) |
-
-| Kit Maker | Sample folders | Pad editor |
-|---|---|---|
-| ![Kit Maker](docs/images/kitmaker.png) | ![Sample folders](docs/images/ksources.png) | ![Pad editor](docs/images/pad.png) |
-
-| Synth 1 Osc+ | Drum machines |
-|---|---|
-| ![Synth 1 Osc+ page](docs/images/s1osc.png) | ![Drum machines](docs/images/machines.png) |
+- **Two synths**: 2 oscillators with supersaw, FM, ring mod and sync (Synth 1) or 30 wavetables with warp (Synth 2); unison up to 7 voices; LP 24 / LP 12 / HP / band-pass / notch / comb / formant filters with drive; Tube, Tape, Fold, Crush and Hard clip distortion; chorus, ensemble, dimension, phaser and flanger per synth
+- **77 presets** made for the current engine, sorted into Bass, Lead, Keys, Pad, Pluck, Stab and FX, and level-matched so switching never jumps in volume
+- **Modulation**: 2 tempo-syncable LFOs with a 16-step mode, a mod envelope and 12 mod slots per synth; scale chords and a chord lane driven by the BeatStep's drum tracks; an arpeggiator on each synth
+- **Projects**: one tap (or a pad, or your voice) loads a genre's bass, lead, kit, effects and tempo to match your BeatStep genre sets; MUTATE changes them on the next bar, manually or every 8 / 16 bars
+- **Bounce stems**: bar-exact loops of the mix and each part, 24-bit WAV, named with the tempo, and sent to the MPC's SD card over SSH using MPC TOOLS' login
+- **Beat generator**, **arrangement**, **5-track looper**, **step locks**, **punch-in effects**, **scenes with morph**, **16 performance macros**, **side-chain ducking**, **EQ**, **delay**, **reverb** and a **master FX chain**
+- **Drums**: built-in kits, a drum machine library browser, a pad editor, 8 slots for your own kits, and the **Kit Maker**, which builds kits from all your one-shots (and can fetch your MPC's DRUM ONE SHOTS)
+- **Hi-Fi look**: walnut cabinet, domed knobs, cream keys and green glass displays, like the BeatStep Pro on a hi-fi deck
+- **Low lag**: ASIO (your interface's own driver first), WASAPI exclusive and WASAPI
 
 ---
 
@@ -89,11 +76,10 @@ The installer sets up a private copy of Python 3.12 and the audio libraries in y
 1. Plug in the BeatStep Pro and start PotentialBox. In **SETUP**, pick your audio output (ASIO is best).
 2. Press **PLAY** on the BeatStep Pro. The sequencers play the synths and drums straight away.
 3. Press **CONTROL MODE** on the BeatStep Pro to make its 16 knobs control the page you have open.
-4. For pad actions, set the BeatStep's Control Mode pads to **MIDI channel 16** in Arturia MIDI Control Center. Pads 1-16 (notes 36-51) then do: Random Synth 1, Random Synth 2, Random Drum Kit, Next Kit, Previous Tab, Next Tab, then the Perform, Synth 1, Synth 2, Drums 1-8, Drums 9-16, Mix and Macros tabs, Synth 1 and 2 Next Sound, and All Notes Off. Re-assign any of them in **SETUP > PAD ACTIONS**.
+4. For pad actions, set the BeatStep's Control Mode pads to **MIDI channel 16** in Arturia MIDI Control Center. Pads 1-16 (notes 36-51) then run actions (random sounds, next kit, change screens and more); on PROJECTS, LIVE FX, BEATS, STEMS and the LOOPER they play that screen's own pads. Re-assign any of them in **SETUP > PAD ACTIONS**.
+5. Open **JAM > PROJECTS**, tap the project number you're playing on the BeatStep, and jam. When something sounds good, **CAPTURE > STEMS > BOUNCE**.
 
-![Control map](docs/images/control-map.png)
-
-The **[manual](docs/PotentialBox-Manual.pdf)** covers every page, knob and button, plus troubleshooting.
+The **[manual](docs/PotentialBox-Manual.pdf)** covers every screen, knob and button, plus troubleshooting.
 
 ---
 

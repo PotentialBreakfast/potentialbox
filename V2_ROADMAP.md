@@ -1,6 +1,6 @@
 # PotentialBox v2.0 roadmap (Milestone B first)
 
-Keeps the **BeatStep Pro as the master sequencer** (MIDI ch 1/2/10/16). Skins: Print Plate, Night Rack, Colour Block, Vintage (added).
+Keeps the **BeatStep Pro as the master sequencer** (MIDI ch 1/2/10/16). Look: Hi-Fi (v2.0 has one look).
 
 ## Milestone B — Sound engine (in progress)
 - Supersaw oscillator blend (detuned saw stack) on Synth 1

@@ -1,5 +1,60 @@
 # Changelog
 
+## 2.0.0
+A streamlined PotentialBox for jamming, with a new layout, new sounds and stem bouncing.
+
+**New layout**
+- **Five sections** along the bottom instead of 14 tabs: **JAM** (Projects, Live FX, Knobs, Macros), **SOUNDS**
+  (Synth 1, Synth 2, Drums, Mix, FX), **BEATS** (Beats, Arrange), **CAPTURE** (Stems, Looper) and **SETUP**. Each
+  section's sub-tabs sit at the top left, and a section remembers the sub-tab you were on. Ctrl+1-5 jump to them.
+- **A display** across the top says what's loaded (project, both sounds, kit), shows recording and bouncing, and
+  carries messages. Audio and MIDI are two lights (tap for Setup); the level meter is an LED ladder.
+- **JAM > PROJECTS** redone as the jam home: the 16 projects laid out like the BeatStep's pads, NOW PLAYING with a
+  MUTATE key per part, a MUTATE panel, and tempo / clock out / talk / kit / project FX along the bottom.
+- **JAM > KNOBS** (was Perform) now has the same 16 knobs as Projects, so it shows what the BeatStep knobs do there.
+- **SOUNDS > DRUMS** is one tab for all 16 pads, with seven pages (Tune, Mix and Groove for 1-8 and 9-16, Choke). The
+  old Drums 1-8 / Drums 9-16 pad actions still work and open the matching page.
+- **Hi-Fi** is the only look, refreshed for the new layout (section keys with LEDs, display-style browsers). The LOOK
+  key on Setup is replaced by MY SETUPS.
+
+**Synth sound browser and new presets**
+- SYNTH 1 and SYNTH 2 open on a **sound browser**: types on the left (All, Bass, Lead, Keys, Pad, Pluck, Stab, FX, My
+  Sounds), the sounds on a display, PREV / NEXT inside the type, TEST, RANDOM, SAVE SOUND, and 16 quick knobs
+  underneath. **EDIT SOUND** opens the nine edit pages; **SOUNDS** (or tapping the sub-tab again) comes back.
+- **77 new presets** (41 on Synth 1, 36 on Synth 2) replace the old ones, each made for the current engine: unison
+  and supersaw, clean subs, filter drive, the five distortions, the synth FX, comb and formant filters, FM, ring mod,
+  sync, scale chords, the arp, the 30 wavetables and the warp modes. Presets live in their own file (`presets.py`),
+  written readably (`dist="Tube"`, `mod(9, "LFO 1", "FM", 0.35)`).
+- **Level-matched**: a new per-sound **Sound level** (ENV page, knob 16) is set by each preset from measured loudness,
+  so switching sounds doesn't jump in volume and your volume knob stays put. Saved sounds from 1.x play exactly as before.
+- Synth 2 now has a DC blocker: warp modes like Mirror and Squeeze no longer push the wave off centre.
+
+**CAPTURE > STEMS**
+- **BOUNCE 1 / 2 / 4 / 8 BARS**: waits for the next bar while the BeatStep (or Clock out) plays, then records exactly
+  that many bars of the mix plus Drums, Synth 1, Synth 2, FX and Looper. Every file is the same length to the sample,
+  so they loop and line up; silent parts are left out. Saved as 24-bit WAVs in Music > PotentialBox Loops, in a folder
+  named with the project, tempo and length.
+- **SEND TO MPC**: copies a bounce to `<SD card>/PotentialBox Loops/<name>/` on the MPC over SSH, using MPC TOOLS' key
+  login and saved address. SEND LAST BOUNCE, SEND on any recent bounce, or AUTO-SEND after every bounce.
+- YOUR BOUNCES lists the last four (tap to open the folder). RECORD (any length) and RESAMPLE PAD are here too.
+- BeatStep pads on STEMS: 1-4 bounce 1/2/4/8 bars, 5 send to MPC, 6 record, 7 cancel, 16 back. New pad actions:
+  Capture Tab, Bounce Stems, Send Last Bounce to MPC, Jam Section, Sounds Section.
+
+**Manual**
+- Rewritten around the five sections, with chapters for Projects, the sound browser and Capture, the Uni+FX pages,
+  scale chords and the chord lane, and every new preset listed by type.
+
+## 1.13.0
+- **Chords in the key**: Scale triad, Scale 7th and Scale 9th chord types, Chord key and Chord scale, and the Chord
+  lane (BeatStep drum tracks 9-15 pick the chord, I-VII). The 16 genre projects play their melodies as chords.
+
+## 1.12.0
+- **Bigger synths**: a UNI+FX page on both synths with unison (1-7 voices, detune, width), filter drive, distortion
+  (Tube, Tape, Fold, Crush, Hard clip), synth FX (Chorus, Ensemble, Dimension, Phaser, Flanger), sub modes, and warp on
+  Synth 2 (Bend, Mirror, Sync, Squeeze, Phase FM, Quantize).
+- **Projects tab**: sounds for the 16 BeatStep genre sets, NEW SOUNDS, KIT: MY SAMPLES, PROJECT FX + TEMPO, voice
+  control, and MUTATE (Mild / Medium / Wild, Back, Auto every 8 or 16 bars).
+
 ## 1.11.0
 - **Five looks** now: Print Plate, Night Rack, Colour Block, **Vintage** and the new **Hi-Fi**.
 - **Hi-Fi** (new) matches the BeatStep Pro: charcoal faceplate, walnut cabinet round the window, cream
