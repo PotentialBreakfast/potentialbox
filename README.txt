@@ -16,7 +16,8 @@ WHAT PLAYS WHAT (factory BeatStep Pro settings)
 THE FIVE SECTIONS (big keys along the bottom; sub-tabs top left)
   JAM      PROJECTS  tap 1-16 (or a pad, or say "project seven") for that genre set's bass,
                      lead, kit, effects and tempo. MUTATE: new sounds on the next bar.
-           LIVE FX   hold-to-play effects, 8 scenes with morph, fill, record.
+           LIVE FX   hold-to-play effects, 8 scenes with morph, fill, record, and
+                     GRAB LAST 4 BARS: saves what you just played as stems.
            KNOBS     what the BeatStep knobs do on PROJECTS.   MACROS  16 performance knobs.
   SOUNDS   SYNTH 1 / SYNTH 2  a sound browser: pick a type (BASS, LEAD, KEYS, PAD, PLUCK,
                      STAB, FX, MY SOUNDS), tap a sound. EDIT SOUND opens every setting;
@@ -24,8 +25,9 @@ THE FIVE SECTIONS (big keys along the bottom; sub-tabs top left)
            DRUMS     18 kits, KIT MAKER, the drum BUS (punch, room, width, tone, crush),
                      and pad tune / mix / groove / choke pages.
            MIX, FX   levels, ducking, EQ, mute/solo; delay, reverb and the master chain.
-  BEATS    BEATS     beat generator in 24 genres, SEND TO BEATSTEP.   ARRANGE  chain beats.
-  CAPTURE  STEMS     BOUNCE 1/2/4/8 bars: the mix + drums + synth 1 + synth 2 + FX + looper
+  BEATS    BEATS     beat generator in 24 genres, BACK to the last beat, SEND TO BEATSTEP.
+                     ARRANGE  chain beats.
+  CAPTURE  STEMS     BOUNCE NEXT or GRAB LAST 1/2/4/8 bars: mix + drums + synth 1 + synth 2 + FX + looper
                      as bar-exact WAV loops in Music > PotentialBox Loops. SEND TO MPC copies
                      them to the MPC's SD card (PotentialBox Loops folder) using MPC TOOLS'
                      SSH login. AUTO-SEND does it after every bounce.

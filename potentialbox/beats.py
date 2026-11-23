@@ -680,6 +680,8 @@ class BeatPlayer:
             k0 = int(math.ceil(self.pos / L - 1e-9))
             t = k0 * L
             while t < self.pos + n:
+                if k0 % 16 == 0:   # v2.2: a bar starts here (for GRAB)
+                    eng.hist_marks.append(eng.samples + int(t - self.pos))
                 self._step(k0, int(t - self.pos))
                 k0 += 1
                 t = k0 * L

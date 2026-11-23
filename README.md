@@ -26,10 +26,10 @@ Everything lives under five big keys along the bottom; each has a few sub-tabs.
 
 | Section | Sub-tabs |
 |---|---|
-| **JAM** | **PROJECTS**: sounds for the 16 BeatStep genre sets, MUTATE (new sounds on the next bar), talk to it · **LIVE FX**: punch-in effects, 8 morphing scenes, fill · **KNOBS** · **MACROS** |
+| **JAM** | **PROJECTS**: sounds for the 16 BeatStep genre sets, MUTATE (new sounds on the next bar), talk to it · **LIVE FX**: punch-in effects, 8 morphing scenes, fill, **GRAB** the last bars you played · **KNOBS** · **MACROS** |
 | **SOUNDS** | **SYNTH 1 / SYNTH 2**: a sound browser (77 presets by type) with every setting under EDIT SOUND · **DRUMS**: kits, Kit Maker, pad tune / mix / groove / choke · **MIX** · **FX** |
-| **BEATS** | Beat generator in 24 genres, Send to BeatStep, Clock out · **ARRANGE**: chain beats into a song |
-| **CAPTURE** | **STEMS**: one tap bounces 1, 2, 4 or 8 bar-exact loops (mix + drums + each synth + FX + looper) and can send them straight to your MPC · **LOOPER**: 5-track RC-505-style looper |
+| **BEATS** | Beat generator in 24 genres, ◀ BACK to the beat before, Send to BeatStep, Clock out · **ARRANGE**: chain beats into a song |
+| **CAPTURE** | **STEMS**: one tap bounces the next (or grabs the last) 1, 2, 4 or 8 bar-exact loops (mix + drums + each synth + FX + looper) and can send them straight to your MPC · **LOOPER**: 5-track RC-505-style looper |
 | **SETUP** | Audio (ASIO), MIDI, knobs, pad actions, My Setups |
 
 | Sound browser | Capture: bounce stems | Live FX |
@@ -46,6 +46,7 @@ Everything lives under five big keys along the bottom; each has a few sub-tabs.
 - **77 presets** made for the current engine, sorted into Bass, Lead, Keys, Pad, Pluck, Stab and FX, and level-matched so switching never jumps in volume
 - **Modulation**: 2 tempo-syncable LFOs with a 16-step mode, a mod envelope and 12 mod slots per synth; scale chords and a chord lane driven by the BeatStep's drum tracks; an arpeggiator on each synth
 - **Projects**: one tap (or a pad, or your voice) loads a genre's bass, lead, kit, effects and tempo to match your BeatStep genre sets; MUTATE changes them on the next bar, manually or every 8 / 16 bars
+- **Grab what you just played**: it's always listening, so one tap saves the last 1-8 bars as stems, snapped to the bar
 - **Bounce stems**: bar-exact loops of the mix and each part, 24-bit WAV, named with the tempo, and sent to the MPC's SD card over SSH using MPC TOOLS' login
 - **Beat generator**, **arrangement**, **5-track looper**, **step locks**, **punch-in effects**, **scenes with morph**, **16 performance macros**, **side-chain ducking**, **EQ**, **delay**, **reverb** and a **master FX chain**
 - **Drums**: 18 synthesized kits (808, 909, acoustic-style and genre kits from house to jungle, dub, drill and afro), a drum bus with punch, room, width, tone and crush set per genre, a drum machine library browser, a pad editor, 8 slots for your own kits, and the **Kit Maker**, which builds kits from all your one-shots (and can fetch your MPC's DRUM ONE SHOTS)
@@ -77,7 +78,7 @@ The installer sets up a private copy of Python 3.12 and the audio libraries in y
 2. Press **PLAY** on the BeatStep Pro. The sequencers play the synths and drums straight away.
 3. Press **CONTROL MODE** on the BeatStep Pro to make its 16 knobs control the page you have open.
 4. For pad actions, set the BeatStep's Control Mode pads to **MIDI channel 16** in Arturia MIDI Control Center. Pads 1-16 (notes 36-51) then run actions (random sounds, next kit, change screens and more); on PROJECTS, LIVE FX, BEATS, STEMS and the LOOPER they play that screen's own pads. Re-assign any of them in **SETUP > PAD ACTIONS**.
-5. Open **JAM > PROJECTS**, tap the project number you're playing on the BeatStep, and jam. When something sounds good, **CAPTURE > STEMS > BOUNCE**.
+5. Open **JAM > PROJECTS**, tap the project number you're playing on the BeatStep, and jam. When something sounds good, tap **GRAB LAST 4 BARS** on **JAM > LIVE FX**: it saves what you just played.
 
 The **[manual](docs/PotentialBox-Manual.pdf)** covers every screen, knob and button, plus troubleshooting.
 

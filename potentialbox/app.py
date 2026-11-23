@@ -10,6 +10,7 @@ Look: the PotentialSuite looks (Print Plate, Night Rack, Colour Block, Vintage),
 import os
 import sys
 import json
+import copy
 import math
 import time
 import traceback
@@ -67,7 +68,7 @@ except Exception:                         # pragma: no cover
     skins = None
 
 APP = "PotentialBox"
-VERSION = "2.1.1"
+VERSION = "2.2.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 # v2.0: five big sections along the bottom; each has a few sub-tabs (shown in the header). A sub-tab is one of the
@@ -102,7 +103,7 @@ OWN_SCREEN_PAGES = ("Projects", "Beats", "Live", "Loop", "Capture")  # tabs that
 LOOP_PADS = [f"Track {t} rec / play / dub" for t in range(1, 6)] + ["Undo / redo", "All stop / play",
              "Record next empty track"] + [f"Track {t} stop (hold: clear)" for t in range(1, 6)] + [
              "Reverse last track", "Speed last track", "Back to last tab"]
-BEAT_PADS = ["Play / stop", "New beat", "Previous genre", "Next genre", "Hold: Fill", "Mutate", "Simpler", "Busier",
+BEAT_PADS = ["Play / stop", "New beat", "Back (previous beat)", "Next genre", "Hold: Fill", "Mutate", "Simpler", "Busier",
              "Mute kick", "Mute snare", "Mute hats", "Mute perc", "Tempo down", "Tempo up", "Send to BeatStep",
              "Back to last tab"]
 ACTIONS = [("rand_s1", "Random Synth 1"), ("rand_s2", "Random Synth 2"), ("rand_kit", "Random Drum Kit"),
@@ -117,16 +118,18 @@ ACTIONS = [("rand_s1", "Random Synth 1"), ("rand_s2", "Random Synth 2"), ("rand_
            ("proj_mutate", "Mutate Project Sounds"), ("proj_back", "Project Sounds Back"),
            # v2.0
            ("tab:Capture", "Capture Tab"), ("bounce", "Bounce Stems"), ("send_mpc", "Send Last Bounce to MPC"),
-           ("sec:JAM", "Jam Section"), ("sec:SOUNDS", "Sounds Section")]
+           ("sec:JAM", "Jam Section"), ("sec:SOUNDS", "Sounds Section"),
+           # v2.2
+           ("grab", "Grab Last Bars"), ("beat_back", "Previous Beat (Back)")]
 ACTION_NAMES = dict(ACTIONS)
 CAPTURE_PADS = ["Bounce 1 bar", "Bounce 2 bars", "Bounce 4 bars", "Bounce 8 bars", "Send last bounce to MPC",
-                "Record on/off", "Cancel bounce"] + [""] * 8 + ["Back to last tab"]
+                "Record on/off", "Cancel bounce", "Grab last bars"] + [""] * 7 + ["Back to last tab"]
 PROJECT_PADS = [f"Load project {i} ({n})" for i, n in enumerate(projmod.NAMES, 1)]  # Projects tab pads
 PAD_ACTIONS = [aid for aid, _ in ACTIONS[:16]]
 HOLD_ACTIONS = {"fill"}
 # On the Live tab the 16 BeatStep pads (the ones set to pad actions 1-16) play these instead
 LIVE_PADS = [f"Hold: {n}" for n in PUNCH_FX] + ["Hold: Fill", "Hold: Scene morph", "Record on/off", "Random Synth 1",
-                                                 "Random Synth 2", "Random Drum Kit", "Next Kit", "Back to last tab"]
+                                                 "Random Synth 2", "Random Drum Kit", "Grab last bars", "Back to last tab"]
 
 
 def default_actions():
@@ -1198,6 +1201,9 @@ class App:
         self.auto_block = None
         self.send_countdown = None
         self.bounce_job = None     # v2.0: the last stem bounce being saved
+        self.bounce_jobs = []      # v2.2: every bounce / grab still saving
+        self.grab_wait = None      # v2.2: GRAB waiting for the bar to finish
+        self.beat_hist = []        # v2.2: beats before NEW BEAT / MUTATE / ..., for ◀ BACK
         self.mpc_sender = None     # v2.0: MpcSend while sending loops to the MPC
         if self.state.clock_master:
             self.root.after(1500, lambda: self.clockout.enable() or self.show_toast("CLOCK OUT: BEATSTEP NOT FOUND"))
@@ -1929,7 +1935,9 @@ class App:
         b = eng.bounce
         if b:
             parts.append(self.bounce_text(b))
-        elif self.bounce_job and self.bounce_job.get("state") == "saving":
+        elif self.grab_wait:
+            parts.append("GRAB: FINISHING THIS BAR...")
+        elif any(j.get("state") == "saving" for j in self.bounce_jobs):
             parts.append("SAVING STEMS...")
         pr = self.state.project
         if pr is not None:
@@ -3011,6 +3019,10 @@ class App:
             self.set_section(aid[4:])
         elif aid == "bounce":
             self.bounce_start()
+        elif aid == "grab":
+            self.grab_start()
+        elif aid == "beat_back":
+            self.beat_back()
         elif aid == "send_mpc":
             self.send_last_bounce()
         elif aid == "panic":
@@ -3035,7 +3047,7 @@ class App:
         elif i == 9:
             self.scene_hold(on)
         elif on:
-            self.action_q.append({10: "rec", 11: "rand_s1", 12: "rand_s2", 13: "rand_kit", 14: "next_kit",
+            self.action_q.append({10: "rec", 11: "rand_s1", 12: "rand_s2", 13: "rand_kit", 14: "grab",
                                   15: "tab:" + self.state.last_tab}[i])
         self.request_redraw()
 
@@ -3173,7 +3185,7 @@ class App:
         eng = self.audio.engine
         p = self.state.params
         self.frame(14, 100, 1252, 372, "Live",
-                   "BEATSTEP PADS HERE: 1-8 EFFECTS · 9 FILL · 10 HOLD SCENE · 11 REC · 12-15 RANDOM / KITS · 16 BACK")
+                   "BEATSTEP PADS HERE: 1-8 EFFECTS · 9 FILL · 10 HOLD SCENE · 11 REC · 12-14 RANDOM · 15 GRAB · 16 BACK")
         for i, key in enumerate(PAGES["Live"]):
             self.mini_knob(i, 14 + 39 + i * 77.5, 172, key)
         self.text(34, 262, "PUNCH-IN EFFECTS · HOLD", 11, T["accent"], True, "w")
@@ -3216,16 +3228,25 @@ class App:
         self.text(320, y + 221, f"HOLD FOR SCENE {dst}  ·  PAD 10", 14, T["btn_text"], True)
         self.hit(40, y + 202, 560, 38, self.scene_hold, "hold")
         # record
+        # v2.2: GRAB saves the bars you just played (always listening), RECORD runs until you stop it
         rec = eng.recorder
-        self.frame(650, y, 300, 250, "Record", "")
-        self.button(800, y + 92, 260, 76, "STOP RECORDING" if rec else "● RECORD", self.toggle_rec, accent=True, px=19)
-        self.seg(670, y + 146, 130, 34, ["MIX ONLY", "MIX + STEMS"], "MIX + STEMS" if self.state.rec_stems else "MIX ONLY",
-                 self.pick_stems, vertical=False)
+        self.frame(650, y, 300, 250, "Capture", "")
+        gb = self.state.bounce_bars
+        waiting = bool(self.grab_wait)
+        self.rrect(670, y + 46, 260, 78, 12, T["btn_on"])
+        self.text(800, y + 76, "GRABBING..." if waiting else f"GRAB LAST {gb} BAR{'S' if gb > 1 else ''}", 21,
+                  T["btn_text"], True)
+        self.text(800, y + 104, "WHAT YOU JUST PLAYED · PAD 15", 11, T["btn_text"], True)
+        self.hit(670, y + 46, 260, 78, self.grab_start)
+        opts = [f"{n} BAR" + ("S" if n > 1 else "") for n in self.BOUNCE_BARS]
+        self.seg(670, y + 132, 65, 32, opts, f"{gb} BAR" + ("S" if gb > 1 else ""), self.set_grab_bars, vertical=False)
         if rec:
             sec = int(rec.seconds())
-            self.text(800, y + 206, f"{sec // 60:02d}:{sec % 60:02d}  ·  PAD 11 STOPS", 14, "#d9534f", True)
+            self.button(800, y + 202, 260, 56, f"■ STOP  {sec // 60:02d}:{sec % 60:02d}", self.toggle_rec, on=True, px=17)
         else:
-            self.button(800, y + 212, 260, 40, "OPEN RECORDINGS FOLDER", self.open_recordings, px=12)
+            self.button(734, y + 202, 126, 56, "● RECORD", self.toggle_rec, px=16)
+            self.button(866, y + 202, 126, 56, "STEMS: ON" if self.state.rec_stems else "STEMS: OFF",
+                        lambda: self.pick_stems("MIX ONLY" if self.state.rec_stems else "MIX + STEMS"), px=13)
         # more
         self.frame(960, y, 306, 250, "More", "")
         on = eng.fill or 8 in self.live_held
@@ -3288,6 +3309,7 @@ class App:
 
     def beat_genre(self, g):
         eng = self.audio.engine
+        self.beat_push()
         name, bpm, swing, steps, kit, fill, parts = GENRES[g % len(GENRES)]
         eng.beats.beat = Beat(g, bars=self.state.beat_bars)
         if self.state.beat_kit == "samples" and self.samples.entries:
@@ -3321,14 +3343,19 @@ class App:
             if bp.on and not eng.playing:
                 bp.pos = 0.0
         elif i == 1:
+            self.beat_push()
             bp.beat = Beat(g, bars=self.state.beat_bars)
             self.beat_save()
-        elif i in (2, 3):
-            self.action_q.append(("genre", (g + (1 if i == 3 else -1)) % len(GENRES)))
+        elif i == 2:
+            self.action_q.append("beat_back")   # v2.2: was "previous genre" (the genre buttons are on screen)
+        elif i == 3:
+            self.action_q.append(("genre", (g + 1) % len(GENRES)))
         elif i == 5:
+            self.beat_push()
             bp.beat.mutate()
             self.beat_save()
         elif i in (6, 7):
+            self.beat_push()
             what = bp.beat.busier() if i == 7 else bp.beat.simpler()
             self.beat_save()
             self.action_q.append(("toast", ("BUSIER: " if i == 7 else "SIMPLER: ") + what.upper() if what else
@@ -3439,8 +3466,66 @@ class App:
 
     def beat_cell(self, role, step):
         bp = self.audio.engine.beats
+        self.beat_push()
         bp.beat.toggle(role, step)
         self.beat_save()
+
+    # ---------------------------------------------------------------- v2.2: ◀ BACK to the beat before
+    BEAT_HIST_MAX = 40
+
+    def beat_push(self):
+        """Remember the beat (and the genre's kit, drum bus and tempo) before it changes, for ◀ BACK.
+        Safe from the MIDI thread: it only reads and appends."""
+        eng = self.audio.engine
+        bp = eng.beats
+        p = self.state.params
+        try:
+            snap = {"beat": bp.beat.to_json(), "mutes": sorted(bp.mutes), "bars": self.state.beat_bars,
+                    "bpm": eng.bpm, "kit": copy.deepcopy(self.state.kit),
+                    "bus": {k: p.norm[k] for k in beatsmod.DRUM_BUS_KEYS if k in p.norm}}
+        except Exception as e:  # noqa: BLE001
+            log("beat history failed", e)
+            return
+        self.beat_hist.append(snap)
+        del self.beat_hist[:-self.BEAT_HIST_MAX]
+
+    def beat_back(self):
+        """Step back to the beat before the last NEW BEAT / MUTATE / SIMPLER / BUSIER / genre / tap.
+        If the genre changed, its kit, drum bus and tempo come back too."""
+        eng = self.audio.engine
+        bp = eng.beats
+        if not self.beat_hist:
+            self.show_toast("NOTHING TO GO BACK TO")
+            return
+        snap = self.beat_hist.pop()
+        old_genre = bp.beat.genre
+        try:
+            b = Beat.from_json(snap["beat"])
+        except Exception as e:  # noqa: BLE001
+            log("beat back failed", e)
+            self.show_toast("COULDN'T GO BACK")
+            return
+        bp.beat = b
+        bp.mutes = set(snap.get("mutes", []))
+        if snap.get("bars") in BAR_CHOICES:
+            self.state.beat_bars = snap["bars"]
+        if b.genre != old_genre:
+            if snap.get("kit") and snap["kit"] != self.state.kit:
+                self.state.kit = snap["kit"]
+                try:
+                    self.audio.apply_kit(eng)
+                except Exception as e:  # noqa: BLE001
+                    log("kit back failed", e)
+            p = self.state.params
+            for k, n in snap.get("bus", {}).items():
+                if k in SPECS:
+                    p.set_norm(k, n)
+            if not self.clock_live() and snap.get("bpm"):
+                eng.bpm = float(snap["bpm"])
+        self.beat_save()
+        left = len(self.beat_hist)
+        self.show_toast(f"BACK: {GENRES[b.genre][0].upper()}" + (f" · {left} MORE" if left else ""), 1.2)
+        self.request_redraw()
 
     def draw_beats(self):
         eng = self.audio.engine
@@ -3448,7 +3533,7 @@ class App:
         b = bp.beat
         gname, gbpm, gswing, steps, gkit, _, _ = GENRES[b.genre]
         self.frame(14, 100, 1252, 632, "Beats",
-                   "PADS HERE: 1 PLAY · 2 NEW BEAT · 3/4 GENRE · 5 FILL · 6 MUTATE · 7/8 SIMPLER/BUSIER · 9-12 MUTES · 15 SEND · 16 BACK")
+                   "PADS HERE: 1 PLAY · 2 NEW BEAT · 3 ◀ BACK · 4 NEXT GENRE · 5 FILL · 6 MUTATE · 7/8 SIMPLER/BUSIER · 9-12 MUTES · 15 SEND · 16 TAB BACK")
         for i, key in enumerate(PAGES["Beats"]):
             self.mini_knob(i, 14 + 39 + i * 77.5, 172, key)
         # genres
@@ -3502,23 +3587,29 @@ class App:
         # controls
         cy = 594
         running = self.clockout.playing if self.state.clock_master else bp.on
-        self.button(105, cy, 150, 60, "STOP" if running else "▶ PLAY", lambda: self.beat_pad(0, True), accent=not running, px=20)
-        self.button(275, cy, 170, 60, "NEW BEAT", lambda: self.beat_pad(1, True), accent=True, px=19)
-        self.button(440, cy, 140, 60, "NEW ENDING", self.beat_new_ending, px=14)
-        self.button(578, cy, 116, 60, "MUTATE", lambda: self.beat_pad(5, True), px=14)
-        self.button(698, cy, 104, 60, "SIMPLER", lambda: self.beat_pad(6, True), px=13)
-        self.button(808, cy, 96, 60, "BUSIER", lambda: self.beat_pad(7, True), px=13)
+        self.button(95, cy, 130, 60, "STOP" if running else "▶ PLAY", lambda: self.beat_pad(0, True), accent=not running, px=20)
+        self.button(250, cy, 160, 60, "NEW BEAT", lambda: self.beat_pad(1, True), accent=True, px=19)
+        nb = len(self.beat_hist)
+        self.rrect(340, cy - 30, 104, 60, 12, T["btn_bg"])
+        self.text(392, cy - (7 if nb else 0), "◀ BACK", 17, T["btn_text"] if nb else T["key_dim"], True)
+        if nb:
+            self.text(392, cy + 15, f"{nb} STEP{'S' if nb > 1 else ''}", 10, T["key_dim"], True)
+        self.hit(340, cy - 30, 104, 60, self.beat_back)
+        self.button(518, cy, 128, 60, "NEW ENDING", self.beat_new_ending, px=14)
+        self.button(646, cy, 108, 60, "MUTATE", lambda: self.beat_pad(5, True), px=14)
+        self.button(760, cy, 100, 60, "SIMPLER", lambda: self.beat_pad(6, True), px=13)
+        self.button(866, cy, 92, 60, "BUSIER", lambda: self.beat_pad(7, True), px=13)
         fon = eng.fill or ("fill",) in self.live_held
-        self.rrect(862, cy - 30, 130, 60, 12, T["btn_on"] if fon else T["btn_bg"])
-        self.text(927, cy - 6, "HOLD FOR", 11, T["btn_text"], True)
-        self.text(927, cy + 12, "FILL", 18, T["btn_text"], True)
-        self.hit(862, cy - 30, 130, 60, lambda on: self.beat_pad(4, on), "hold")
+        self.rrect(922, cy - 30, 118, 60, 12, T["btn_on"] if fon else T["btn_bg"])
+        self.text(981, cy - 6, "HOLD FOR", 11, T["btn_text"], True)
+        self.text(981, cy + 12, "FILL", 18, T["btn_text"], True)
+        self.hit(922, cy - 30, 118, 60, lambda on: self.beat_pad(4, on), "hold")
         if self.send_countdown:
             sl = f"PRESS REC · STARTS IN {max(0, int(self.send_countdown - time.time()) + 1)}"
         else:
             sl = {"armed": "WAITING FOR STEP 1" if self.state.clock_master else "WAITING FOR REC + PLAY",
                   "sending": f"SENDING {bp.sent}/{b.steps}"}.get(bp.send, "SEND TO BEATSTEP")
-        self.button(1130, cy, 250, 60, sl, lambda: self.beat_pad(14, True), accent=not bp.send, on=bool(bp.send), px=15)
+        self.button(1157, cy, 195, 60, sl, lambda: self.beat_pad(14, True), accent=not bp.send, on=bool(bp.send), px=14)
         cy2 = 664
         for k, grp in enumerate(GROUP_NAMES):
             self.button(76 + k * 96, cy2, 90, 44, ("MUTED " if grp in bp.mutes else "") + grp.upper(),
@@ -3947,6 +4038,7 @@ class App:
 
     def beat_bars_step(self):
         bp = self.audio.engine.beats
+        self.beat_push()
         i = BAR_CHOICES.index(self.state.beat_bars) if self.state.beat_bars in BAR_CHOICES else 1
         self.state.beat_bars = BAR_CHOICES[(i + 1) % len(BAR_CHOICES)]
         bp.beat = Beat(bp.beat.genre, bars=self.state.beat_bars)
@@ -3956,6 +4048,7 @@ class App:
 
     def beat_new_ending(self):
         bp = self.audio.engine.beats
+        self.beat_push()
         bp.beat.new_ending()
         self.beat_save()
         self.show_toast("NEW ENDING: " + bp.beat.turn_text().upper())
@@ -4657,6 +4750,94 @@ class App:
             self.audio.engine.bounce = None
             self.show_toast("BOUNCE CANCELLED")
 
+    def save_capture(self, get_parts, bpm, bars, silent_msg, lead="SAVED"):
+        """Save a bounce or a grab as stems in Music > PotentialBox Loops (in the background), then list it
+        under YOUR BOUNCES and auto-send it to the MPC if that's on."""
+        eng = self.audio.engine
+        pr = self.state.project
+        what = projmod.NAMES[pr] if pr is not None else "Jam"
+        name = capture.bounce_name(what, bpm, bars)
+        job = {"state": "saving", "name": name, "lead": lead}
+        self.bounce_jobs.append(job)
+        self.bounce_job = job
+
+        def work():
+            try:
+                parts = get_parts()
+                mix = parts["mix"]
+                if not len(mix) or float(np.max(np.abs(mix))) < capture.SILENT:
+                    job.update(state="error", msg=silent_msg)
+                    return
+                folder, files = capture.save_bounce(parts, eng.sr, name)
+                job.update(state="saved", folder=folder, files=files)
+            except Exception as e:  # noqa: BLE001
+                log("bounce save failed", traceback.format_exc())
+                job.update(state="error", msg=f"COULDN'T SAVE THE STEMS ({e.__class__.__name__})")
+        threading.Thread(target=work, daemon=True).start()
+
+    # ---------------------------------------------------------------- v2.2: GRAB the last bars you played
+    def grab_start(self, bars=None):
+        """Save the bars you've just played: the engine always keeps the last 34 seconds of the mix and
+        every stem. It snaps to the nearest bar line: early in a bar it takes the bars before it, later in
+        a bar it waits for the bar to finish and includes it."""
+        eng = self.audio.engine
+        bars = bars or self.state.bounce_bars
+        if self.grab_wait:
+            self.show_toast("ALREADY GRABBING - JUST A MOMENT")
+            return
+        first, now = eng.hist_room()
+        if now - first < eng.sr * 0.5:
+            self.show_toast("NOTHING PLAYED YET")
+            return
+        bar = 4 * 60.0 / max(eng.bpm, 30.0) * eng.sr
+        marks = [m for m in list(eng.hist_marks) if m <= now]
+        last = marks[-1] if marks else None
+        if last is not None and now - last <= bar * 1.5:   # bars are running (BeatStep clock or the beat player)
+            if now - last <= bar * 0.5:
+                self.grab_finish(bars, last)
+            else:
+                self.grab_wait = {"bars": bars, "after": last, "t0": time.time(), "secs": (bar - (now - last)) / eng.sr}
+                self.show_toast("GRAB: FINISHING THIS BAR...", 1.0)
+        else:
+            self.grab_finish(bars, now, on_bar=False)
+        self.request_redraw()
+
+    def grab_poll(self):
+        g = self.grab_wait
+        if not g:
+            return
+        eng = self.audio.engine
+        marks = list(eng.hist_marks)
+        if marks and marks[-1] > g["after"] and marks[-1] <= eng.hist_room()[1]:
+            self.grab_wait = None
+            self.grab_finish(g["bars"], marks[-1])
+        elif time.time() - g["t0"] > g["secs"] + 0.6:   # the clock stopped: take it up to now
+            self.grab_wait = None
+            self.grab_finish(g["bars"], eng.hist_room()[1], on_bar=False)
+        self.request_redraw()
+
+    def grab_finish(self, bars, end, on_bar=True):
+        eng = self.audio.engine
+        bpm = eng.bpm
+        pre = int(0.003 * eng.sr) if on_bar else 0
+        end -= pre   # 3 ms early, so the downbeat's attack (and any humanize) is at the start, not the end
+        first, _ = eng.hist_room(pre)
+        got = bars
+        while got > 1 and int(got * 4 * 60.0 / max(bpm, 30.0) * eng.sr) > end - first:
+            got //= 2
+        need = int(got * 4 * 60.0 / max(bpm, 30.0) * eng.sr)
+        parts = eng.hist_cut(end - need, end, pre) if need <= end - first else None
+        if parts is None:
+            self.show_toast("PLAY A WHOLE BAR FIRST")
+            return
+        lead = "GRABBED" if got == bars else f"ONLY {got} BAR{'S' if got > 1 else ''} SO FAR · GRABBED"
+        self.save_capture(lambda: parts, bpm, got, f"NOTHING PLAYED IN THE LAST {got} BAR{'S' if got > 1 else ''}", lead)
+        self.show_toast(f"GRABBING THE LAST {got} BAR{'S' if got > 1 else ''}...", 1.2)
+
+    def set_grab_bars(self, label):
+        self.state.bounce_bars = int(label.split()[0])
+        self.state.dirty = True
+
     def bounce_tick(self):
         eng = self.audio.engine
         b = eng.bounce
@@ -4666,33 +4847,18 @@ class App:
             self.request_redraw()   # the display at the top shows the bounce on every screen
             if b["state"] == "done":
                 eng.bounce = None
-                pr = self.state.project
-                what = projmod.NAMES[pr] if pr is not None else "Jam"
-                name = capture.bounce_name(what, b["bpm"], b["bars"])
-                job = self.bounce_job = {"state": "saving", "name": name}
-
-                def work():
-                    try:
-                        parts = bounce_stems(b)
-                        mix = parts["mix"]
-                        if not len(mix) or float(np.max(np.abs(mix))) < capture.SILENT:
-                            job.update(state="error", msg="NOTHING HEARD - IS IT PLAYING?")
-                            return
-                        folder, files = capture.save_bounce(parts, eng.sr, name)
-                        job.update(state="saved", folder=folder, files=files)
-                    except Exception as e:  # noqa: BLE001
-                        log("bounce save failed", traceback.format_exc())
-                        job.update(state="error", msg=f"COULDN'T SAVE THE STEMS ({e.__class__.__name__})")
-                threading.Thread(target=work, daemon=True).start()
-        job = self.bounce_job
-        if job and job["state"] in ("saved", "error") and not job.get("seen"):
-            job["seen"] = True
+                self.save_capture(lambda: bounce_stems(b), b["bpm"], b["bars"], "NOTHING HEARD - IS IT PLAYING?")
+        self.grab_poll()
+        for job in list(self.bounce_jobs):
+            if job["state"] not in ("saved", "error"):
+                continue
+            self.bounce_jobs.remove(job)
             if job["state"] == "error":
                 self.show_toast(job["msg"], 2.5)
             else:
                 self.state.bounces = ([job["folder"]] + [f for f in self.state.bounces if f != job["folder"]])[:12]
                 self.state.dirty = True
-                self.show_toast(f"SAVED {len(job['files'])} FILES: {job['name'].upper()}", 2.5)
+                self.show_toast(job.get("lead", "SAVED") + f" {len(job['files'])} FILES: {job['name'].upper()}", 2.5)
                 if self.state.bounce_mpc:
                     self.send_bounce(job["folder"])
             self.request_redraw()
@@ -4738,6 +4904,8 @@ class App:
             self.toggle_rec()
         elif i == 6:
             self.bounce_cancel()
+        elif i == 7:
+            self.grab_start()
         elif i == 15:
             self.set_page(self.state.last_tab)
         self.request_redraw()
@@ -4755,7 +4923,7 @@ class App:
         bars = self.state.bounce_bars
         secs = bars * 4 * 60.0 / max(eng.bpm, 30.0)
         # ---- bounce
-        self.frame(14, 100, 830, 400, "Bounce stems", "BEATSTEP PADS: 1-4 BOUNCE 1/2/4/8 BARS · 5 SEND TO MPC")
+        self.frame(14, 100, 830, 400, "Bounce stems", "BEATSTEP PADS: 1-4 BOUNCE 1/2/4/8 BARS · 5 SEND TO MPC · 8 GRAB")
         self.text(36, 160, "LENGTH", 12, T.get("title", T["accent"]), True, "w")
         opts = [f"{n} BAR" + ("S" if n > 1 else "") for n in self.BOUNCE_BARS]
         for i, o in enumerate(opts):
@@ -4777,14 +4945,16 @@ class App:
                                     self.Y(334), fill=T["bg"])
             self.button(728, 302, 180, 104, "CANCEL", self.bounce_cancel, px=20)
         else:
-            self.button(422, 302, 772, 104, f"●  BOUNCE {bars} BAR" + ("S" if bars > 1 else ""),
-                        self.bounce_start, accent=True, px=30)
+            self.button(280, 302, 488, 104, f"●  BOUNCE NEXT {bars} BAR" + ("S" if bars > 1 else ""),
+                        self.bounce_start, accent=True, px=26)
+            self.button(669, 302, 274, 104, "GRABBING..." if self.grab_wait else f"GRAB LAST {bars} BAR" + ("S" if bars > 1 else ""),
+                        self.grab_start, accent=True, px=20)
         self.text(36, 384, "YOU GET", 12, T.get("title", T["accent"]), True, "w")
         self.text(110, 384, "MIX  +  DRUMS  +  SYNTH 1  +  SYNTH 2  +  FX  +  LOOPER   (silent parts are left out)",
                   14, T["ink"], False, "w")
         self.text(36, 418, f"{bars} bar{'s' if bars > 1 else ''} at {eng.bpm:.0f} BPM = {secs:.1f} seconds. Every file is "
                   "exactly that long, so they loop.", 14, T["ink_dim"], False, "w")
-        self.text(36, 446, "When the BeatStep (or CLOCK OUT) is playing, it starts on the next bar. Stopped: straight away.",
+        self.text(36, 446, "BOUNCE records the next bars (from the next bar line). GRAB saves the bars you just played.",
                   14, T["ink_dim"], False, "w")
         self.text(36, 474, "Saved in Music > PotentialBox Loops, named with the tempo.", 14, T["ink_dim"], False, "w")
         # ---- MPC
@@ -4817,8 +4987,9 @@ class App:
         rec = eng.recorder is not None
         self.button(1078, 592, 340, 58, "■ STOP RECORDING" if rec else "● RECORD (ANY LENGTH)",
                     self.toggle_rec, on=rec, px=17)
-        self.button(990, 662, 164, 52, "OPEN LOOPS", lambda: self.open_folder(capture.loops_dir()), px=14)
-        self.button(1166, 662, 164, 52, "RESAMPLE PAD", lambda: self.open_overlay(("resample",)), px=14)
+        self.button(966, 662, 112, 52, "OPEN LOOPS", lambda: self.open_folder(capture.loops_dir()), px=12)
+        self.button(1078, 662, 104, 52, "RECORDINGS", self.open_recordings, px=12)
+        self.button(1190, 662, 112, 52, "RESAMPLE PAD", lambda: self.open_overlay(("resample",)), px=12)
         self.text(1078, 708, "RECORD saves mix + stems until you stop it", 11, T["ink_faint"])
 
     def draw_tabs(self):

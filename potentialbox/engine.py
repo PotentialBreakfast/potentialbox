@@ -112,6 +112,8 @@ DIST_TYPES = ["Off", "Tube", "Tape", "Fold", "Crush", "Hard clip"]
 SYN_FX = ["Off", "Chorus", "Ensemble", "Dimension", "Phaser", "Flanger"]
 WARPS = ["Off", "Bend +", "Bend -", "Mirror", "Sync", "Squeeze", "Phase FM", "Quantize"]
 BOUNCE_STEMS = ("s1", "s2", "dr", "fx", "lp")  # v2.0: what CAPTURE > STEMS saves next to the mix
+HIST_SECS = 34.0                      # v2.2 GRAB: always keeps this much (8 bars at 60 BPM + a little)
+HIST_KEYS = ("mix",) + BOUNCE_STEMS
 
 
 def bounce_stems(bnc):
@@ -2920,6 +2922,8 @@ class Engine:
         self.recorder = None
         self.capture = None
         self.bounce = None   # v2.0 CAPTURE: bar-locked stems (mix + synth 1 + synth 2 + drums + fx + looper)
+        self.hist = None     # v2.2 GRAB: the last HIST_SECS of the mix and every stem, always running
+        self.hist_marks = collections.deque(maxlen=64)   # where bars started (absolute sample counts)
         self.cb_t = 0.0
         self.cb_prev = 0.0
         self.blk_n = 256
@@ -2965,6 +2969,50 @@ class Engine:
         k, of = c.split(" of ")
         return self.bar() % int(of) == int(k[:-2]) - 1
 
+    def _hist_write(self, out, stems, n):
+        """v2.2 GRAB: keep writing the mix and the stems into a ring buffer, so the last bars can be saved
+        after you've played them."""
+        h = self.hist
+        if h is None or h["sr"] != self.sr:
+            size = int(HIST_SECS * self.sr)
+            h = self.hist = {"sr": self.sr, "size": size, "start": self.samples, "end": self.samples,
+                             "buf": {k: np.zeros((size, 2), np.float32) for k in HIST_KEYS}}
+        if not n:
+            return
+        size = h["size"]
+        i = self.samples % size
+        j = min(n, size - i)
+        for k in HIST_KEYS:
+            x = out if k == "mix" else stems.get(k)
+            b = h["buf"][k]
+            if x is None:
+                b[i:i + j] = 0.0
+                if j < n:
+                    b[:n - j] = 0.0
+            else:
+                b[i:i + j] = x[:j]
+                if j < n:
+                    b[:n - j] = x[j:n]
+        h["end"] = self.samples + n
+
+    def hist_room(self, slack=0):
+        """(first, end): the absolute samples that can safely be copied out of the history now. `slack`
+        lets it reach a little before the very first sample (silence) while the buffer hasn't wrapped."""
+        h = self.hist
+        if h is None:
+            return 0, 0
+        wrap = h["end"] - h["size"] + 8192
+        return max(h["start"] - slack, wrap), h["end"]
+
+    def hist_cut(self, start, end, slack=0):
+        """Copy [start, end) out of the history: {"mix": array, "s1": array, ...}, or None if it's gone."""
+        h = self.hist
+        first, last = self.hist_room(slack)
+        if h is None or start < first or end > last or end <= start:
+            return None
+        idx = np.arange(start, end) % h["size"]
+        return {k: h["buf"][k][idx].astype(np.float64) for k in HIST_KEYS}
+
     def tick_offset(self, ts):
         """Where in this block a tick that arrived at `ts` belongs: events from the last block period are
         spread over this block in the same spacing, so timing jitter becomes a small fixed delay."""
@@ -2995,6 +3043,8 @@ class Engine:
             if not self.playing:
                 return
             t = self.tick
+            if t >= 0 and t % 96 == 0:
+                self.hist_marks.append(self.samples)   # block start: never after a note that came with it
             if t > 0 and t % 96 == 0:
                 self.looper.on_bar()
             if t >= 0:
@@ -3088,7 +3138,7 @@ class Engine:
         rsend = np.zeros((n, 2))
         duck = self.duck_env(n)
         lof, hif = v["eq.lof"], v["eq.hif"]
-        stems = {} if (self.recorder or self.capture or self.bounce) else None
+        stems = {}  # v2.2: always, for the GRAB history (only references, no copies)
         solo_active = (v["s1.solo"] >= 0.5 or v["s2.solo"] >= 0.5 or v["dr.solo"] >= 0.5)
         def track_plays(mute, solo):
             if solo_active:
@@ -3160,6 +3210,10 @@ class Engine:
             out = np.tanh(out * (v["m.master"] * g)) if g > 1.01 else np.tanh(out * v["m.master"])
         pk = float(np.max(np.abs(out))) if n else 0.0
         self.peak = max(pk, self.peak * 0.9)
+        try:
+            self._hist_write(out, stems, n)
+        except Exception:
+            pass
         self.samples += n
         if self.recorder is not None:
             try:

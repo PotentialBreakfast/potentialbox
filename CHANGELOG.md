@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.2.0
+**Catch what you just played.**
+- **GRAB LAST 4 BARS** on JAM > LIVE FX (also on CAPTURE > STEMS, LIVE FX pad 15 and STEMS pad 8). PotentialBox
+  always keeps the last 34 seconds of the mix and every part, so when something good happens you tap GRAB and it
+  saves the bars you just played: the same bar-exact stems as a bounce, in Music > PotentialBox Loops, listed under
+  YOUR BOUNCES and sent to the MPC if AUTO-SEND is on. It snaps to the nearest bar line: tap early in a bar and it
+  takes the bars before it; tap later and it finishes the bar first and includes it. 1, 2, 4 or 8 bars (the same
+  length as BOUNCE). If it hasn't heard that many bars yet, it saves as many as it has.
+- **◀ BACK on BEATS**, next to NEW BEAT. Steps back through NEW BEAT, MUTATE, SIMPLER, BUSIER, NEW ENDING, LENGTH,
+  genre changes and taps on the grid (up to 40 steps). Going back past a genre change brings back that genre's kit,
+  drum bus and tempo too. Beats pad 3 is now BACK (it was previous genre; the genres are all on screen).
+- LIVE FX's RECORD panel is now CAPTURE: GRAB, its bar length, RECORD and STEMS ON / OFF. Pad 15 there is GRAB
+  (it was next kit; random kit is still pad 14). CAPTURE > STEMS: BOUNCE NEXT and GRAB LAST side by side, and a
+  RECORDINGS key to open the recordings folder.
+
 ## 2.1.1
 - **A musical Drum drive.** The old one hit a hard curve with up to 7x gain, so past about half way the kit turned
   into a flat, fizzy square wave and jumped several dB louder. The new drive raises the gain on a curve, saturates

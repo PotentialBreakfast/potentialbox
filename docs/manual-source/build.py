@@ -154,7 +154,7 @@ chapter("Welcome", "PotentialBox turns your Arturia BeatStep Pro into a groovebo
 p("Everything lives under five big keys along the bottom of the screen:")
 table(["Section", "What's there"], [
     (b("JAM"), "PROJECTS (sounds for your 16 BeatStep genre sets, MUTATE, voice), LIVE FX (punch-in effects, scenes, "
-               "fill), KNOBS and MACROS."),
+               "fill, GRAB the last bars), KNOBS and MACROS."),
     (b("SOUNDS"), "SYNTH 1 and SYNTH 2 (a sound browser first, every setting under EDIT SOUND), DRUMS (kits, Kit Maker, "
                   "pad knobs), MIX and FX."),
     (b("BEATS"), "The beat generator in 24 genres, and ARRANGE to chain beats into a song."),
@@ -170,7 +170,9 @@ p("Everything is pre-wired for the BeatStep Pro's factory settings, so you can p
   "is a big key you can tap, and everything saves by itself: there is no typing anywhere in the app.")
 note("<b>New to the layout?</b> The chapter <b>A jam, start to finish</b> walks through one whole session, from loading "
      "a project to chopping its stems on your MPC, with the screen for every step.")
-note(f"<b>New in {VERSION}:</b> a new layout with five sections instead of fourteen tabs; the Hi-Fi look, refreshed; "
+note(f"<b>New in {VERSION}:</b> <b>GRAB</b> saves the bars you just played, as stems, from JAM &gt; LIVE FX or "
+     "CAPTURE; <b>◀ BACK</b> on BEATS steps back to the beat before NEW BEAT or MUTATE.")
+note("<b>New in 2.0:</b> a new layout with five sections instead of fourteen tabs; the Hi-Fi look, refreshed; "
      "a <b>sound browser</b> for each synth with sounds sorted by type; <b>77 new presets</b> made for the current synth "
      "engine, all level-matched; a new <b>PROJECTS</b> screen for jamming; and <b>CAPTURE &gt; STEMS</b>, which bounces "
      "bar-exact loops (mix + each part) and can send them straight to your MPC. The full list is in the CHANGELOG "
@@ -351,8 +353,9 @@ WF = [
      "Keep playing: nothing stops while the sounds change.",
      "Say “mutate” or “mutate drums”, or set AUTO to every 16 bars and let it evolve."),
     ("Bounce the good bit", "CAPTURE &gt; STEMS", "wf-08", [(28, 166, 800, 196)],
-     "Tap <b>4 BARS</b>, then <b>BOUNCE</b>. It waits for the next bar, then records exactly 4 bars: the mix plus "
-     "drums, Synth 1, Synth 2 and FX as separate WAVs that loop.",
+     "Tap <b>4 BARS</b>, then <b>BOUNCE NEXT</b>. It waits for the next bar, then records exactly 4 bars: the mix plus "
+     "drums, Synth 1, Synth 2 and FX as separate WAVs that loop. Already played it? <b>GRAB LAST</b> saves the 4 bars "
+     "you just heard (also on LIVE FX, pad 15).",
      "Keep it playing until the bar counter finishes.",
      "With STEMS open, BeatStep pad <b>3</b> bounces 4 bars (pads 1-4 = 1, 2, 4, 8 bars)."),
     ("Chop it on the MPC", "CAPTURE &gt; STEMS", "wf-09", [(854, 100, 412, 400), (26, 552, 668, 170)],
@@ -466,9 +469,22 @@ ul([f"{b('LOAD')} 1-8 puts a saved scene back straight away. Empty slots say EMP
     "Morphing sets the knobs it moves. If you change one of them by hand, moving the morph again takes it back to the "
     "blend. Save the scene again to keep your change.",
     "Scenes saved by version 1.9.0 or earlier (A and B) come back as scenes 1 and 2."])
+h2("Grab what you just played")
+p("The best bit always happens when you're not recording. PotentialBox is always listening: it keeps the last 34 "
+  "seconds of the mix and every part, so you can save a loop after you've played it.")
+steps(["Jam. When something good happens, tap <b>GRAB LAST 4 BARS</b> (or LIVE FX pad 15).",
+       "It snaps to the nearest bar line. Tap early in a bar and it takes the 4 bars before it, straight away; tap "
+       "later in a bar and the display says FINISHING THIS BAR, then it includes that bar too.",
+       "It says GRABBED and the loop is saved like a bounce: the mix plus each part, exactly 4 bars, in Music &gt; "
+       "PotentialBox Loops, listed under YOUR BOUNCES on CAPTURE, and sent to the MPC if AUTO-SEND is on."])
+ul(["The keys under GRAB set the length: 1, 2, 4 or 8 bars. It's the same length as BOUNCE on CAPTURE.",
+    "If it hasn't heard that many bars yet (you've only just started), it saves as many as it has.",
+    "Bars come from the BeatStep's clock, CLOCK OUT or the beat generator. With nothing keeping time, it saves the "
+    "length up to the moment you tapped."])
 h2("Fill and record")
 ul([f"{b('HOLD FOR FILL')} (pad 9) plays the drum pads set to Fill only and silences those set to Not in fill.",
-    f"{b('RECORD')} (pad 11) starts and stops recording, the same as RECORD on CAPTURE &gt; STEMS.",
+    f"{b('RECORD')} (pad 11) starts and stops recording, the same as RECORD on CAPTURE &gt; STEMS. "
+    f"{b('STEMS: ON')} records each part as its own file too; OFF records the mix only.",
     f"{b('RESAMPLE TO A PAD')} and {b('MY SETUPS')} open the same screens as on CAPTURE and SETUP."])
 h2("The BeatStep's pads on LIVE FX")
 p("While LIVE FX is open, the 16 pads that normally run pad actions play the Live pads instead:")
@@ -893,7 +909,8 @@ steps(["Tap a genre. With GENRE KIT: BUILT-IN its usual kit loads too (GENRE KIT
        "samples in the Kit Maker), and if the BeatStep is stopped the tempo is set for it.",
        "Tap <b>PLAY</b>. While the BeatStep plays, the beat locks to its clock; when it's stopped, the beat runs on its "
        "own tempo (change it with − and +).",
-       "Tap <b>NEW BEAT</b> for a different take and <b>MUTATE</b> to change just one part.",
+       "Tap <b>NEW BEAT</b> for a different take and <b>MUTATE</b> to change just one part. Lost one you liked? "
+       "<b>◀ BACK</b> goes back to the beat before (Beats pad 3), as many times as you need.",
        "<b>BUSIER</b> adds a layer each tap (16th hats, ghost snares, an extra kick, shaker or congas); <b>SIMPLER</b> "
        "takes one away. You see each change in the grid.",
        "Tap any dot to remove it, or an empty spot to add a hit."])
@@ -905,7 +922,10 @@ ul(["Beats are 2 bars long out of the box. LENGTH switches between 1, 2 and 4 ba
     "In the grid, big dots are accents, normal dots hits, small dots ghost notes, and dots with a ? play about half the "
     "time, so the beat never repeats exactly.",
     "HOLD FOR FILL plays a fill in the genre's style for as long as you hold it. The mute keys silence the kick, snares, "
-    "hats or percussion."])
+    "hats or percussion.",
+    "◀ BACK undoes NEW BEAT, MUTATE, SIMPLER, BUSIER, NEW ENDING, LENGTH, genre changes and taps on the grid, up to 40 "
+    "steps; the key shows how many are left. Going back past a genre change brings back that genre's kit, drum bus "
+    "and tempo too."])
 h2("Send it to the BeatStep")
 steps(["On the BeatStep, choose the drum sequencer and an empty drum pattern. Set its length to the number of steps "
        "shown on screen (32 for 2 bars, 64 for 4) and, if the genre swings, the same swing (shown on the bottom line).",
@@ -967,7 +987,7 @@ img("capture", "CAPTURE &gt; STEMS.")
 h2("Bounce stems")
 steps(["Play something: the BeatStep, a project, BEATS or the looper.",
        "Tap a <b>LENGTH</b>: 1, 2, 4 or 8 bars.",
-       "Tap <b>BOUNCE</b>. While the BeatStep (or CLOCK OUT) is playing it waits for the next bar, then records exactly "
+       "Tap <b>BOUNCE NEXT</b>. While the BeatStep (or CLOCK OUT) is playing it waits for the next bar, then records exactly "
        "that many bars. The display and the progress bar show which bar it's on. CANCEL stops it.",
        "It says SAVED and the bounce appears under YOUR BOUNCES. Tap its name to open its folder."])
 p("Each bounce is a folder in <b>Music &gt; PotentialBox Loops</b>, named with the project, tempo, length and time, "
@@ -982,6 +1002,10 @@ ul(["Every file is exactly the same length, sample for sample, so they loop and 
     "Parts that were silent are left out.",
     "The parts are dry of the master effects (compressor, glue, limiter), which are on the mix only.",
     "When nothing is playing, BOUNCE records straight away instead of waiting for a bar."])
+h2("Grab the last bars")
+p("<b>GRAB LAST</b> is BOUNCE backwards: it saves the bars you've <i>just played</i>, from the last 34 seconds "
+  "PotentialBox always keeps. Same length keys, same files, same folder, same AUTO-SEND. It's also on JAM &gt; LIVE FX "
+  "(pad 15) and STEMS pad 8; the chapter on LIVE FX explains how it picks the bars.")
 h2("Send to MPC")
 p("PotentialBox can copy bounces to your MPC over Wi-Fi, the way MPC TOOLS does. They go to a "
   "<b>PotentialBox Loops</b> folder on the MPC's SD card (the drive with MPC TOOLS' DRUM ONE SHOTS or a MYMPC folder), "
@@ -996,7 +1020,7 @@ ul([f"{b('RECORD (ANY LENGTH)')} records until you tap it again: the mix plus Dr
     "Record On/Off pad action and LIVE FX pad 11 do the same.",
     f"{b('RESAMPLE PAD')} records Synth 1, Synth 2, both synths, the FX returns or everything, for half a bar to 4 bars, "
     "onto a drum pad. Save the kit in My Kits to keep it.",
-    f"{b('OPEN LOOPS')} opens the PotentialBox Loops folder."])
+    f"{b('OPEN LOOPS')} opens the PotentialBox Loops folder; {b('RECORDINGS')} opens the recordings folder."])
 img("resample", "Resample: choose what to record, how long, and which pad.", "small")
 h2("Knobs")
 p("While STEMS is open the BeatStep's knobs ride the levels, sends and filters, so you can shape a bounce as it records:")
