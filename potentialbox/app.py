@@ -45,7 +45,8 @@ import tkinter as tk  # noqa: E402
 from tkinter import font as tkfont, filedialog  # noqa: E402
 
 from potentialbox.engine import (Engine, ParamStore, SPECS, PAGES, PRESETS, MACROS, SUBPAGES,  # noqa: E402
-                                 HIDDEN_PAGES, MOD_SOURCES, MOD_DESTS, PUNCH_FX)
+                                 MOD_SOURCES, MOD_DESTS, PUNCH_FX, PRESET_CAT, PRESET_CATS, bounce_stems)
+from potentialbox import capture  # noqa: E402
 from potentialbox.recorder import Recorder, write_wav, recordings_dir  # noqa: E402
 from potentialbox.looper import TRACKS, SOURCES, FX_TYPES, SPEEDS, LENGTHS, STATE_TEXT  # noqa: E402
 from potentialbox.beats import (Beat, GENRES, GENRE_NAMES, ROLE_PAD, ROLE_NAME, GROUP_NAMES,  # noqa: E402
@@ -55,7 +56,7 @@ from potentialbox.library import Library, map_kit, brand_of  # noqa: E402
 from potentialbox.samples import (SampleIndex, default_roots, GROUPS, TYPES,  # noqa: E402
                                   SHORT as SHORT_TYPE, group_of_type)
 from potentialbox import kitmaker  # noqa: E402
-from potentialbox.mpcsync import MpcSync  # noqa: E402
+from potentialbox.mpcsync import MpcSync, MpcSend  # noqa: E402
 from potentialbox import projects as projmod  # noqa: E402
 from potentialbox.voice import Voice, friendly_error, MIN_CONFIDENCE  # noqa: E402
 try:                                      # hi-fi sprites are optional; the app falls back to flat drawing
@@ -67,8 +68,20 @@ APP = "PotentialBox"
 VERSION = "1.13.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
-TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
-TAB_LABEL = {"Arrangement": "Arrange"}  # tab bar only (the page itself says Arrangement)
+# v2.0: five big sections along the bottom; each has a few sub-tabs (shown in the header). A sub-tab is one of the
+# pages below, so BeatStep knobs, step locks and pad actions still work page by page.
+SECTIONS = [
+    ("JAM", [("PROJECTS", "Projects"), ("LIVE FX", "Live"), ("KNOBS", "Perform"), ("MACROS", "Macros")]),
+    ("SOUNDS", [("SYNTH 1", "Synth 1"), ("SYNTH 2", "Synth 2"), ("DRUMS", "Drums"), ("MIX", "Mix"), ("FX", "FX")]),
+    ("BEATS", [("BEATS", "Beats"), ("ARRANGE", "Arrangement")]),
+    ("CAPTURE", [("STEMS", "Capture"), ("LOOPER", "Loop")]),
+    ("SETUP", [("SETUP", "Setup")]),
+]
+SECTION_OF = {pg: sec for sec, subs in SECTIONS for _, pg in subs}
+TABS = [pg for _, subs in SECTIONS for _, pg in subs]   # every page you can be on, in order (NEXT / PREVIOUS TAB)
+# pages from 1.x that are now part of another tab: old page -> (new page, its sub-page)
+OLD_PAGES = {"Drums 1-8": ("Drums", 0), "Drums 9-16": ("Drums", 1), "Mix & FX": ("Mix", 0)}
+TAB_LABEL = {"Arrangement": "Arrange"}
 SHORT_DEST = {"Wave position": "Wave pos", "Saw > Square": "Wave", "Pulse width": "Pulse w.", "Osc 2 pitch": "Osc 2",
               "Resonance": "Reso", "Velocity": "Vel", "Smooth random": "Smooth"}
 CFG_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.config"), APP)
@@ -81,8 +94,8 @@ SETUPS_FILE = os.path.join(CFG_DIR, "my-setups.json")
 SAMPLE_INDEX_FILE = os.path.join(CFG_DIR, "sample-index.json")
 MPC_ONESHOTS_DIR = os.path.join(os.path.expanduser("~"), "Music", "MPC Drum One Shots")
 RESAMPLE_DIR = os.path.join(CFG_DIR, "Resampled")
-NO_LOCK_PAGES = ("Macros", "Projects", "Beats", "Live", "Loop", "Setup")
-OWN_SCREEN_PAGES = ("Projects", "Beats", "Live", "Loop")  # tabs that draw their own screen and turn the pads into their own pads
+NO_LOCK_PAGES = ("Macros", "Projects", "Beats", "Live", "Loop", "Setup", "Capture")
+OWN_SCREEN_PAGES = ("Projects", "Beats", "Live", "Loop", "Capture")  # tabs that draw their own screen and turn the pads into their own pads
 LOOP_PADS = [f"Track {t} rec / play / dub" for t in range(1, 6)] + ["Undo / redo", "All stop / play",
              "Record next empty track"] + [f"Track {t} stop (hold: clear)" for t in range(1, 6)] + [
              "Reverse last track", "Speed last track", "Back to last tab"]
@@ -92,14 +105,19 @@ BEAT_PADS = ["Play / stop", "New beat", "Previous genre", "Next genre", "Hold: F
 ACTIONS = [("rand_s1", "Random Synth 1"), ("rand_s2", "Random Synth 2"), ("rand_kit", "Random Drum Kit"),
            ("next_kit", "Next Kit"), ("prev_tab", "Previous Tab"), ("next_tab", "Next Tab"),
            ("tab:Perform", "Perform Tab"), ("tab:Synth 1", "Synth 1 Tab"), ("tab:Synth 2", "Synth 2 Tab"),
-           ("tab:Drums 1-8", "Drums 1-8 Tab"), ("tab:Drums 9-16", "Drums 9-16 Tab"), ("tab:Mix", "Mix Tab"),
+           ("tab:Drums 1-8", "Drums Tab"), ("tab:Drums 9-16", "Drums 9-16 Tab"), ("tab:Mix", "Mix Tab"),
            ("next_s1", "Synth 1 Next Sound"), ("next_s2", "Synth 2 Next Sound"), ("tab:Macros", "Macros Tab"),
            ("panic", "All Notes Off"),
            # v1.6: no default pad, tap the card and press a pad or step to use them
            ("tab:Live", "Live Tab"), ("tab:FX", "FX Tab"), ("rec", "Record On/Off"), ("fill", "Fill (hold)"),
            ("tab:Loop", "Loop Tab"), ("tab:Beats", "Beats Tab"), ("tab:Projects", "Projects Tab"),
-           ("proj_mutate", "Mutate Project Sounds"), ("proj_back", "Project Sounds Back")]
+           ("proj_mutate", "Mutate Project Sounds"), ("proj_back", "Project Sounds Back"),
+           # v2.0
+           ("tab:Capture", "Capture Tab"), ("bounce", "Bounce Stems"), ("send_mpc", "Send Last Bounce to MPC"),
+           ("sec:JAM", "Jam Section"), ("sec:SOUNDS", "Sounds Section")]
 ACTION_NAMES = dict(ACTIONS)
+CAPTURE_PADS = ["Bounce 1 bar", "Bounce 2 bars", "Bounce 4 bars", "Bounce 8 bars", "Send last bounce to MPC",
+                "Record on/off", "Cancel bounce"] + [""] * 8 + ["Back to last tab"]
 PROJECT_PADS = [f"Load project {i} ({n})" for i, n in enumerate(projmod.NAMES, 1)]  # Projects tab pads
 PAD_ACTIONS = [aid for aid, _ in ACTIONS[:16]]
 HOLD_ACTIONS = {"fill"}
@@ -116,7 +134,9 @@ def default_actions():
 
 
 KNOB_GROUPS = {
-    "Perform": [(0, 4, "Synth 1"), (4, 8, "Synth 2"), (8, 12, "Drums"), (12, 13, "Bus"), (13, 16, "Volumes")],
+    "Perform": [(0, 4, "Synth 1 (bass)"), (4, 8, "Synth 2 (lead)"), (8, 12, "Drums"), (12, 16, "Effects & level")],
+    "Synth 1 Quick": [(0, 4, "Filter"), (4, 8, "Envelope"), (8, 12, "Character"), (12, 16, "Glide, space & level")],
+    "Synth 2 Quick": [(0, 5, "Wave & filter"), (5, 8, "Envelope"), (8, 12, "Character"), (12, 16, "Movement, space & level")],
     "Synth 1": [(0, 4, "Filter"), (4, 8, "Oscillators"), (8, 12, "Amp envelope"), (12, 16, "Play & output")],
     "Synth 2": [(0, 4, "Wavetable"), (4, 8, "Filter & table"), (8, 12, "Amp envelope"), (12, 16, "Play & output")],
     "Drums 1-8": [(0, 8, "Tune · pads 1-8"), (8, 16, "Length · pads 1-8")],
@@ -168,6 +188,14 @@ LIBRARY_GUESSES = [os.path.join(os.path.expanduser("~"), sub, "Drum Machine Coll
                    for sub in ("Downloads", "Documents", "Music", "Desktop")]
 
 
+def mpc_host_guess():
+    try:
+        from potentialbox.mpcsync import mpc_tools_settings
+        return mpc_tools_settings().get("host", "")
+    except Exception:
+        return ""
+
+
 def log(*a):
     try:
         os.makedirs(CFG_DIR, exist_ok=True)
@@ -178,37 +206,10 @@ def log(*a):
 
 
 # ----------------------------------------------------------------------------- looks
-# The PotentialSuite looks (Print Plate, Night Rack, Colour Block, Vintage), picked on the Setup tab. Vintage adds a
-# walnut cabinet and raised panel plates on top of its palette. Each look is a palette (the same roles as the
-# old Potential theme) plus three shape numbers: round = how round the keys are (1 = as drawn), edge = an outline on
-# every key (0 = none), frame = how heavy panel outlines are. Colours that sit under text keep the text's contrast:
-# btn_on and seg_active are light where the text is dark and dark where the text is light.
+# v2.0 has one look, Hi-Fi: a BeatStep-coloured hi-fi deck (charcoal plate, walnut cabinet, cream keys, amber LEDs,
+# green display). It's kept as a palette (the same colour roles every drawing call reads from T) plus shape numbers:
+# round = how round the keys are, edge = an outline on every key, frame = how heavy panel outlines are.
 LOOKS = {
-    "print": dict(  # a warm printed panel, black ink, emerald as the second ink
-        name="Print Plate", round=0.7, edge=1.5, frame=1.5, narrow=False,
-        bg="d9d3c7", panel="dfd9cd", line="1b1a18", ink="1b1a18", ink_dim="4a463f", ink_faint="8a8374",
-        accent="0f6534", accent_hi="0f6534", knob_face="1b1a18", knob_ring="1b1a18", knob_dot="efe8d8",
-        seg_active="9fdcb8", seg_inactive="e7e1d5", seg_active_tx="0b3d20", btn_text="1b1a18", btn_bg="e7e1d5",
-        btn_on="6fcf97", tab_on="1b1a18", tab_on_tx="efe8d8", lcd="c9c2b3", well="c9c2b3", chrome_ink="1b1a18"),
-    "rack": dict(   # a navy rack unit, cream print, emerald LEDs
-        name="Night Rack", round=0.35, edge=1.0, frame=1.0, narrow=True,
-        bg="121826", panel="161d2f", line="4a5674", ink="ece5d3", ink_dim="aeb7cc", ink_faint="6a7694",
-        accent="4fe08a", accent_hi="4fe08a", knob_face="1e2740", knob_ring="ece5d3", knob_dot="ece5d3",
-        seg_active="1f4d36", seg_inactive="161d2f", seg_active_tx="4fe08a", btn_text="ece5d3", btn_bg="1e2740",
-        btn_on="2a6a47", tab_on="ece5d3", tab_on_tx="121826", lcd="080c16", well="080c16", chrome_ink="ece5d3"),
-    "block": dict(  # the whole window in emerald, heavy black rules, yellow for anything switched on
-        name="Colour Block", round=0.0, edge=3.0, frame=3.0, narrow=False,
-        bg="57d68d", panel="57d68d", line="0e1f1b", ink="0e1f1b", ink_dim="1d332c", ink_faint="2f8a5a",
-        accent="0e1f1b", accent_hi="0e1f1b", knob_face="0e1f1b", knob_ring="0e1f1b", knob_dot="f2ecdd",
-        seg_active="ffe14a", seg_inactive="f2ecdd", seg_active_tx="0e1f1b", btn_text="0e1f1b", btn_bg="f2ecdd",
-        btn_on="ffe14a", tab_on="0e1f1b", tab_on_tx="f2ecdd", lcd="f2ecdd", well="f2ecdd", chrome_ink="0e1f1b"),
-    "vintage": dict(  # a late-80s drum machine, like the MPC plugins' Vintage: warm grey panel, beige keys, amber display
-        name="Vintage", round=0.5, edge=2.0, frame=2.0, narrow=False,
-        bg="bdb6a6", panel="b1aa99", line="2a2723", ink="2a2723", ink_dim="3a352e", ink_faint="6f675a",
-        accent="0f6534", accent_hi="2a2723", knob_face="2a2723", knob_ring="2a2723", knob_dot="f2a33a",
-        seg_active="2a2723", seg_inactive="e6dcc6", seg_active_tx="f2a33a", btn_text="2a2723", btn_bg="e6dcc6",
-        btn_on="f2a33a", tab_on="2a2723", tab_on_tx="f2a33a", lcd="171411", well="a39b8a", chrome_ink="2a2723",
-        screen="171411", lcd_ink="f2a33a", title="2a2723", logo="2a2723", key_dim="6f675a"),
     "hifi": dict(  # a hi-fi deck in BeatStep colours: dark panel, walnut cabinet, cream keys, amber LEDs, green display.
         # Optional keys read with T.get() so a look only needs them if it wants them:
         #   wood     - width of the walnut cabinet border drawn round the window (0 = none)
@@ -225,8 +226,7 @@ LOOKS = {
         btn_on="f2c879", tab_on="f2c879", tab_on_tx="1a1610", lcd="0b140e", well="24252a", chrome_ink="ece6d6",
         screen="0b140e", lcd_ink="8cffb0", logo="f4efe0", title="f4efe0", key_dim="8b8272"),
 }
-USER_LOOK_FILE = os.path.join(CFG_DIR, "user-look.json")
-LOOK_ORDER = ["print", "rack", "block", "vintage", "hifi"] + (["user"] if os.path.isfile(USER_LOOK_FILE) else [])
+LOOK_ORDER = ["hifi"]
 T = {}        # the current look's colours, "#rrggbb"
 STYLE = {}    # the current look's name and shape numbers
 
@@ -246,31 +246,9 @@ def mix2(a, b, t):
     return "#%02x%02x%02x" % (int(ra + (rb - ra) * t), int(ga + (gb - ga) * t), int(ba + (bb - ba) * t))
 
 
-def _load_user_look():
-    try:
-        import json
-        with open(USER_LOOK_FILE) as f:
-            d = json.load(f)
-        if isinstance(d, dict) and "name" in d:
-            # fill any missing keys from Print Plate so a partial file still works
-            base = LOOKS["print"]
-            out = dict(base)
-            out.update(d)
-            return out
-    except Exception:
-        pass
-    return None
-
-
 def apply_look(look):
     """Make `look` the current one (in place: every drawing call reads T and STYLE)."""
-    if look == "user":
-        d = _load_user_look()
-        if d is None:
-            look = "print"
-        else:
-            LOOKS["user"] = d
-    d = LOOKS[look if look in LOOKS else "print"]
+    d = LOOKS[look if look in LOOKS else "hifi"]
     T.clear()
     STYLE.clear()
     for k, v in d.items():
@@ -282,7 +260,7 @@ def apply_look(look):
     T.setdefault("key_text", T["btn_text"])
 
 
-apply_look("print")
+apply_look("hifi")
 
 
 # ----------------------------------------------------------------------------- state
@@ -302,9 +280,14 @@ class State:
         self.actions = default_actions()
         self.preset = {"s1": 0, "s2": 0}
         self.preset_name = {"s1": PRESETS["s1"][0][0], "s2": PRESETS["s2"][0][0]}
-        self.page = "Perform"
+        self.page = "Projects"
         self.subpage = {t: 0 for t in SUBPAGES}
-        self.last_tab = "Perform"
+        self.last_tab = "Projects"
+        self.sec_page = {}            # v2.0: each section's last sub-tab, so going back lands where you were
+        self.synth_edit = {"s1": False, "s2": False}   # v2.0: synth tab shows the sound browser (False) or EDIT
+        self.bounce_bars = 4          # v2.0 CAPTURE > STEMS
+        self.bounce_mpc = False       # send every bounce to the MPC as soon as it's saved
+        self.bounces = []             # recent bounce folders, newest first
         self.setups = [None] * SLOTS
         self.rec_stems = True
         self.loop_input = None    # list of interface input channels (0-based) or None
@@ -326,7 +309,7 @@ class State:
         self.beat_mutes = []
         self.beat_bars = 2
         self.clock_master = False   # PotentialBox sends clock + Start/Stop to the BeatStep
-        self.look = "print"         # Print Plate / Night Rack / Colour Block (LOOKS)
+        self.look = "hifi"          # v2.0: the Hi-Fi look is the only look
         self.midi_off = []  # port names the user switched off
         self.bad_audio = []  # labels of outputs that froze or crashed on open
         self.audio_pending = None  # label being opened right now (set before open, cleared after)
@@ -460,12 +443,28 @@ class State:
             self.library_root = d["library_root"]
         self.preset.update(d.get("preset", {}))
         self.preset_name.update(d.get("preset_name", {}))
-        page = {"Mix & FX": "Mix"}.get(d.get("page"), d.get("page"))
-        self.page = page if page in TABS else "Perform"
         sp = d.get("subpage", {})
         if isinstance(sp, dict):
             for t in self.subpage:
-                self.subpage[t] = int(sp.get(t, 0)) % len(SUBPAGES[t])
+                try:
+                    self.subpage[t] = int(sp.get(t, 0)) % len(SUBPAGES[t])
+                except (TypeError, ValueError):
+                    pass
+        page = d.get("page")
+        if page in OLD_PAGES:  # 1.x pages that are now sub-pages of a v2.0 tab
+            page, sub = OLD_PAGES[page]
+            if page in SUBPAGES:
+                self.subpage[page] = sub
+        self.page = page if page in TABS else "Projects"
+        sec = d.get("sec_page")
+        if isinstance(sec, dict):
+            self.sec_page = {k: v for k, v in sec.items() if k in dict(SECTIONS) and v in TABS and SECTION_OF[v] == k}
+        se = d.get("synth_edit")
+        if isinstance(se, dict):
+            self.synth_edit.update({k: bool(v) for k, v in se.items() if k in self.synth_edit})
+        self.bounce_bars = d.get("bounce_bars") if d.get("bounce_bars") in (1, 2, 4, 8) else 4
+        self.bounce_mpc = bool(d.get("bounce_mpc", False))
+        self.bounces = [b for b in d.get("bounces", []) if isinstance(b, str)][:12]
         self.load_locks(d.get("locks"))
         self.load_scenes(d.get("scenes"))
         self.rec_stems = bool(d.get("rec_stems", True))
@@ -498,8 +497,8 @@ class State:
         self.project_fx = bool(d.get("project_fx", True))
         self.mut_amount = d.get("mut_amount") if d.get("mut_amount") in projmod.AMOUNTS else "MEDIUM"
         self.mut_auto = d.get("mut_auto") if d.get("mut_auto") in (0, 8, 16) else 0
-        self.look = d.get("look") if d.get("look") in LOOKS else "print"
-        self.last_tab = d.get("last_tab", "Perform") if d.get("last_tab") in TABS else "Perform"
+        self.look = "hifi"   # v2.0: one look
+        self.last_tab = d.get("last_tab") if d.get("last_tab") in TABS else "Projects"
         self.midi_off = d.get("midi_off", [])
         self.bad_audio = [x for x in d.get("bad_audio", []) if isinstance(x, str)]
         self.audio_pending = d.get("audio_pending")
@@ -518,7 +517,9 @@ class State:
                      clock_master=self.clock_master, look=self.look, sample_folders=self.sample_folders,
                      km=self.km, mpc_host=self.mpc_host, mpc_dest=self.mpc_dest, project=self.project,
                      project_take=self.project_take, project_kit=self.project_kit, project_fx=self.project_fx,
-                     mut_amount=self.mut_amount, mut_auto=self.mut_auto)
+                     mut_amount=self.mut_amount, mut_auto=self.mut_auto, sec_page=self.sec_page,
+                     synth_edit=self.synth_edit, bounce_bars=self.bounce_bars, bounce_mpc=self.bounce_mpc,
+                     bounces=self.bounces)
             tmp = CFG_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(d, f, indent=1)
@@ -1017,6 +1018,9 @@ class Midi:
                     app.loop_pad(PAD_ACTIONS.index(aid), val > 0)
                 elif app.state.page == "Beats" and aid in PAD_ACTIONS and app.overlay is None:
                     app.beat_pad(PAD_ACTIONS.index(aid), val > 0)
+                elif app.state.page == "Capture" and aid in PAD_ACTIONS and app.overlay is None:
+                    if val > 0:
+                        app.action_q.append(("capture", PAD_ACTIONS.index(aid)))
                 elif app.state.page == "Projects" and aid in PAD_ACTIONS and app.overlay is None:
                     if val > 0:
                         app.action_q.append(("project", PAD_ACTIONS.index(aid)))
@@ -1147,8 +1151,8 @@ class App:
         self.cv.bind("<MouseWheel>", self.on_wheel)
         self.root.bind("<Control-z>", lambda e: self.do_undo())
         self.root.bind("<Control-y>", lambda e: self.do_redo())
-        for i in range(min(9, len(TABS))):
-            self.root.bind(f"<Control-Key-{i+1}>", lambda e, idx=i: self.set_page(TABS[idx]))
+        for i, (sec, _) in enumerate(SECTIONS):  # Ctrl+1-5: the five sections
+            self.root.bind(f"<Control-Key-{i+1}>", lambda e, sc=sec: self.set_section(sc))
         self.cv.bind("<Button-4>", lambda e: self.on_wheel(e, 120))
         self.cv.bind("<Button-5>", lambda e: self.on_wheel(e, -120))
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
@@ -1188,6 +1192,8 @@ class App:
         self.morph = None         # synth settings gliding to a mutation
         self.auto_block = None
         self.send_countdown = None
+        self.bounce_job = None     # v2.0: the last stem bounce being saved
+        self.mpc_sender = None     # v2.0: MpcSend while sending loops to the MPC
         if self.state.clock_master:
             self.root.after(1500, lambda: self.clockout.enable() or self.show_toast("CLOCK OUT: BEATSTEP NOT FOUND"))
 
@@ -1217,6 +1223,8 @@ class App:
     def page_name(self):
         """The knob page shown: a tab, or the selected sub-page of a synth tab."""
         page = self.state.page if self.state.page in PAGES else "Perform"
+        if page in ("Synth 1", "Synth 2") and not self.state.synth_edit["s" + page[-1]]:
+            return page + " Quick"      # the sound browser's knobs
         if page in SUBPAGES:
             subs = SUBPAGES[page]
             return subs[self.state.subpage.get(page, 0) % len(subs)][1]
@@ -1246,19 +1254,6 @@ class App:
                                if f in fams), None)
         self.fonts = {}
         self._fit = {}
-
-    def cycle_look(self):
-        """Setup tab: the LOOK key steps Print Plate > Night Rack > Colour Block > Vintage. Shows at once and is saved."""
-        cur = self.state.look if self.state.look in LOOK_ORDER else "print"
-        self.state.look = LOOK_ORDER[(LOOK_ORDER.index(cur) + 1) % len(LOOK_ORDER)]
-        apply_look(self.state.look)
-        self.pick_fonts()
-        self.root.configure(bg=T["bg"])
-        self.cv.configure(bg=T["bg"])
-        self.state.dirty = True
-        self.state.save()
-        self.show_toast("LOOK: " + STYLE["name"].upper())
-        self.request_redraw()
 
     def font(self, px, bold=False):
         key = (int(px * self.scale * 10), bold)
@@ -1568,6 +1563,10 @@ class App:
             self.draw_projects()
         elif self.state.page == "Arrangement":
             self.draw_arrangement()
+        elif self.state.page == "Capture":
+            self.draw_capture()
+        elif self.state.page in ("Synth 1", "Synth 2") and not self.state.synth_edit["s" + self.state.page[-1]]:
+            self.draw_browser("s" + self.state.page[-1])
         else:
             self.draw_knobs()
             if self.lock_mode:
@@ -1595,8 +1594,8 @@ class App:
             draw_ov()
         msg, until = self.toast
         if msg and time.time() < until:
-            self.rrect(300, 30, 430, 48, 12, T["btn_on"])
-            self.text(515, 54, msg[:44], 16 if len(msg) <= 36 else 13, T["btn_text"], True)
+            self.rrect(236, 8, 712, 40, 8, T["btn_on"])
+            self.text_fit(592, 28, msg[:70], 18, 690, T["btn_text"], True)
 
     # ---------------------------------------------------------------- arrangement (a chain of beats = a song)
     ARR_MAX = 16
@@ -1844,27 +1843,80 @@ class App:
                        fill="#c2591f", width=max(1, round(2 * s)))
 
     def draw_header(self):
-        self.rect(0, 0, W, 90, fill=T["bg"])
-        self.logo(24, 34, APP, 30, T.get("logo", T["accent"]))
-        rec = self.audio.engine.recorder
+        """Row 1: logo, the display (what's loaded / recording / bouncing), tempo and level.
+        Row 2: this section's sub-tabs, and the audio + MIDI lights (tap them for Setup)."""
+        eng = self.audio.engine
+        self.rect(0, 0, W, 92, fill=T["bg"])
+        self.logo(26, 28, APP, 27, T.get("logo", T["accent"]))
+        # the display
+        x0, y0, dw, dh = 236, 8, 712, 40
+        glass = T.get("screen", T["well"])
+        img = None
+        if STYLE.get("glass") and skins is not None and getattr(skins, "HAVE", False):
+            pw, ph = max(8, int(round(dw * self.scale))), max(8, int(round(dh * self.scale)))
+            img = self.photo(("scr", pw, ph, glass), lambda: skins.screen(pw, ph, glass))
+        if img is not None:
+            self.cv.create_image(self.X(x0), self.Y(y0), image=img, anchor="nw")
+        else:
+            self.rect(x0, y0, dw, dh, fill=glass)
+        self.rect(x0, y0, dw, dh, outline=T["line"])
+        ink = T.get("lcd_ink", T["accent"])
+        line, col = self.display_line(), ink
+        if self.audio.error:
+            line, col = "AUDIO PROBLEM - TAP AUDIO (RIGHT) TO PICK AN OUTPUT", "#ff8a6a"
+        self.text_fit(x0 + 16, y0 + dh / 2, line, 17, dw - 32, col, True, "w", minpx=11)
+        # tempo + level
+        self.readout(1010, 28, 112, 40, f"{eng.bpm:.0f} BPM")
+        pk = min(eng.peak, 1.0)
+        self.rect(1078, 8, 180, 40, fill=T["well"], outline=T["line"])
+        for i in range(18):   # LED ladder
+            lit = pk > (i + 0.5) / 18
+            c = ("#e0483c" if i >= 16 else T["accent"] if i >= 12 else ink) if lit else shade(T["well"], 1.25)
+            self.rect(1084 + i * 9.6, 16, 7, 24, fill=c)
+        # row 2: sub-tabs
+        sec = SECTION_OF.get(self.state.page, "JAM")
+        subs = dict(SECTIONS)[sec]
+        tx = 26
+        for label, pg in subs:
+            on = pg == self.state.page
+            w = 156 if len(subs) > 1 else 200
+            self.rrect(tx, 56, w, 30, 8, T["seg_active"] if on else T["seg_inactive"])
+            self.text_fit(tx + w / 2, 71, label, 15, w - 12, T["seg_active_tx"] if on else T["ink"], True)
+            self.hit(tx, 54, w, 34, lambda g=pg: self.set_page(g, tapped=True))
+            tx += w + 8
+        # audio + MIDI lights
+        ok = bool(self.audio.stream) and not self.audio.error
+        lat = f"{self.audio.latency_ms:.0f} MS" if ok else "OFF"
+        self.status_light(1000, 71, "AUDIO " + lat, ok, False)
+        self.status_light(1150, 71, "MIDI", bool(self.midi.ports), time.time() - self.midi.activity < 0.12)
+        self.hit(990, 54, 270, 34, lambda: self.set_page("Setup"))
+        self.cv.create_line(self.X(0), self.Y(92), self.X(W), self.Y(92), fill=T["line"])
+
+    def status_light(self, x, cy, label, ok, flash):
+        c = (T.get("lcd_ink", T["accent"]) if flash else "#3fbf6a") if ok else "#e0483c"
+        self.cv.create_oval(self.X(x - 5), self.Y(cy - 5), self.X(x + 5), self.Y(cy + 5), fill=c, outline=T["line"])
+        self.text(x + 12, cy, label, 13, T["ink_dim"], True, "w")
+
+    def display_line(self):
+        """What the display at the top says: recording / bouncing first, then what's loaded."""
+        eng = self.audio.engine
+        parts = []
+        rec = eng.recorder
         if rec is not None:
             sec = int(rec.seconds())
-            self.cv.create_oval(self.X(24), self.Y(58), self.X(36), self.Y(70), fill="#d9534f", outline="")
-            self.text(44, 64, f"RECORDING {sec // 60:02d}:{sec % 60:02d}", 12, "#d9534f", True, "w")
-        else:
-            self.text(24, 64, "BEATSTEP PRO GROOVEBOX", 11, T["ink_dim"], False, "w")
-        eng = self.audio.engine
-        lat = f" · {self.audio.latency_ms:.0f} MS" if self.audio.stream else ""
-        self.readout(510, 54, 400, 38, (self.audio.label + lat) if not self.audio.error else "AUDIO ERROR - TAP SETUP", "audio", True)
-        self.readout(845, 54, 240, 38, self.midi.status(), "midi", True)
-        self.led(950, 54, time.time() - self.midi.activity < 0.12)
-        self.readout(1045, 54, 110, 38, f"{eng.bpm:.0f} BPM", "tempo", True)
-        pk = min(eng.peak, 1.0)
-        self.rect(1120, 35, 140, 38, fill=T["well"], outline=T["line"])
-        if pk > 0.001:
-            self.rect(1123, 38, 134 * pk, 32, fill=T["accent"] if pk < 0.98 else "#d9534f")
-        self.text(1120, 25, "LEVEL", 11, T["ink_dim"], True, "w")
-        self.cv.create_line(self.X(0), self.Y(90), self.X(W), self.Y(90), fill=T["line"])
+            parts.append(f"● REC {sec // 60:02d}:{sec % 60:02d}")
+        b = eng.bounce
+        if b:
+            parts.append(self.bounce_text(b))
+        elif self.bounce_job and self.bounce_job.get("state") == "saving":
+            parts.append("SAVING STEMS...")
+        pr = self.state.project
+        if pr is not None:
+            parts.append(f"P{pr + 1:02d} {projmod.NAMES[pr].upper()}")
+        parts.append("S1 " + self.state.preset_name["s1"].upper())
+        parts.append("S2 " + self.state.preset_name["s2"].upper())
+        parts.append("KIT " + eng.drums.kit_name.upper()[:22])
+        return "  ·  ".join(parts)
 
     def draw_knobs(self):
         keys = self.page_keys()
@@ -1879,24 +1931,29 @@ class App:
         tab = self.state.page
         if tab not in NO_LOCK_PAGES:
             sub = ""
-        self.frame(14, 100, 1252, 372, tab, sub)
+        self.frame(14, 100, 1252, 372, {"Perform": "Knobs"}.get(tab, tab), sub)
         if tab == "Macros":
             self.button(560, 121, 220, 32, "ZERO ALL MACROS", self.zero_macros, px=13)
+        synth = tab in ("Synth 1", "Synth 2")
         if tab in SUBPAGES:
             names = [lab for lab, _ in SUBPAGES[tab]]
             cur = names[self.state.subpage.get(tab, 0) % len(names)]
             x0 = 32 + self.font(22, True).measure(tab.upper()) / self.scale + 22
-            bw = min(100, (826 - x0) / len(names))
+            x1 = 800 if synth else 950
+            bw = min(110, (x1 - x0) / len(names))
             self.rect(x0 - 6, 103, bw * len(names) + 12, 36, fill=T["bg"])  # keeps the frame's rule out from behind
             self.seg(x0, 105, bw, 32, names, cur, self.pick_subpage, vertical=False)
-            if self.midi.learn is None and tab in ("Synth 1", "Synth 2"):
+            if self.midi.learn is None and synth:
                 undo = getattr(self, "init_undo", None)
                 if undo and undo[0] == self.page_name() and time.time() < undo[2]:
-                    self.button(945, 121, 200, 32, "UNDO INIT", self.undo_init, px=14)
+                    self.button(895, 121, 160, 32, "UNDO INIT", self.undo_init, px=13)
                 else:
-                    self.button(945, 121, 200, 32, self.init_label(), self.init_page, accent=True, px=13)
+                    self.button(895, 121, 160, 32, self.init_label(), self.init_page, accent=True, px=12)
+                pre = "s" + tab[-1]
+                self.button(1195, 121, 130, 32, "◂ SOUNDS", lambda p=pre: self.synth_view(p, False), on=True, px=14)
         if tab not in NO_LOCK_PAGES and self.midi.learn is None:
-            self.button(1160, 121, 180, 32, "LOCKS ON" if self.lock_mode else "STEP LOCKS", self.toggle_locks,
+            lx, lw = (1050, 130) if synth else (1160, 180)
+            self.button(lx, 121, lw, 32, "LOCKS ON" if self.lock_mode else "STEP LOCKS", self.toggle_locks,
                         on=self.lock_mode, px=14)
         if mix and self.midi.learn is None and self.page_name() == "Mix":
             armed = time.time() - getattr(self, "reset_armed", 0) < 3
@@ -2925,6 +2982,12 @@ class App:
             self.set_page(tabs[(cur + (1 if aid == "next_tab" else -1)) % len(tabs)])
         elif aid.startswith("tab:"):
             self.set_page(aid[4:])
+        elif aid.startswith("sec:"):
+            self.set_section(aid[4:])
+        elif aid == "bounce":
+            self.bounce_start()
+        elif aid == "send_mpc":
+            self.send_last_bounce()
         elif aid == "panic":
             self.panic()
         elif aid == "rec":
@@ -3013,10 +3076,9 @@ class App:
         self.state.params.set_norm("sc.morph", x)
         self.state.dirty = True
 
-    def mini_knob(self, idx, cx, cy, key):
+    def mini_knob(self, idx, cx, cy, key, r=19, labw=74, prefix=True):
         p = self.state.params
         n = p.shown(key)
-        r = 19
         hot = time.time() - self.midi.flash[idx] < 0.35
         X, Y = self.X, self.Y
         self.arc(cx, cy, r + 5, 225, -270, T["ink_faint"], 2)
@@ -3072,12 +3134,15 @@ class App:
         if key.startswith("dr.p"):
             pn = int(key.split(".")[1][1:]) - 1
             lab = f"{self.audio.engine.drums.names[pn][:7]} {lab.lower()}"
-        if key[:2] in ("s1", "s2") and "Synth" not in lab:
+        if prefix and key[:2] in ("s1", "s2") and "Synth" not in lab:
             lab = key[:2].upper() + " " + lab
-        self.text_fit(cx, cy + r + 15, lab, 11, 74, T["ink"], True)
-        self.text_fit(cx, cy + r + 31, SPECS[key].fmt(p.val[key]), 12, 74, T["accent"] if hot else T["ink_dim"])
+        big = r > 19
+        self.text_fit(cx, cy + r + (17 if big else 15), lab, 13 if big else 11, labw, T["ink"], True)
+        self.text_fit(cx, cy + r + (35 if big else 31), SPECS[key].fmt(p.val[key]), 13 if big else 12, labw,
+                      T["accent"] if hot else T["ink_dim"])
         self.text(cx - r - 2, cy - r, str(idx + 1), 9, T["ink_faint"], False, "e")
-        self.hit(cx - 38, cy - r - 8, 76, 2 * r + 46, lambda k=key: k, "knob")
+        hw = max(38, labw / 2)
+        self.hit(cx - hw, cy - r - 8, 2 * hw, 2 * r + 46, lambda k=key: k, "knob")
 
     def draw_live(self):
         eng = self.audio.engine
@@ -3342,6 +3407,8 @@ class App:
             self.beat_send()
         elif item[0] == "project":
             self.load_project(item[1])
+        elif item[0] == "capture":
+            self.capture_pad(item[1])
 
     def beat_cell(self, role, step):
         bp = self.audio.engine.beats
@@ -3767,89 +3834,90 @@ class App:
         self.state.kit = {"pads": d.sources, "name": d.kit_name}
 
     def draw_projects(self):
+        """JAM > PROJECTS: the jam home. Projects 1-16 laid out like the BeatStep's pads, what's loaded, MUTATE,
+        and the tempo / clock / mic / kit switches along the bottom."""
         st = self.state
         eng = self.audio.engine
-        self.frame(14, 100, 1252, 632, "Projects",
-                   "YOUR 16 BEATSTEP GENRE SETS · BEATSTEP PADS HERE: 1-16 LOAD THAT PROJECT'S SOUNDS")
-        for i, key in enumerate(PAGES["Projects"]):
-            self.mini_knob(i, 14 + 39 + i * 77.5, 172, key)
-        # the 16 projects, 8 to a row, numbered like the BeatStep's project slots
+        # ---- the 16 projects
+        self.frame(14, 100, 1252, 232, "Projects", "")
+        self.button(1088, 121, 120, 32, "◂ PREVIOUS", lambda: self.project_step(-1), px=13)
+        self.button(1198, 121, 92, 32, "NEXT ▸", lambda: self.project_step(1), px=13)
+        self.text(1010, 121, "BEATSTEP PADS 1-16 LOAD THEM", 11, T["ink_dim"], False, "e")
         for i, pr in enumerate(projmod.PROJECTS):
             r, c = divmod(i, 8)
-            x0, y0 = 30 + c * 153, 240 + r * 92
+            x0, y0 = 30 + c * 153, 146 + r * 90
             on = i == st.project
-            self.rrect(x0, y0, 143, 84, 12, T["btn_on"] if on else T["btn_bg"])
+            self.rrect(x0, y0, 143, 82, 12, T["btn_on"] if on else T["btn_bg"])
             self.text(x0 + 12, y0 + 18, str(i + 1), 18, T["btn_text"], True, "w")
             self.text(x0 + 131, y0 + 18, f"{pr['bpm']} BPM", 11, T["btn_text"] if on else T["key_dim"], True, "e")
             self.text_fit(x0 + 71, y0 + 54, pr["name"].upper(), 18, 128, T["btn_text"], True)
-            self.hit(x0, y0, 143, 84, lambda ii=i: self.load_project(ii))
-        # what's loaded
-        y = 428
+            self.hit(x0, y0, 143, 82, lambda ii=i: self.load_project(ii))
+        # ---- what's loaded
+        self.frame(14, 342, 760, 226, "Now playing", "")
+        self.button(680, 363, 160, 32, "NEW SOUNDS", self.project_new_sounds, px=14)
         if st.project is None:
-            self.text(640, y + 28, "TAP A PROJECT, PRESS A BEATSTEP PAD, OR TURN THE MIC ON AND SAY \"PROJECT SEVEN\"",
-                      15, T["ink_dim"], True)
+            self.text(394, 440, "TAP A PROJECT OR PRESS A BEATSTEP PAD", 19, T["ink"], True)
+            self.text(394, 474, 'OR TAP TALK AND SAY "PROJECT SEVEN"', 15, T["ink_dim"], True)
+            self.text(394, 520, "Synth 1 = bass on Seq 1 · Synth 2 = lead on Seq 2 · drums on the drum sequencer",
+                      13, T["ink_faint"])
         else:
             pr = projmod.PROJECTS[st.project]
             (bname, _), (lname, _), kit = projmod.take(pr, st.project_take)
-            self.text(34, y + 12, f"PROJECT {st.project + 1}: {pr['name'].upper()}", 22, T["ink"], True, "w")
+            self.text(34, 406, f"{st.project + 1} · {pr['name'].upper()}", 26, T["ink"], True, "w")
             pend = self.mut_pending
-            sub = (f"{pr['bpm']} BPM · {pr['key'].upper()}  ·  SET THE BEATSTEP TO PROJECT {st.project + 1}" if not pend
-                   else ("GOING BACK" if pend["kind"] == "back" else f"{pend['amount']} MUTATE") + " AT THE NEXT BAR...")
-            self.text(34, y + 40, sub, 12, T["accent"] if pend else T["ink_dim"], True, "w")
+            sub = (f"{pr['bpm']} BPM · {pr['key'].upper()} · SET THE BEATSTEP TO PROJECT {st.project + 1}"
+                   if not pend else ("GOING BACK" if pend["kind"] == "back" else f"{pend['amount']} MUTATE")
+                   + " AT THE NEXT BAR...")
+            self.text(36, 434, sub, 12, T["accent"] if pend else T["ink_dim"], True, "w")
             kname = eng.drums.kit_name if st.project_kit == "samples" else f"{kits.NAMES[int(kit)]} (set order)"
-            rows = [("SEQ 1 → SYNTH 1", bname, "bass"), ("SEQ 2 → SYNTH 2", lname, "lead"), ("DRUM → DRUMS", kname, "drums")]
+            rows = [("SYNTH 1 · BASS", bname, "bass"), ("SYNTH 2 · LEAD", lname, "lead"),
+                    ("DRUMS", kname, "drums")]
             for j, (lab, val, part) in enumerate(rows):
+                y = 452 + j * 38
+                self.rrect(30, y, 600, 34, 7, T["seg_inactive"])
                 n = self.mut_count.get(part, 0)
-                self.text(560 + j * 236, y + 8, lab + (f" · MUTATED ×{n}" if n else ""), 11, T["accent"], True, "w")
-                self.text_fit(560 + j * 236 + 112, y + 32, val.upper(), 15, 224, T["ink"], True)
-        # mutate
-        cy = 512
-        self.button(118, cy, 196, 58, "MUTATE", lambda: self.project_mutate("all"), accent=True, px=20)
-        for j, (lab, part) in enumerate((("BASS", "bass"), ("LEAD", "lead"), ("DRUMS", "drums"))):
-            self.button(276 + j * 112, cy, 104, 58, lab, lambda pt=part: self.project_mutate(pt), px=15)
-        self.seg(564, cy - 29, 96, 58, projmod.AMOUNTS, st.mut_amount, self.set_mut_amount, vertical=False)
-        self.button(924, cy, 96, 58, "BACK", self.project_back, px=15)
-        auto = {0: "AUTO MUTATE: OFF", 8: "AUTO: EVERY 8 BARS", 16: "AUTO: EVERY 16 BARS"}[st.mut_auto]
-        self.button(1138, cy, 236, 58, auto, self.cycle_mut_auto, on=bool(st.mut_auto), px=13)
-        # sounds, voice, projects
-        cy = 584
-        self.button(118, cy, 196, 56, "NEW SOUNDS", self.project_new_sounds, px=17)
+                self.text(44, y + 17, lab, 12, T.get("title", T["accent"]), True, "w")
+                self.text_fit(190, y + 17, val.upper() + (f"   · MUTATED ×{n}" if n else ""), 15, 430,
+                              T["ink"], True, "w")
+                self.button(698, y + 17, 120, 34, "MUTATE", lambda pt=part: self.project_mutate(pt), px=13)
+        # ---- mutate
+        self.frame(784, 342, 482, 226, "Mutate", "NEW SOUNDS ON THE NEXT BAR")
+        self.button(1025, 418, 450, 66, "MUTATE ALL", lambda: self.project_mutate("all"), accent=True, px=24)
+        self.seg(800, 460, 150, 42, projmod.AMOUNTS, st.mut_amount, self.set_mut_amount, vertical=False)
+        self.button(905, 536, 210, 42, "◂ BACK", self.project_back, px=15)
+        auto = {0: "AUTO: OFF", 8: "AUTO: EVERY 8 BARS", 16: "AUTO: EVERY 16 BARS"}[st.mut_auto]
+        self.button(1141, 536, 222, 42, auto, self.cycle_mut_auto, on=bool(st.mut_auto), px=14)
+        # ---- play: tempo, clock, mic, kit, fx
+        self.frame(14, 578, 1252, 154, "Play", "")
+        cy = 650
+        self.button(52, cy, 52, 52, "−", lambda: self.beat_tempo(-1), px=22)
+        self.readout(140, cy, 112, 52, f"{eng.bpm:.0f} BPM")
+        self.button(228, cy, 52, 52, "+", lambda: self.beat_tempo(1), px=22)
+        self.button(390, cy, 210, 52, "CLOCK OUT: ON" if st.clock_master else "CLOCK OUT: OFF",
+                    self.toggle_clock_master, on=st.clock_master, px=15)
         listening = self.voice.state in ("starting", "listening")
-        mic = {"starting": "MIC STARTING...", "listening": "● LISTENING"}.get(self.voice.state, "MIC OFF: TAP TO TALK")
-        self.button(346, cy, 240, 56, mic, self.toggle_voice, on=listening, accent=not listening, px=16)
-        self.button(540, cy, 128, 56, "◀ PREVIOUS", lambda: self.project_step(-1), px=13)
-        self.button(676, cy, 128, 56, "NEXT ▶", lambda: self.project_step(1), px=13)
+        mic = {"starting": "MIC STARTING...", "listening": "● LISTENING"}.get(self.voice.state, "🎤 TALK")
+        mic = mic if not mic.startswith("🎤") else "TALK (MIC)"
+        self.button(620, cy, 230, 52, mic, self.toggle_voice, on=listening, px=16)
         bk = st.project_kit
-        self.button(876, cy, 248, 56, "KIT: MY SAMPLES" if bk == "samples" else "KIT: BUILT-IN", self.toggle_project_kit,
-                    on=bk == "samples", px=14)
-        self.button(1138, cy, 236, 56, "PROJECT FX + TEMPO: " + ("ON" if st.project_fx else "OFF"),
-                    self.toggle_project_fx, on=st.project_fx, px=13)
-        cy2 = 656
-        live = self.clock_live()
-        self.button(42, cy2, 44, 44, "−", lambda: self.beat_tempo(-1), px=20)
-        self.readout(120, cy2, 104, 44, f"{eng.bpm:.0f} BPM")
-        self.button(198, cy2, 44, 44, "+", lambda: self.beat_tempo(1), px=20)
-        self.button(330, cy2, 190, 44, "CLOCK OUT: ON" if st.clock_master else "CLOCK OUT: OFF",
-                    self.toggle_clock_master, on=st.clock_master, px=13)
+        self.button(862, cy, 236, 52, "KIT: MY SAMPLES" if bk == "samples" else "KIT: BUILT-IN",
+                    self.toggle_project_kit, on=bk == "samples", px=15)
+        self.button(1121, cy, 262, 52, "PROJECT FX + TEMPO: " + ("ON" if st.project_fx else "OFF"),
+                    self.toggle_project_fx, on=st.project_fx, px=14)
         heard, when = self.voice_heard
         if self.voice.state == "error":
-            vmsg = friendly_error(self.voice.error)
+            msg, hot = friendly_error(self.voice.error), True
         elif listening:
-            vmsg = 'SAY "PROJECT SEVEN", A GENRE, "MUTATE", "MUTATE DRUMS", "GO BACK", "NEXT PROJECT", "NEW SOUNDS"'
+            msg, hot = 'SAY "PROJECT SEVEN", A GENRE, "MUTATE", "MUTATE DRUMS", "GO BACK", "NEXT PROJECT", "NEW SOUNDS"', True
             if heard and time.time() - when < 6:
-                vmsg = f'HEARD "{heard.upper()}"  ·  ' + vmsg
+                msg = f'HEARD "{heard.upper()}"  ·  ' + msg
+        elif st.clock_master:
+            msg, hot = "CLOCK OUT IS ON: THE BEATSTEP FOLLOWS THIS TEMPO (SET ITS SYNC TO USB)", False
+        elif self.clock_live():
+            msg, hot = "TEMPO COMES FROM THE BEATSTEP. TURN CLOCK OUT ON TO SET IT FROM HERE", False
         else:
-            vmsg = "MUTATE CHANGES SOUNDS ON THE NEXT BAR AND STAYS INSIDE THIS PROJECT'S CURATED SOUNDS"
-        self.text_fit(444, cy2 - 10, vmsg, 11, 810, T["accent"] if listening else T["ink_dim"], True, "w")
-        if st.clock_master:
-            tmsg = "CLOCK OUT: THE BEATSTEP FOLLOWS THIS TEMPO (BEATSTEP SYNC ON USB)"
-        elif live:
-            tmsg = "TEMPO FROM THE BEATSTEP: SET IT THERE, OR TURN CLOCK OUT ON TO SET IT FROM HERE"
-        else:
-            tmsg = "OWN TEMPO · TURN CLOCK OUT ON AND THE BEATSTEP PLAYS AT EACH PROJECT'S TEMPO"
-        self.text_fit(444, cy2 + 10, tmsg, 11, 810, T["ink_dim"], True, "w")
-        self.text(30, 714, "SYNTH 1 = BASS ON SEQ 1 · SYNTH 2 = LEAD ON SEQ 2 · DRUM TRACKS: 1 KICK 2 CLAP 3 SNARE "
-                  "4 PERC 5 HAT 6 OPEN HAT 7 RIM 8 SHAKER", 11, T["ink_dim"], True, "w")
+            msg, hot = "TURN CLOCK OUT ON AND THE BEATSTEP PLAYS AT EACH PROJECT'S TEMPO", False
+        self.text_fit(640, 702, msg, 12, 1200, T["accent"] if hot else T["ink_dim"], True)
 
     def beat_bars_step(self):
         bp = self.audio.engine.beats
@@ -4406,24 +4474,344 @@ class App:
         self.button(1024, y + 200, 150, 50, "CLEAR ALL", lambda: self.lock_clear("all"), px=14)
         self.button(1186, y + 200, 120, 50, "DONE", self.lock_off, accent=True, px=15)
 
+    # ---------------------------------------------------------------- v2.0: synth sound browser
+    BROWSE_COLS, BROWSE_ROWS = 4, 6
+
+    def browse_state(self, pre):
+        if not hasattr(self, "_browse"):
+            self._browse = {"s1": {"cat": "ALL", "page": 0}, "s2": {"cat": "ALL", "page": 0}}
+        return self._browse[pre]
+
+    def browse_list(self, pre):
+        """The sounds the browser shows for the chosen category (MY SOUNDS has its own category)."""
+        cat = self.browse_state(pre)["cat"]
+        if cat == "MINE":
+            return [(sd["name"], sd["values"]) for sd in self.state.sounds[pre] if sd]
+        return [(n, v) for n, v in PRESETS[pre] if cat == "ALL" or PRESET_CAT[pre].get(n) == cat]
+
+    def browse_cat(self, pre, cat):
+        b = self.browse_state(pre)
+        b["cat"], b["page"] = cat, 0
+        names = [n for n, _ in self.browse_list(pre)]
+        cur = self.state.preset_name[pre]
+        if cur in names:   # open on the page with the sound that's loaded
+            b["page"] = names.index(cur) // (self.BROWSE_COLS * self.BROWSE_ROWS)
+
+    def browse_load(self, pre, name, vals):
+        self.state.params.apply_preset(pre, vals)
+        self.state.preset_name[pre] = name
+        names = [n for n, _ in self.sound_list(pre)]
+        if name in names:
+            self.state.preset[pre] = names.index(name)
+        self.state.dirty = True
+        self.test_note(pre)
+
+    def browse_step(self, pre, d):
+        """PREV / NEXT inside the category you're looking at."""
+        lst = self.browse_list(pre)
+        if not lst:
+            return
+        names = [n for n, _ in lst]
+        cur = self.state.preset_name[pre]
+        i = (names.index(cur) + d) % len(lst) if cur in names else (0 if d > 0 else len(lst) - 1)
+        self.browse_load(pre, *lst[i])
+        self.browse_state(pre)["page"] = i // (self.BROWSE_COLS * self.BROWSE_ROWS)
+
+    def browse_page(self, pre, d):
+        b = self.browse_state(pre)
+        per = self.BROWSE_COLS * self.BROWSE_ROWS
+        pages = max(1, -(-len(self.browse_list(pre)) // per))
+        b["page"] = (b["page"] + d) % pages
+
+    def draw_browser(self, pre):
+        eng = self.audio.engine
+        syn = eng.s1 if pre == "s1" else eng.s2
+        title = "Synth 1" if pre == "s1" else "Synth 2"
+        role = "BASS & MORE · PLAYED BY SEQ 1" if pre == "s1" else "LEADS, KEYS & CHORDS · PLAYED BY SEQ 2"
+        self.frame(14, 100, 1252, 372, title + " sounds", f"{role} · CH {self.state.ch[pre]}", led=syn.amp.stage != 0)
+        b = self.browse_state(pre)
+        cats = PRESET_CATS + ["MINE"]
+        # categories
+        for i, cat in enumerate(cats):
+            y = 150 + i * 35
+            on = cat == b["cat"]
+            n = len(self.browse_list_for(pre, cat))
+            self.rrect(30, y, 150, 31, 7, T["seg_active"] if on else T["seg_inactive"])
+            self.text(44, y + 15.5, "MY SOUNDS" if cat == "MINE" else cat, 14,
+                      T["seg_active_tx"] if on else T["ink"], True, "w")
+            self.text(168, y + 15.5, str(n), 11, T["seg_active_tx"] if on else T["ink_faint"], False, "e")
+            self.hit(30, y, 150, 33, lambda c=cat: self.browse_cat(pre, c))
+        # the list, on a display
+        lst = self.browse_list(pre)
+        per = self.BROWSE_COLS * self.BROWSE_ROWS
+        pages = max(1, -(-len(lst) // per))
+        b["page"] = min(b["page"], pages - 1)
+        sx, sy, sw, sh = 196, 150, 806, 306
+        glass = T.get("screen", T["well"])
+        img = None
+        if STYLE.get("glass") and skins is not None and getattr(skins, "HAVE", False):
+            pw, ph = max(8, int(round(sw * self.scale))), max(8, int(round(sh * self.scale)))
+            img = self.photo(("scr", pw, ph, glass), lambda: skins.screen(pw, ph, glass))
+        if img is not None:
+            self.cv.create_image(self.X(sx), self.Y(sy), image=img, anchor="nw")
+        else:
+            self.rect(sx, sy, sw, sh, fill=glass)
+        self.rect(sx, sy, sw, sh, outline=T["line"])
+        ink = T.get("lcd_ink", T["accent"])
+        cw, rh = (sw - 16) / self.BROWSE_COLS, 42
+        cur = self.state.preset_name[pre]
+        for j, (name, vals) in enumerate(lst[b["page"] * per:(b["page"] + 1) * per]):
+            col, row = j % self.BROWSE_COLS, j // self.BROWSE_COLS
+            x, y = sx + 8 + col * cw, sy + 8 + row * rh
+            if name == cur:
+                self.rect(x + 2, y + 2, cw - 4, rh - 4, fill=ink)
+            self.text_fit(x + 14, y + rh / 2, name.upper(), 15, cw - 24, T["screen"] if name == cur else ink,
+                          name == cur, "w", minpx=10)
+            self.hit(x, y, cw, rh, lambda nm=name, v=vals: self.browse_load(pre, nm, v))
+        if not lst:
+            self.text(sx + sw / 2, sy + sh / 2 - 12, "NO SOUNDS SAVED HERE YET", 17, ink, True)
+            self.text(sx + sw / 2, sy + sh / 2 + 16, "Make a sound you like, then tap SAVE SOUND", 13, shade(ink, 0.7))
+        # page strip along the bottom of the display
+        if pages > 1:
+            self.text(sx + sw / 2, sy + sh - 20, f"PAGE {b['page'] + 1} OF {pages}", 12, shade(ink, 0.75), True)
+            self.text(sx + 24, sy + sh - 20, "◂ PAGE", 13, ink, True, "w")
+            self.text(sx + sw - 24, sy + sh - 20, "PAGE ▸", 13, ink, True, "e")
+            self.hit(sx, sy + sh - 40, 180, 40, lambda: self.browse_page(pre, -1))
+            self.hit(sx + sw - 180, sy + sh - 40, 180, 40, lambda: self.browse_page(pre, 1))
+        # right-hand keys
+        rx = 1018
+        self.readout(rx + 116, 168, 232, 36, cur[:24])
+        self.button(rx + 56, 225, 112, 54, "◂ PREV", lambda: self.browse_step(pre, -1), px=17)
+        self.button(rx + 176, 225, 112, 54, "NEXT ▸", lambda: self.browse_step(pre, 1), px=17)
+        self.button(rx + 56, 289, 112, 54, "TEST", lambda: self.test_note(pre), px=17)
+        self.button(rx + 176, 289, 112, 54, "RANDOM", lambda: self.random_sound(pre), px=17)
+        self.button(rx + 116, 353, 232, 54, "SAVE SOUND", lambda: self.open_overlay(("sounds", pre)), px=17)
+        self.button(rx + 116, 425, 232, 62, "EDIT SOUND ▸", lambda: self.synth_view(pre, True), accent=True, px=19)
+        # knobs: BeatStep knobs 1-16 on this tab
+        self.frame(14, 482, 1252, 250, "Knobs", "BEATSTEP PRO: PRESS CNTRL, THEN TURN KNOBS 1-16")
+        for i, key in enumerate(self.page_keys()):
+            row, col = divmod(i, 8)
+            self.mini_knob(i, 14 + 78 + col * 156.5, 560 + row * 96, key, r=23, labw=140, prefix=False)
+
+    def browse_list_for(self, pre, cat):
+        if cat == "MINE":
+            return [sd for sd in self.state.sounds[pre] if sd]
+        return [n for n, _ in PRESETS[pre] if cat == "ALL" or PRESET_CAT[pre].get(n) == cat]
+
+    # ---------------------------------------------------------------- v2.0: CAPTURE > STEMS
+    BOUNCE_BARS = (1, 2, 4, 8)
+
+    def bounce_text(self, b):
+        bars = b["bars"]
+        if b["state"] == "wait":
+            return f"BOUNCE {bars} BAR{'S' if bars > 1 else ''}: WAITING FOR THE NEXT BAR"
+        if b["state"] == "rec":
+            if b.get("bar_at") is None:
+                return "BOUNCE: STARTING..."
+            done = max(0, b["got"] - b["bar_at"])
+            bar = min(bars, 1 + int(done / max(b["need"], 1) * bars))
+            return f"BOUNCING BAR {bar} OF {bars}"
+        return "SAVING STEMS..."
+
+    def bounce_start(self, bars=None):
+        eng = self.audio.engine
+        if eng.bounce:
+            self.show_toast("ALREADY BOUNCING - TAP CANCEL TO STOP")
+            return
+        bars = bars or self.state.bounce_bars
+        need = int(bars * 4 * 60.0 / max(eng.bpm, 30.0) * eng.sr)
+        sync = eng.playing
+        eng.bounce = dict(bars=bars, bpm=eng.bpm, need=need, buf=[], got=0, sync=sync, t0=time.time(),
+                          state="wait" if sync else "rec", bar_at=None if sync else 0)
+        if not sync:
+            self.show_toast("NOT PLAYING: RECORDING NOW (PLAY THE BEATSTEP TO START ON A BAR)", 2.5)
+
+    def bounce_cancel(self):
+        if self.audio.engine.bounce:
+            self.audio.engine.bounce = None
+            self.show_toast("BOUNCE CANCELLED")
+
+    def bounce_tick(self):
+        eng = self.audio.engine
+        b = eng.bounce
+        if b:
+            if b["state"] == "wait" and (not eng.playing or time.time() - b["t0"] > 12):
+                b["state"], b["bar_at"] = "rec", 0
+            if self.state.page == "Capture" or SECTION_OF.get(self.state.page):
+                self.request_redraw()
+            if b["state"] == "done":
+                eng.bounce = None
+                pr = self.state.project
+                what = projmod.NAMES[pr] if pr is not None else "Jam"
+                name = capture.bounce_name(what, b["bpm"], b["bars"])
+                job = self.bounce_job = {"state": "saving", "name": name}
+
+                def work():
+                    try:
+                        parts = bounce_stems(b)
+                        mix = parts["mix"]
+                        if not len(mix) or float(np.max(np.abs(mix))) < capture.SILENT:
+                            job.update(state="error", msg="NOTHING HEARD - IS IT PLAYING?")
+                            return
+                        folder, files = capture.save_bounce(parts, eng.sr, name)
+                        job.update(state="saved", folder=folder, files=files)
+                    except Exception as e:  # noqa: BLE001
+                        log("bounce save failed", traceback.format_exc())
+                        job.update(state="error", msg=f"COULDN'T SAVE THE STEMS ({e.__class__.__name__})")
+                threading.Thread(target=work, daemon=True).start()
+        job = self.bounce_job
+        if job and job["state"] in ("saved", "error") and not job.get("seen"):
+            job["seen"] = True
+            if job["state"] == "error":
+                self.show_toast(job["msg"], 2.5)
+            else:
+                self.state.bounces = ([job["folder"]] + [f for f in self.state.bounces if f != job["folder"]])[:12]
+                self.state.dirty = True
+                self.show_toast(f"SAVED {len(job['files'])} FILES: {job['name'].upper()}", 2.5)
+                if self.state.bounce_mpc:
+                    self.send_bounce(job["folder"])
+            self.request_redraw()
+        snd = self.mpc_sender
+        if snd is not None and (snd.busy or snd.status != getattr(self, "_snd_seen", None)):
+            self._snd_seen = snd.status
+            self.request_redraw()
+
+    def send_bounce(self, folder):
+        if self.mpc_sender is not None and self.mpc_sender.busy:
+            self.show_toast("STILL SENDING THE LAST ONE")
+            return
+        if not folder or not os.path.isdir(folder):
+            self.show_toast("NO BOUNCE TO SEND YET")
+            return
+        snd = self.mpc_sender = MpcSend(None, host=self.state.mpc_host or None)
+        snd.busy = True
+        snd.status = "Connecting to the MPC..."
+        snd.folder = folder
+        threading.Thread(target=snd.send, args=(folder,), daemon=True).start()
+
+    def send_last_bounce(self):
+        last = next((f for f in self.state.bounces if os.path.isdir(f)), None)
+        self.send_bounce(last)
+
+    def open_folder(self, path):
+        try:
+            os.makedirs(path, exist_ok=True)
+            if sys.platform == "win32":
+                os.startfile(path)
+            else:
+                self.show_toast(path[-40:])
+        except Exception as e:  # noqa: BLE001
+            log("open folder failed", e)
+
+    def capture_pad(self, i):
+        if i < 4:
+            self.state.bounce_bars = self.BOUNCE_BARS[i]
+            self.bounce_start(self.BOUNCE_BARS[i])
+        elif i == 4:
+            self.send_last_bounce()
+        elif i == 5:
+            self.toggle_rec()
+        elif i == 6:
+            self.bounce_cancel()
+        elif i == 15:
+            self.set_page(self.state.last_tab)
+        self.request_redraw()
+
+    def set_bounce_bars(self, label):
+        self.state.bounce_bars = int(label.split()[0])
+        self.state.dirty = True
+
+    def toggle_bounce_mpc(self):
+        self.state.bounce_mpc = not self.state.bounce_mpc
+        self.state.dirty = True
+
+    def draw_capture(self):
+        eng = self.audio.engine
+        bars = self.state.bounce_bars
+        secs = bars * 4 * 60.0 / max(eng.bpm, 30.0)
+        # ---- bounce
+        self.frame(14, 100, 830, 400, "Bounce stems", "BEATSTEP PADS: 1-4 BOUNCE 1/2/4/8 BARS · 5 SEND TO MPC")
+        self.text(36, 160, "LENGTH", 12, T.get("title", T["accent"]), True, "w")
+        opts = [f"{n} BAR" + ("S" if n > 1 else "") for n in self.BOUNCE_BARS]
+        for i, o in enumerate(opts):
+            on = self.BOUNCE_BARS[i] == bars
+            self.rrect(36 + i * 196, 174, 186, 56, 10, T["btn_on"] if on else T["btn_bg"])
+            self.text(36 + i * 196 + 93, 202, o, 21, T["btn_text"], True)
+            self.hit(36 + i * 196, 174, 186, 56, lambda o=o: self.set_bounce_bars(o))
+        b = eng.bounce
+        if b:
+            self.rrect(36, 250, 600, 104, 14, T["well"])
+            self.text(336, 283, self.bounce_text(b), 20, T.get("lcd_ink", T["accent"]), True)
+            frac = 0.0
+            if b["state"] == "rec" and b.get("bar_at") is not None:
+                frac = min(1.0, max(0, b["got"] - b["bar_at"]) / max(b["need"], 1))
+            self.rect(60, 316, 552, 16, fill=shade(T["well"], 1.3))
+            self.rect(60, 316, 552 * frac, 16, fill=T["accent"])
+            for k in range(1, b["bars"]):
+                self.cv.create_line(self.X(60 + 552 * k / b["bars"]), self.Y(314), self.X(60 + 552 * k / b["bars"]),
+                                    self.Y(334), fill=T["bg"])
+            self.button(728, 302, 180, 104, "CANCEL", self.bounce_cancel, px=20)
+        else:
+            self.button(422, 302, 772, 104, f"●  BOUNCE {bars} BAR" + ("S" if bars > 1 else ""),
+                        self.bounce_start, accent=True, px=30)
+        self.text(36, 384, "YOU GET", 12, T.get("title", T["accent"]), True, "w")
+        self.text(110, 384, "MIX  +  DRUMS  +  SYNTH 1  +  SYNTH 2  +  FX  +  LOOPER   (silent parts are left out)",
+                  14, T["ink"], False, "w")
+        self.text(36, 418, f"{bars} bar{'s' if bars > 1 else ''} at {eng.bpm:.0f} BPM = {secs:.1f} seconds. Every file is "
+                  "exactly that long, so they loop.", 14, T["ink_dim"], False, "w")
+        self.text(36, 446, "When the BeatStep (or CLOCK OUT) is playing, it starts on the next bar. Stopped: straight away.",
+                  14, T["ink_dim"], False, "w")
+        self.text(36, 474, "Saved in Music > PotentialBox Loops, named with the tempo.", 14, T["ink_dim"], False, "w")
+        # ---- MPC
+        self.frame(854, 100, 412, 400, "Send to MPC", "OVER WI-FI, LIKE MPC TOOLS")
+        snd = self.mpc_sender
+        host = self.state.mpc_host or mpc_host_guess()
+        self.readout(1060, 172, 376, 40, host if host else "MPC ADDRESS: OPEN MPC TOOLS ONCE", "")
+        self.button(1060, 242, 376, 64, "SEND LAST BOUNCE", self.send_last_bounce, px=20,
+                    on=bool(snd and snd.busy))
+        self.button(1060, 318, 376, 56, "AUTO-SEND: " + ("ON" if self.state.bounce_mpc else "OFF"),
+                    self.toggle_bounce_mpc, on=self.state.bounce_mpc, px=17)
+        msg = (snd.status if snd else "") or "Every bounce can go straight to the MPC's SD card, in PotentialBox Loops."
+        col = "#ff8a6a" if (snd and snd.error) else T["ink"]
+        for k, ln in enumerate(self.wrap(msg, 46)[:3]):
+            self.text(872, 384 + k * 22, ln, 14, col, False, "w")
+        self.text(872, 470, "Uses MPC TOOLS' SSH login and its saved MPC address.", 12, T["ink_faint"], False, "w")
+        # ---- recent bounces + recording
+        self.frame(14, 510, 1252, 222, "Your bounces", "TAP A NAME TO OPEN ITS FOLDER")
+        recent = [f for f in self.state.bounces if os.path.isdir(f)][:4]
+        if not recent:
+            self.text(36, 590, "Nothing bounced yet. Play something, then tap BOUNCE.", 16, T["ink_dim"], False, "w")
+        for k, f in enumerate(recent):
+            y = 556 + k * 42
+            nfiles = len([x for x in os.listdir(f) if x.lower().endswith(".wav")]) if os.path.isdir(f) else 0
+            self.rrect(30, y, 660, 36, 7, T["seg_inactive"])
+            self.text_fit(44, y + 18, os.path.basename(f).upper(), 15, 520, T["ink"], True, "w")
+            self.text(676, y + 18, f"{nfiles} FILES", 12, T["ink_dim"], False, "e")
+            self.hit(30, y, 660, 38, lambda p=f: self.open_folder(p))
+            self.button(760, y + 18, 120, 34, "SEND", lambda p=f: self.send_bounce(p), px=14)
+        rec = eng.recorder is not None
+        self.button(1078, 592, 340, 58, "■ STOP RECORDING" if rec else "● RECORD (ANY LENGTH)",
+                    self.toggle_rec, on=rec, px=17)
+        self.button(990, 662, 164, 52, "OPEN LOOPS", lambda: self.open_folder(capture.loops_dir()), px=14)
+        self.button(1166, 662, 164, 52, "RESAMPLE PAD", lambda: self.open_overlay(("resample",)), px=14)
+        self.text(1078, 708, "RECORD saves mix + stems until you stop it", 11, T["ink_faint"])
+
     def draw_tabs(self):
-        self.rect(0, 742, W, 58, fill=T["well"])
-        tw = W / len(TABS)
-        key = ("tabs", round(self.scale, 3), self.fam_b)
-        if key not in self._fit:  # one size for every tab: the biggest that fits the longest name
-            px = 16
-            while px > 10 and max(self.font(px, True).measure(TAB_LABEL.get(t, t).upper()) for t in TABS) / self.scale > tw - 12:
-                px -= 1
-            self._fit[key] = px
-        px = self._fit[key]
-        for i, name in enumerate(TABS):
-            x = i * tw
-            on = name == self.state.page
-            if on:
-                self.rect(x + 4, 746, tw - 8, 50, fill=T["tab_on"])
-                self.rect(x + 4, 742, tw - 8, 4, fill=T["accent"])
-            self.text(x + tw / 2, 771, TAB_LABEL.get(name, name).upper(), px, T["tab_on_tx"] if on else T["chrome_ink"], on)
-            self.hit(x, 742, tw, 58, lambda n=name: self.set_page(n))
+        """The five big section keys along the bottom, each with its LED."""
+        self.rect(0, 742, W, 58, fill=T["bg"])
+        self.cv.create_line(self.X(0), self.Y(742), self.X(W), self.Y(742), fill=T["line"])
+        cur = SECTION_OF.get(self.state.page, "JAM")
+        gap, x0 = 12, 24
+        kw = (W - 2 * x0 - gap * (len(SECTIONS) - 1)) / len(SECTIONS)
+        for i, (sec, _subs) in enumerate(SECTIONS):
+            x = x0 + i * (kw + gap)
+            on = sec == cur
+            self.rrect(x, 749, kw, 42, 10, T["btn_on"] if on else T["btn_bg"])
+            lx = x + 26
+            self.cv.create_oval(self.X(lx - 6), self.Y(770 - 6), self.X(lx + 6), self.Y(770 + 6),
+                                fill=T["accent_hi"] if on else "#4a463e", outline=shade(T["btn_text"], 1.0))
+            self.text(x + kw / 2 + 10, 770, sec, 20, T["btn_text"], True)
+            self.hit(x, 744, kw, 54, lambda sc=sec: self.set_section(sc))
 
     def draw_setup(self):
         # audio
@@ -4485,15 +4873,9 @@ class App:
         self.button(380, 670, 220, 80, "FACTORY CCs", self.factory_ccs, px=20)
         self.text(520, 640, "KNOB MODE", 12, T["ink_dim"], False, "w")
         self.seg(520, 656, 140, 44, ["absolute", "relative"], self.state.knob_mode, self.pick_knob_mode, vertical=False)
-        self.button(906, 670, 172, 80, "ALL NOTES OFF", self.panic, px=17)
-        self.button(1070, 670, 140, 80, "PAD ACTIONS", lambda: self.open_overlay(("actions",)), accent=True, px=15)
-        # the look: one key steps through the three (it shows at once)
-        self.rrect(1150, 630, 106, 80, 12, T["btn_bg"])
-        self.text(1203, 650, "LOOK", 12, T["ink_dim"], True)
-        first, _, rest = STYLE["name"].upper().partition(" ")
-        self.text(1203, 672, first, 14, T["btn_text"], True)
-        self.text(1203, 692, rest, 14, T["btn_text"], True)
-        self.hit(1150, 630, 106, 80, self.cycle_look)
+        self.button(866, 670, 164, 80, "ALL NOTES OFF", self.panic, px=16)
+        self.button(1040, 670, 164, 80, "PAD ACTIONS", lambda: self.open_overlay(("actions",)), accent=True, px=16)
+        self.button(1194, 670, 124, 80, "MY SETUPS", lambda: self.open_overlay(("setups",)), px=15)
 
     # ---------------------------------------------------------------- input
     def to_design(self, e):
@@ -4582,16 +4964,48 @@ class App:
         self.toast = (msg, time.time() + secs)
         self.request_redraw()
 
-    def set_page(self, name):
+    def set_page(self, name, tapped=False):
+        """Go to a page. `tapped`: from the header's sub-tab keys, where tapping a synth again goes back to its
+        sound browser. From a BeatStep pad, pressing the page's pad again steps through its sub-pages."""
         self.overlay = None
-        if name == self.state.page and name in SUBPAGES:
-            self.state.subpage[name] = (self.state.subpage.get(name, 0) + 1) % len(SUBPAGES[name])
+        sub = None
+        if name in OLD_PAGES:
+            name, sub = OLD_PAGES[name]
+        if name not in TABS:
+            return
+        if sub is not None and name in SUBPAGES:
+            self.state.subpage[name] = sub
+        elif name == self.state.page:
+            if name in ("Synth 1", "Synth 2"):
+                pre = "s" + name[-1]
+                if tapped:
+                    self.state.synth_edit[pre] = False
+                elif not self.state.synth_edit[pre]:
+                    self.state.synth_edit[pre] = True
+                else:
+                    self.state.subpage[name] = (self.state.subpage.get(name, 0) + 1) % len(SUBPAGES[name])
+            elif name in SUBPAGES and not tapped:
+                self.state.subpage[name] = (self.state.subpage.get(name, 0) + 1) % len(SUBPAGES[name])
         if name != self.state.page:
             if self.state.page not in OWN_SCREEN_PAGES:
                 self.state.last_tab = self.state.page
             if name in NO_LOCK_PAGES:
                 self.lock_off()
         self.state.page = name
+        self.state.sec_page[SECTION_OF[name]] = name
+        self.state.dirty = True
+
+    def set_section(self, sec):
+        """One of the five big keys: back to the sub-tab you were last on in that section."""
+        if SECTION_OF.get(self.state.page) == sec and not self.overlay:
+            return
+        page = self.state.sec_page.get(sec) or dict(SECTIONS)[sec][0][1]
+        self.set_page(page)
+
+    def synth_view(self, pre, edit):
+        self.state.synth_edit[pre] = edit
+        if not edit:
+            self.lock_off()
         self.state.dirty = True
 
     def pick_subpage(self, label):
@@ -5088,6 +5502,7 @@ class App:
                 else:
                     self.run_action(a)
             self.resample_tick()
+            self.bounce_tick()
             self.samples_tick()
             self.loop_tick()
             self.beat_tick()

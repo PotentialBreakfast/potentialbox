@@ -111,6 +111,20 @@ SUB_TYPES = ["-1 oct, filtered", "-1 oct, clean", "Root, clean"]  # clean = adde
 DIST_TYPES = ["Off", "Tube", "Tape", "Fold", "Crush", "Hard clip"]
 SYN_FX = ["Off", "Chorus", "Ensemble", "Dimension", "Phaser", "Flanger"]
 WARPS = ["Off", "Bend +", "Bend -", "Mirror", "Sync", "Squeeze", "Phase FM", "Quantize"]
+BOUNCE_STEMS = ("s1", "s2", "dr", "fx", "lp")  # v2.0: what CAPTURE > STEMS saves next to the mix
+
+
+def bounce_stems(bnc):
+    """Cut a finished bounce down to exactly its bars: {"mix": array, "s1": array, ...} (stereo float)."""
+    a, n = bnc["bar_at"] or 0, bnc["need"]
+    mix = np.concatenate([b[0] for b in bnc["buf"]])[a:a + n]
+    out = {"mix": mix}
+    for k in BOUNCE_STEMS:
+        parts = [b[1][k] if k in b[1] else np.zeros((b[2], 2)) for b in bnc["buf"]]
+        out[k] = np.concatenate(parts)[a:a + n]
+    return out
+
+
 PUNCH_FX = ["Repeat 1/8", "Repeat 1/16", "Roll 1/32", "Tape stop", "Reverse", "Filter sweep", "Gate 1/16", "Echo throw"]
 
 
@@ -463,8 +477,9 @@ def _build_specs():
 SPECS = _build_specs()
 
 PAGES = collections.OrderedDict([
-    ("Perform", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s2.pos", "s2.cutoff", "s2.envamt", "s2.decay",
-                 "dr.p1.tune", "dr.p1.decay", "dr.p3.tune", "dr.p5.decay", "dr.filter", "s1.vol", "s2.vol", "dr.vol"]),
+    # v2.0: JAM > KNOBS shows what the BeatStep knobs do on JAM > PROJECTS too (the same 16)
+    ("Perform", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.drive", "s2.cutoff", "s2.pos", "s2.envamt", "s2.decay",
+                 "dr.p1.tune", "dr.p3.tune", "dr.filter", "dr.drive", "fx.s2", "rv.s2", "m.crush", "m.master"]),
     ("Projects", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.drive", "s2.cutoff", "s2.pos", "s2.envamt", "s2.decay",
                   "dr.p1.tune", "dr.p3.tune", "dr.filter", "dr.drive", "fx.s2", "rv.s2", "m.crush", "m.master"]),
     ("Beats", ["bt.busy", "bt.var", "bt.swing", "bt.human", "dr.vol", "dr.filter", "dr.drive", "rv.dr",
@@ -477,6 +492,13 @@ PAGES = collections.OrderedDict([
     ("Macros", [f"mc.{i}" for i in range(1, 17)]),
     ("Synth 1", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s1.wave", "s1.pw", "s1.detune", "s1.sub",
                  "s1.attack", "s1.decay", "s1.sustain", "s1.release", "s1.glide", "s1.octave", "s1.drive", "s1.vol"]),
+    # v2.0: the knobs under each synth's sound browser (BeatStep knobs 1-16 there): the moves that matter most
+    ("Synth 1 Quick", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s1.attack", "s1.decay", "s1.sustain",
+                       "s1.release", "s1.unidet", "s1.fdrive", "s1.distamt", "s1.sfxamt", "s1.glide", "fx.s1", "rv.s1",
+                       "s1.vol"]),
+    ("Synth 2 Quick", ["s2.pos", "s2.posenv", "s2.cutoff", "s2.reso", "s2.envamt", "s2.attack", "s2.decay",
+                       "s2.release", "s2.detune", "s2.warpamt", "s2.distamt", "s2.sfxamt", "s2.lfoamt", "fx.s2", "rv.s2",
+                       "s2.vol"]),
     ("Synth 1 Osc+", ["s1.osc2", "s1.fm", "s1.ring", "s1.sync", "s1.noise", "s1.ftype", "s1.keytrk", "s1.velamp",
                       "s1.chord", "s1.voicing", "s1.hkey", "s1.hscale", "s1.lane", "s1.penv", "s1.pdec", "s1.glmode"]),
     ("Synth 1 Uni+FX", ["s1.uni", "s1.unidet", "s1.uniwid", "s1.supersaw", "s1.fdrive", "s1.drive", "s1.dist",
@@ -508,6 +530,7 @@ PAGES = collections.OrderedDict([
                     "s2.mea", "s2.med", "s2.penv", "s2.pdec", "s2.glide", "s2.glmode", "s2.velamp", "s2.vol"]),
     ("Synth 2 LFO1 Steps", [f"s2.l1step{i}" for i in range(16)]),
     ("Synth 2 LFO2 Steps", [f"s2.l2step{i}" for i in range(16)]),
+    ("Drums", [f"dr.p{i}.tune" for i in range(1, 9)] + [f"dr.p{i}.decay" for i in range(1, 9)]),
     ("Drums 1-8", [f"dr.p{i}.tune" for i in range(1, 9)] + [f"dr.p{i}.decay" for i in range(1, 9)]),
     ("Drums 1-8 Mix", [f"dr.p{i}.level" for i in range(1, 9)] + [f"dr.p{i}.pan" for i in range(1, 9)]),
     ("Drums 1-8 Groove", [f"dr.p{i}.chance" for i in range(1, 9)] + [f"dr.p{i}.cond" for i in range(1, 9)]),
@@ -515,6 +538,9 @@ PAGES = collections.OrderedDict([
     ("Drums 9-16 Mix", [f"dr.p{i}.level" for i in range(9, 17)] + [f"dr.p{i}.pan" for i in range(9, 17)]),
     ("Drums 9-16 Groove", [f"dr.p{i}.chance" for i in range(9, 17)] + [f"dr.p{i}.cond" for i in range(9, 17)]),
     ("Drums Choke", [f"dr.p{i}.choke" for i in range(1, 17)]),
+    # v2.0: CAPTURE > STEMS. While you bounce, the BeatStep knobs ride the levels and sends
+    ("Capture", ["s1.vol", "s2.vol", "dr.vol", "lp.vol", "fx.s1", "fx.s2", "fx.dr", "m.master",
+                 "s1.cutoff", "s2.cutoff", "dr.filter", "m.filter", "rv.s1", "rv.s2", "rv.dr", "m.crush"]),
     ("Mix", ["s1.vol", "s2.vol", "dr.vol", "m.master", "dr.filter", "dr.drive", "m.drive", "m.filter",
              "dk.s1", "dk.s2", "dk.fx", "dk.src", "dk.rel", "m.glue", "m.gluespd", "m.width"]),
     ("Mix EQ", ["eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "eq.s2.lo", "eq.s2.mid", "eq.s2.hi", "eq.lof", "eq.hif",
@@ -529,141 +555,7 @@ PAGES = collections.OrderedDict([
                    "m.crush", "m.glue", "m.gluespd", "m.width", "m.master", "rv.level", "rv.size", "rv.tone"]),
 ])
 
-PRESETS = {
-    "s1": [
-        ("Acid Bass", dict(wave=0, octave=-1, detune=0, sub=0, cutoff=300, reso=0.8, envamt=0.65, fdecay=0.18,
-                           attack=0.001, decay=0.3, sustain=0.7, release=0.05, glide=0.08, drive=0.5)),
-        ("Fat Saw Lead", dict(wave=0, octave=0, detune=18, sub=0.2, cutoff=2500, reso=0.25, envamt=0.3, fdecay=0.4,
-                              attack=0.005, decay=0.8, sustain=0.8, release=0.25, glide=0.05, drive=0.2)),
-        ("Square Bass", dict(wave=1, pw=0.5, octave=-1, detune=5, sub=0.6, cutoff=700, reso=0.3, envamt=0.4,
-                             fdecay=0.2, attack=0.001, decay=0.25, sustain=0.5, release=0.08, drive=0.3)),
-        ("Pluck", dict(wave=0.3, octave=0, detune=10, sub=0, cutoff=600, reso=0.35, envamt=0.75, fdecay=0.12,
-                       attack=0.001, decay=0.25, sustain=0, release=0.2, drive=0.1)),
-        ("Sub Bass", dict(wave=1, pw=0.5, octave=-1, detune=0, sub=0.9, cutoff=200, reso=0.1, envamt=0.1,
-                          attack=0.003, decay=0.5, sustain=0.9, release=0.1, drive=0.1)),
-        ("Soft Lead", dict(wave=0.5, pw=0.3, octave=0, detune=12, cutoff=1500, reso=0.2, envamt=0.2, fdecay=0.5,
-                           attack=0.08, decay=1.0, sustain=0.7, release=0.6, glide=0.15, drive=0.05)),
-        ("Sync Lead", dict(wave=0, sync=1, osc2=12, octave=0, cutoff=3200, reso=0.2, envamt=0.3, fdecay=0.4,
-                           attack=0.003, decay=0.6, sustain=0.7, release=0.2, glide=0.08, mea=0.001, med=0.35,
-                           m7dst=1, m7amt=0.6, drive=0.15)),
-        ("FM Bass", dict(wave=0, fm=0.55, osc2=0, octave=-1, detune=0, sub=0.3, cutoff=800, reso=0.25, envamt=0.45,
-                         fdecay=0.2, attack=0.001, decay=0.3, sustain=0.5, release=0.08, drive=0.4)),
-        ("Wobble Bass", dict(wave=0.6, octave=-1, sub=0.6, ftype=1, cutoff=250, reso=0.55, envamt=0.1, l1sync=6,
-                             m2amt=0.55, attack=0.002, decay=0.5, sustain=0.9, release=0.1, drive=0.5)),
-        ("Minor 7 Stab", dict(chord=9, voicing=1, wave=0.3, octave=0, cutoff=900, reso=0.3, envamt=0.6, fdecay=0.15,
-                              attack=0.001, decay=0.3, sustain=0, release=0.25, drift=0.3, drive=0.1)),
-        # ---- v1.12: sounds that use unison, filter drive, distortion and the synth FX
-        ("Hyper Saw Lead", dict(wave=0, octave=0, uni=5, unidet=0.45, uniwid=1.0, sub=0, cutoff=5500, reso=0.15,
-                                envamt=0.25, fdecay=0.5, attack=0.004, decay=1.2, sustain=0.85, release=0.35,
-                                glide=0.05, sfx=2, sfxamt=0.45, drive=0.15)),
-        ("Reese Bass", dict(wave=0, octave=-1, uni=3, unidet=0.3, uniwid=0.4, sub=0.6, cutoff=420, reso=0.2,
-                            envamt=0.1, attack=0.004, decay=1.0, sustain=1.0, release=0.12, l1rate=0.2, m2amt=0.12,
-                            fdrive=0.45, dist=1, distamt=0.35, drive=0.2)),
-        ("Neuro Growl", dict(wave=0.6, octave=-1, osc2=7, fm=0.45, uni=1, unidet=0.2, uniwid=0.3, sub=0.4, ftype=3,
-                             cutoff=700, reso=0.55, envamt=0.15, l1sync=7, m2amt=0.55, fdrive=0.6, dist=3, distamt=0.5,
-                             attack=0.002, decay=0.6, sustain=0.9, release=0.08)),
-        ("Hoover", dict(wave=0, pw=0.3, octave=0, osc2=-12, uni=5, unidet=0.75, uniwid=1.0, penv=-5, pdec=0.18,
-                        glide=0.12, glmode=1, cutoff=3500, reso=0.1, envamt=0.15, attack=0.01, decay=1.0, sustain=0.9,
-                        release=0.3, sfx=1, sfxamt=0.6, dist=1, distamt=0.3)),
-        ("Stack Pluck", dict(wave=0.2, octave=0, uni=4, unidet=0.25, uniwid=0.9, sub=0, cutoff=650, reso=0.3,
-                             envamt=0.8, fdecay=0.14, attack=0.001, decay=0.32, sustain=0, release=0.3, sfx=3,
-                             sfxamt=0.6)),
-        ("Analog Brass", dict(wave=0, octave=0, uni=1, unidet=0.2, uniwid=0.7, sub=0, cutoff=800, reso=0.15,
-                              envamt=0.55, fdecay=0.35, attack=0.03, decay=0.8, sustain=0.75, release=0.25, drift=0.4,
-                              sfx=2, sfxamt=0.3)),
-        ("Acid Screamer", dict(wave=0, octave=-1, sub=0, cutoff=380, reso=0.9, envamt=0.75, fdecay=0.15, attack=0.001,
-                               decay=0.3, sustain=0.6, release=0.05, glide=0.07, fdrive=0.6, drive=0.4, dist=1,
-                               distamt=0.45, velamp=0.4)),
-        ("Pro Sub", dict(wave=1, octave=-1, sub=1.0, cutoff=170, reso=0.0, envamt=0.05, attack=0.003, decay=0.8,
-                         sustain=0.9, release=0.12, dist=2, distamt=0.25)),
-        ("Detuned Keys", dict(wave=0.5, pw=0.4, octave=0, uni=1, unidet=0.18, uniwid=0.8, sub=0, cutoff=2400,
-                              reso=0.1, envamt=0.3, fdecay=0.4, attack=0.002, decay=0.9, sustain=0.35, release=0.4,
-                              drift=0.5, sfx=1, sfxamt=0.5)),
-        ("Wide Square Lead", dict(wave=1, pw=0.35, octave=0, uni=2, unidet=0.3, uniwid=1.0, sub=0, cutoff=4200,
-                                  reso=0.15, envamt=0.2, attack=0.005, decay=1.0, sustain=0.8, release=0.25, glide=0.1,
-                                  sfx=4, sfxamt=0.45)),
-        ("Sync Scream", dict(wave=0, sync=1, osc2=19, octave=0, uni=1, unidet=0.25, uniwid=0.8, sub=0, cutoff=6000,
-                             reso=0.15, envamt=0.2, mea=0.001, med=0.5, m7dst=1, m7amt=0.5, attack=0.003, decay=0.8,
-                             sustain=0.8, release=0.2, dist=5, distamt=0.25)),
-        ("Trance Supersaw", dict(wave=0, supersaw=0.8, octave=0, sub=0, cutoff=7000, reso=0.1, envamt=0.15,
-                                 attack=0.005, decay=1.5, sustain=0.9, release=0.5, sfx=2, sfxamt=0.5)),
-        ("Dub Chord Pro", dict(chord=5, voicing=1, wave=0.3, octave=0, sub=0, cutoff=1200, reso=0.25, envamt=0.5,
-                               fdecay=0.2, attack=0.001, decay=0.3, sustain=0, release=0.3, sfx=3, sfxamt=0.5, dist=2,
-                               distamt=0.3)),
-        ("Wobble Pro", dict(wave=0.6, octave=-1, uni=1, unidet=0.2, uniwid=0.3, sub=0.6, ftype=1, cutoff=250,
-                            reso=0.6, envamt=0.1, l1sync=6, m2amt=0.6, fdrive=0.5, dist=3, distamt=0.35, attack=0.002,
-                            decay=0.5, sustain=0.9, release=0.1)),
-    ],
-    "s2": [
-        ("Glass Bell", dict(table=4, pos=0.4, posenv=0.3, lfoamt=0.1, cutoff=9000, reso=0.1, envamt=0.2,
-                            attack=0.002, decay=1.2, sustain=0.2, release=1.0, detune=0.15, octave=1)),
-        ("Vowel Lead", dict(table=1, pos=0.2, posenv=0, lforate=0.6, lfoamt=0.7, cutoff=6000, reso=0.1,
-                            envamt=0.1, attack=0.02, decay=0.8, sustain=0.8, release=0.3, detune=0.2, octave=0)),
-        ("Digital Bass", dict(table=5, octave=-1, pos=0.3, posenv=0.5, lfoamt=0, cutoff=1500, reso=0.4,
-                              envamt=0.5, attack=0.001, decay=0.3, sustain=0.6, release=0.1, detune=0.05)),
-        ("PWM Strings", dict(table=3, pos=0.2, posenv=0, lforate=0.3, lfoamt=0.6, cutoff=3000, reso=0.1,
-                             envamt=0.1, attack=0.3, decay=1.5, sustain=0.8, release=1.2, detune=0.4, octave=0)),
-        ("Harmonic Sweep", dict(table=2, pos=0, posenv=0.8, lfoamt=0, cutoff=8000, reso=0.1, envamt=0.1,
-                                attack=0.01, decay=0.6, sustain=0.3, release=0.5, detune=0.25, octave=0)),
-        ("Warm Pad", dict(table=0, pos=0.35, posenv=0, lforate=0.2, lfoamt=0.3, cutoff=1800, reso=0.15,
-                          envamt=0.1, attack=0.6, decay=2, sustain=0.9, release=2, detune=0.5, octave=0)),
-        ("Chord Pad", dict(table=0, pos=0.4, posenv=0, chord=8, voicing=1, attack=0.5, decay=2, sustain=0.85,
-                           release=1.6, cutoff=2500, reso=0.1, envamt=0.1, detune=0.4, drift=0.4, l2shape=6, l2rate=0.3,
-                           m3amt=0.35, m6amt=0.3, octave=0)),
-        ("Chip Lead", dict(table=12, pos=0.2, posenv=0, lfoamt=0, cutoff=9000, reso=0.1, envamt=0.1, attack=0.001,
-                           decay=0.25, sustain=0.7, release=0.1, glide=0.03, glmode=1, octave=1, l1rate=5.5,
-                           m1amt=0.02, detune=0.05)),
-        ("Voice Choir", dict(table=9, pos=0.5, posenv=0, lforate=0.2, lfoamt=0.3, chord=3, attack=0.4, decay=1.5,
-                             sustain=0.8, release=1.2, cutoff=5000, reso=0.1, envamt=0.1, detune=0.5, drift=0.6,
-                             octave=0)),
-        ("Granular Drone", dict(table=10, pos=0.3, posenv=0, lfoamt=0, l2shape=6, l2rate=0.15, m3amt=0.7, attack=1.0,
-                                decay=3, sustain=1, release=2.5, cutoff=3000, reso=0.3, envamt=0.1, detune=0.6, sub=0.3,
-                                octave=-1)),
-        # ---- v1.12: sounds that use unison, warp, distortion and the synth FX
-        ("Lush Pad", dict(table=0, pos=0.35, posenv=0, lforate=0.15, lfoamt=0.25, uni=5, detune=0.55, uniwid=1.0,
-                          attack=0.7, decay=2, sustain=0.9, release=2.2, cutoff=3000, reso=0.1, envamt=0.1, sfx=2,
-                          sfxamt=0.6, warp=3, warpamt=0.25, drift=0.3, octave=0)),
-        ("Glass Keys", dict(table=4, pos=0.45, posenv=0.2, lfoamt=0, uni=1, detune=0.15, uniwid=0.6, warp=1,
-                            warpamt=0.2, cutoff=9000, reso=0.05, envamt=0.1, attack=0.002, decay=1.4, sustain=0.15,
-                            release=1.0, sfx=1, sfxamt=0.4, octave=0)),
-        ("Super Pluck", dict(table=28, pos=0.4, posenv=0.3, lfoamt=0, uni=4, detune=0.35, uniwid=1.0, cutoff=1800,
-                             reso=0.2, envamt=0.7, attack=0.001, decay=0.35, sustain=0, release=0.3, sfx=3, sfxamt=0.5,
-                             octave=0)),
-        ("Formant Lead", dict(table=1, pos=0.3, posenv=0.2, lfoamt=0, warp=4, warpamt=0.45, uni=1, detune=0.2,
-                              uniwid=0.7, cutoff=7000, reso=0.1, envamt=0.2, attack=0.005, decay=0.8, sustain=0.7,
-                              release=0.2, glide=0.06, mea=0.002, med=0.4, m4amt=0.4, octave=0)),
-        ("Vowel Growl", dict(table=1, pos=0.4, posenv=0, lfoamt=0, warp=4, warpamt=0.3, l2sync=7, m3amt=0.5,
-                             dist=3, distamt=0.3, uni=1, detune=0.15, cutoff=6000, reso=0.15, envamt=0.1,
-                             attack=0.003, decay=0.6, sustain=0.9, release=0.1, octave=-1, sub=0.4)),
-        ("Evolving Texture", dict(table=10, pos=0.3, posenv=0, lfoamt=0, l2shape=6, l2rate=0.12, m3amt=0.6, warp=6,
-                                  warpamt=0.3, uni=3, detune=0.4, uniwid=1.0, attack=1.2, decay=3, sustain=1,
-                                  release=2.5, cutoff=4000, reso=0.2, envamt=0.1, sfx=2, sfxamt=0.5, octave=0)),
-        ("Digital Stab", dict(table=5, chord=9, voicing=1, warp=7, warpamt=0.35, pos=0.4, posenv=0.3, lfoamt=0,
-                              cutoff=5000, reso=0.2, envamt=0.4, attack=0.001, decay=0.3, sustain=0, release=0.25,
-                              dist=4, distamt=0.25, sfx=3, sfxamt=0.4, octave=0)),
-        ("Choir Air", dict(table=9, pos=0.5, posenv=0, lforate=0.2, lfoamt=0.25, uni=3, detune=0.5, uniwid=1.0,
-                           warp=3, warpamt=0.2, attack=0.5, decay=2, sustain=0.85, release=1.8, cutoff=5000, reso=0.1,
-                           envamt=0.1, sfx=2, sfxamt=0.55, octave=0)),
-        ("Folded Lead", dict(table=0, pos=0.3, posenv=0.2, lfoamt=0, warp=6, warpamt=0.45, dist=3, distamt=0.35,
-                             uni=1, detune=0.3, uniwid=0.5, cutoff=6000, reso=0.15, envamt=0.2, attack=0.004,
-                             decay=0.8, sustain=0.75, release=0.2, glide=0.06, octave=0)),
-        ("Retro Poly", dict(table=28, pos=0.4, posenv=0.1, lfoamt=0, uni=4, detune=0.45, uniwid=1.0, cutoff=5000,
-                            reso=0.15, envamt=0.2, attack=0.01, decay=1.0, sustain=0.7, release=0.5, sfx=1, sfxamt=0.5,
-                            glide=0.05, octave=0)),
-        ("Hollow Reed", dict(table=23, pos=0.4, posenv=0, lfoamt=0, warp=5, warpamt=0.4, uni=1, detune=0.15,
-                             cutoff=5000, reso=0.1, envamt=0.15, attack=0.03, decay=1, sustain=0.8, release=0.4, sfx=3,
-                             sfxamt=0.4, octave=0)),
-        ("Chip Arp Pro", dict(table=11, pos=0.3, posenv=0, lfoamt=0, warp=7, warpamt=0.25, uni=1, detune=0.1,
-                              cutoff=9000, reso=0.05, envamt=0.1, attack=0.001, decay=0.25, sustain=0.4, release=0.1,
-                              glide=0.02, glmode=1, sfx=3, sfxamt=0.3, octave=1)),
-        ("Dark Drone Pro", dict(table=10, octave=-1, pos=0.3, posenv=0, lfoamt=0, l2shape=6, l2rate=0.1, m3amt=0.7,
-                                warp=4, warpamt=0.25, uni=3, detune=0.6, uniwid=1.0, attack=1.5, decay=3, sustain=1,
-                                release=3, cutoff=1500, reso=0.35, envamt=0.1, sfx=5, sfxamt=0.3)),
-        ("Bell Tower", dict(table=4, pos=0.5, posenv=0.1, lfoamt=0, warp=2, warpamt=0.35, uni=2, detune=0.25,
-                            uniwid=0.9, attack=0.002, decay=2.5, sustain=0, release=2, cutoff=9000, reso=0.05,
-                            envamt=0.1, sfx=2, sfxamt=0.4, octave=0)),
-    ],
-}
+from potentialbox.presets import PRESETS, PRESET_CAT, PRESET_CATS  # noqa: E402  (v2.0: its own file)
 
 
 # tab -> [(sub-page button, page)]; tapping a tab again goes to its next sub-page
@@ -672,8 +564,10 @@ SUBPAGES = {
                 ("LFO1 Steps", "Synth 1 LFO1 Steps"), ("LFO2 Steps", "Synth 1 LFO2 Steps")],
     "Synth 2": [("Main", "Synth 2"), ("Osc+", "Synth 2 Osc+"), ("Uni+FX", "Synth 2 Uni+FX"), ("Mod", "Synth 2 Mod"), ("Mod2", "Synth 2 Mod 2"), ("Arp+", "Synth 2 Arp"), ("Env", "Synth 2 Env"),
                 ("LFO1 Steps", "Synth 2 LFO1 Steps"), ("LFO2 Steps", "Synth 2 LFO2 Steps")],
-    "Drums 1-8": [("Main", "Drums 1-8"), ("Mix", "Drums 1-8 Mix"), ("Groove", "Drums 1-8 Groove"), ("Choke", "Drums Choke")],
-    "Drums 9-16": [("Main", "Drums 9-16"), ("Mix", "Drums 9-16 Mix"), ("Groove", "Drums 9-16 Groove"), ("Choke", "Drums Choke")],
+    # v2.0: one Drums tab for all 16 pads
+    "Drums": [("Tune 1-8", "Drums 1-8"), ("Tune 9-16", "Drums 9-16"), ("Mix 1-8", "Drums 1-8 Mix"),
+              ("Mix 9-16", "Drums 9-16 Mix"), ("Groove 1-8", "Drums 1-8 Groove"), ("Groove 9-16", "Drums 9-16 Groove"),
+              ("Choke", "Drums Choke")],
     "Mix": [("Main", "Mix"), ("EQ", "Mix EQ"), ("Mute/Solo", "Track Mute/Solo")],
     "FX": [("Sends", "FX"), ("Master", "Master FX")],
 }
@@ -2860,6 +2754,7 @@ class Engine:
         self.beat_ph = 0.0
         self.recorder = None
         self.capture = None
+        self.bounce = None   # v2.0 CAPTURE: bar-locked stems (mix + synth 1 + synth 2 + drums + fx + looper)
         self.cb_t = 0.0
         self.cb_prev = 0.0
         self.blk_n = 256
@@ -2944,11 +2839,11 @@ class Engine:
                 p.apply_step(self.step)
             if t % 24 == 0 and int(p.val["dk.src"]) == 16:
                 self.duck_hit = 0
-            cap = self.capture
-            if cap and cap["state"] == "wait" and t % 96 == 94:
-                cap["state"] = "rec"
-            if cap and cap["state"] == "rec" and cap.get("bar_at") is None and t % 96 == 0:
-                cap["bar_at"] = cap["got"]
+            for cap in (self.capture, self.bounce):
+                if cap and cap["state"] == "wait" and t % 96 == 94:
+                    cap["state"] = "rec"
+                if cap and cap["state"] == "rec" and cap.get("bar_at") is None and t % 96 == 0:
+                    cap["bar_at"] = cap["got"]
 
     def _dispatch(self):
         ev = self.events
@@ -3028,7 +2923,7 @@ class Engine:
         rsend = np.zeros((n, 2))
         duck = self.duck_env(n)
         lof, hif = v["eq.lof"], v["eq.hif"]
-        stems = {} if (self.recorder or self.capture) else None
+        stems = {} if (self.recorder or self.capture or self.bounce) else None
         solo_active = (v["s1.solo"] >= 0.5 or v["s2.solo"] >= 0.5 or v["dr.solo"] >= 0.5)
         def track_plays(mute, solo):
             if solo_active:
@@ -3106,6 +3001,12 @@ class Engine:
                 self.recorder.push(out, stems)
             except Exception:
                 pass
+        bnc = self.bounce
+        if bnc and bnc["state"] == "rec":
+            bnc["buf"].append((out.copy(), {k: stems[k].copy() for k in BOUNCE_STEMS if k in stems}, n))
+            bnc["got"] += n
+            if bnc.get("bar_at") is not None and bnc["got"] >= bnc["bar_at"] + bnc["need"]:
+                bnc["state"] = "done"
         cap = self.capture
         if cap and cap["state"] == "rec":
             src = cap["src"]

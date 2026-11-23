@@ -260,3 +260,100 @@ class MpcSync:
         finally:
             self.busy = False
         return self.copied
+
+
+# ----------------------------------------------------------------------------- v2.0: send loops to the MPC
+SEND_FOLDER = "PotentialBox Loops"
+ROOT_SCRIPT = r"""
+pick=""
+for d in /media/* /SDMPC /sdcard; do
+  [ -d "$d" ] || continue
+  case "$d" in *nternal*|*az01*) continue;; esac
+  if [ -d "$d/DRUM ONE SHOTS" ] || [ -d "$d/MYMPC" ] || [ -d "$d/PotentialBox Loops" ]; then echo "R|$d"; exit 0; fi
+  [ -z "$pick" ] && [ -w "$d" ] && pick="$d"
+done
+if [ -n "$pick" ]; then echo "R|$pick"; exit 0; fi
+echo "NONE"
+"""
+
+
+class MpcSend(MpcSync):
+    """Copy a folder of WAVs (one bounce) to <SD card>/PotentialBox Loops/<folder name>/ on the MPC, over SSH.
+    The SD card is the drive that has MPC TOOLS' DRUM ONE SHOTS or a MYMPC folder (else the first one you can
+    write to). Run with send(folder); progress in self.status like MpcSync."""
+
+    def find_root(self):
+        out = self._run_text(ROOT_SCRIPT, timeout=40)
+        for line in out.splitlines():
+            if line.startswith("R|"):
+                return line[2:].strip()
+        raise SyncError("No SD card or USB drive found on the MPC. Put one in and try again.")
+
+    def _upload(self, remote_dir, files):
+        """files: [(name, local path)]. One tar stream if the MPC has tar, else one file at a time."""
+        q = shq(remote_dir)
+        script = f"mkdir -p {q} && cd {q} && exec tar xf -\n"
+        if self.runner:
+            p = self.runner(script)
+        else:
+            if not self.ssh:
+                raise SyncError("Windows' SSH client isn't installed (Settings > Apps > Optional features > OpenSSH Client).")
+            if not self.host:
+                raise SyncError("I don't know your MPC's address. Open MPC TOOLS once (it saves it), or type it in.")
+            args = [self.ssh, "-o", "ConnectTimeout=8", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
+                    f"{self.user}@{self.host}", script.strip()]
+            flags = 0x08000000 if sys.platform == "win32" else 0
+            p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                 creationflags=flags)
+        try:
+            with tarfile.open(fileobj=p.stdin, mode="w|", format=tarfile.USTAR_FORMAT) as tf:
+                for name, local in files:
+                    if self.cancel:
+                        break
+                    tf.add(local, arcname=name)
+                    self.done += 1
+                    self.status = f"Sending {self.done} of {self.total}"
+        finally:
+            try:
+                p.stdin.close()
+            except Exception:
+                pass
+        err = b""
+        try:
+            err = p.stderr.read() if getattr(p, "stderr", None) else b""
+        except Exception:
+            pass
+        p.wait()
+        if p.returncode not in (0, None):
+            msg = (err or b"").decode("utf-8", "replace").strip()
+            if "denied" in msg.lower() or "password" in msg.lower():
+                raise SyncError("The MPC wants a password. Set up MPC TOOLS' SSH login first, then try again.")
+            raise SyncError("The MPC didn't take the files. " + msg[-160:])
+
+    def send(self, folder):
+        self.busy, self.error, self.done, self.total, self.copied = True, None, 0, 0, 0
+        try:
+            files = [(fn, os.path.join(folder, fn)) for fn in sorted(os.listdir(folder))
+                     if fn.lower().endswith(".wav") and os.path.isfile(os.path.join(folder, fn))]
+            if not files:
+                raise SyncError("That bounce has no WAV files.")
+            self.total = len(files)
+            self.status = "Finding the MPC's SD card..."
+            root = self.find_root()
+            name = re.sub(r'[\\/:*?"<>|]', "_", os.path.basename(os.path.normpath(folder)))
+            self.remote = posixpath.join(root, SEND_FOLDER, name)
+            self.status = f"Sending {len(files)} files..."
+            self._upload(self.remote, files)
+            self.copied = self.done
+            self.status = (f"On the MPC: {posixpath.basename(root)} > {SEND_FOLDER} > {name}"
+                           if not self.cancel else "Stopped.")
+            return self.copied
+        except SyncError as e:
+            self.error = str(e)
+            self.status = self.error
+        except Exception as e:  # noqa: BLE001
+            self.error = f"Send failed: {e}"
+            self.status = self.error
+        finally:
+            self.busy = False
+        return self.copied
