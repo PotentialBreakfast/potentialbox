@@ -98,3 +98,27 @@ table.pads td:nth-child(3) { border-left: 2mm solid var(--paper); }
 table.layout td:nth-child(1), table.layout td:nth-child(4) { width: 11mm; }
 table.layout td:nth-child(2), table.layout td:nth-child(5) { width: 13mm; color: var(--ink2); }
 table.layout td:nth-child(4) { border-left: 2mm solid var(--paper); }
+
+/* v2.1: "A jam, start to finish" */
+.hlwrap { position: relative; display: block; }
+.hlwrap img { display: block; }
+.hlwrap .hl { position: absolute; border: .7mm solid #f2a33a; border-radius: 1.4mm; box-shadow: 0 0 0 .35mm rgba(0,0,0,.45), 0 0 2.5mm rgba(242,163,58,.7); }
+.wfstep { margin-bottom: 7mm; }
+.wfstep h2 { display: flex; align-items: center; gap: 3mm; }
+.wfn { display: inline-grid; place-items: center; width: 8mm; height: 8mm; border-radius: 50%; background: #f2a33a; color: #2a1a06; font-size: 4.2mm; flex: none; }
+.wfw { margin-left: auto; font-size: 3.2mm; font-weight: 600; color: #8dffb4; background: #0c2a1a; border-radius: 1mm; padding: .6mm 2.4mm; }
+table.wf thead { display: none; }
+table.wf td:first-child { width: 30mm; white-space: nowrap; }
+.hlfig { margin-bottom: 2mm; }
+.wfstep .hlwrap { width: 76%; margin: 0 auto; }
+.wfstep { margin-bottom: 5mm; }
+.wfstep table.wf { break-before: avoid; }
+.wfstep figure { break-after: avoid; }
+.wfstep h2 { margin-top: 2mm; }
+.wfstep table.wf { break-inside: avoid; page-break-inside: avoid; }
+.wfstep .hlwrap { width: 64%; }
+.wfstep figure { margin: 1.5mm 0 1mm; }
+.wfstep table.wf { margin: 1mm 0 2mm; font-size: 9.2pt; }
+.wfstep table.wf td { padding: 1.2mm 2.5mm; }
+.wfstep h2 { margin: 1mm 0 1.5mm; }
+.wfstep { margin-bottom: 3mm; }

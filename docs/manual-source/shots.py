@@ -186,4 +186,48 @@ shot("ksources", page="Perform", overlay=("ksources",))
 app.sync = None
 app.state.locked_pads = set()
 shot("mykits", page="Perform", overlay=("mykits",))
+
+# --- the "A jam, start to finish" chapter: one session, step by step (a fresh start for each look)
+import numpy as np
+from potentialbox import capture as capmod
+st = app.state
+app.overlay = None
+st.project = None
+st.params.apply_preset("s1", dict(A.PRESETS["s1"])["Sub Foundation"]); st.preset_name["s1"] = "Sub Foundation"
+st.params.apply_preset("s2", dict(A.PRESETS["s2"])["Wide Saw Lead"]); st.preset_name["s2"] = "Wide Saw Lead"
+app.select_kit("factory", 0, preview=False)
+shot("wf-01", page="Projects")
+app.load_project(6, toast=False)
+eng.peak = 0.55
+shot("wf-02", page="Projects")
+shot("wf-03", page="Perform", setup=lambda: st.params.set_val("s1.cutoff", 900))
+def wf4():
+    app.browse_cat("s1", "BASS"); app.browse_load("s1", "Reese Rumble", dict(A.PRESETS["s1"])["Reese Rumble"])
+    st.synth_edit["s1"] = False
+shot("wf-04", page="Synth 1", setup=wf4)
+def wf5():
+    st.subpage["Drums"] = 0
+    st.params.set_val("dr.comp", 0.7); st.params.set_val("dr.room", 0.3)
+shot("wf-05", page="Drums", setup=wf5)
+shot("wf-06", page="Live")
+shot("wf-07", page="Projects")
+def wf8():
+    st.bounce_bars = 4
+    need = int(4 * 4 * 60 / 126 * eng.sr)
+    eng.bounce = dict(bars=4, bpm=126.0, need=need, buf=[], got=int(need * 0.55), sync=True, t0=time.time(),
+                      state="rec", bar_at=0)
+shot("wf-08", page="Capture", setup=wf8)
+eng.bounce = None
+def wf9():
+    parts = {k: np.zeros((4410, 2)) + (0.1 if k in ("mix", "dr", "s1", "s2") else 0)
+             for k in ("mix", "dr", "s1", "s2", "fx", "lp")}
+    st.bounces = []
+    for nm in ("Acid 126bpm 4bar 203512", "Acid 126bpm 8bar 204107", "Acid 126bpm 4bar 204655"):
+        f, _ = capmod.save_bounce(parts, 44100, nm)
+        st.bounces.insert(0, f)
+    st.mpc_host = "192.168.1.50"; st.bounce_mpc = True
+    app.mpc_sender = type("S", (), {"busy": False, "error": None,
+                                    "status": "On the MPC: MPC-SD > PotentialBox Loops > Acid 126bpm 4bar 204655"})()
+shot("wf-09", page="Capture", setup=wf9)
+app.mpc_sender = None
 r.destroy()

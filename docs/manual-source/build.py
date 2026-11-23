@@ -58,6 +58,14 @@ def img(name, caption="", cls=""):
     add(f'<figure class="{cls}"><img src="file://{IMG}/{name}.png"><figcaption>{caption}</figcaption></figure>')
 
 
+def img_hl(name, caption, boxes):
+    """A screenshot with amber rings on what to press: boxes in the app's 1280 x 800 screen space."""
+    rings = "".join(f'<div class="hl" style="left:{(x - 4) / 12.8:.2f}%;top:{(y - 4) / 8:.2f}%;'
+                    f'width:{(w + 8) / 12.8:.2f}%;height:{(h + 8) / 8:.2f}%"></div>' for x, y, w, h in boxes)
+    add(f'<figure class="hlfig"><div class="hlwrap"><img src="file://{IMG}/{name}.png">{rings}</div>'
+        f'<figcaption>{caption}</figcaption></figure>')
+
+
 def ul(items):
     add("<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>")
 
@@ -160,6 +168,8 @@ ul([f"{b('Sequencer 1')} plays {b('Synth 1')}, an analog-style synth: basses, ac
     "The BeatStep's 16 knobs control the 16 knobs of whichever page is open, and its pads run actions on MIDI channel 16."])
 p("Everything is pre-wired for the BeatStep Pro's factory settings, so you can plug it in and press play. Every control "
   "is a big key you can tap, and everything saves by itself: there is no typing anywhere in the app.")
+note("<b>New to the layout?</b> The chapter <b>A jam, start to finish</b> walks through one whole session, from loading "
+     "a project to chopping its stems on your MPC, with the screen for every step.")
 note(f"<b>New in {VERSION}:</b> a new layout with five sections instead of fourteen tabs; the Hi-Fi look, refreshed; "
      "a <b>sound browser</b> for each synth with sounds sorted by type; <b>77 new presets</b> made for the current synth "
      "engine, all level-matched; a new <b>PROJECTS</b> screen for jamming; and <b>CAPTURE &gt; STEMS</b>, which bounces "
@@ -299,6 +309,65 @@ table(["Keys", "What they do"], [
     (key("Ctrl") + " + " + key("Y"), "Redo."),
     (key("F11"), "Full screen on and off."),
     (key("Esc"), "Closes a menu.")])
+end()
+# ============================================================================ a jam, start to finish
+chapter("A jam, start to finish", "One session with the new layout: load the Acid project, shape it with the BeatStep, "
+        "swap a sound, fatten the drums, perform, mutate, then bounce 4 bars of stems onto your MPC. The amber rings "
+        "show what to press. Each step also says what to do on the BeatStep, and a hands-free way to do it.")
+WF = [
+    ("Load a project", "JAM &gt; PROJECTS", "wf-01", [(948, 146, 143, 82)],
+     "Tap <b>7</b> ACID. Synth 1 gets an acid bass, Synth 2 a stab, the drums the Acid set kit with its drum bus, plus "
+     "the project's effects and tempo.",
+     "Hold <b>PROJECT</b> and press step <b>7</b>, so the BeatStep plays the Acid set too.",
+     "Press BeatStep pad <b>7</b> while PROJECTS is open, or tap TALK and say “project seven”."),
+    ("Press play", "JAM &gt; PROJECTS", "wf-02", [(236, 8, 712, 40), (14, 342, 760, 226)],
+     "NOW PLAYING lists the bass, lead and kit. The display along the top always shows what's loaded, wherever you "
+     "are in the app.",
+     "Press <b>PLAY</b>. Seq 1 plays the bass, Seq 2 the chords, the drum sequencer the kit.",
+     "Turn on CLOCK OUT (bottom row) and the BeatStep plays at the project's own 126 BPM."),
+    ("Ride the knobs", "JAM &gt; KNOBS", "wf-03", [(20, 132, 612, 170)],
+     "KNOBS shows exactly what the BeatStep's 16 knobs do while you jam: bass filter, resonance, envelope and drive "
+     "first.",
+     "Press <b>CNTRL</b>, then turn knob <b>1</b> to open the acid line and knob <b>2</b> to make it squelch.",
+     "You don't need this screen open: the knobs do the same on PROJECTS. Come here to see the values."),
+    ("Swap the bass", "SOUNDS &gt; SYNTH 1", "wf-04", [(26, 146, 154, 284), (194, 148, 810, 310)],
+     "Tap <b>BASS</b>, then a sound, here Reese Rumble. It plays straight into the groove. PREV and NEXT step through "
+     "the basses only.",
+     "Nothing to change: Seq 1 keeps playing, now through the new sound.",
+     "BeatStep pad <b>14</b> (Synth 1 Next Sound) steps through sounds without touching the screen."),
+    ("Fatten the drums", "SOUNDS &gt; DRUMS &gt; BUS", "wf-05", [(20, 138, 612, 168)],
+     "The project already set the bus for acid. Turn up <b>Punch</b> for weight and <b>Room</b> to put the kit in a "
+     "space; Width spreads the hats.",
+     "On this page the 16 knobs are the bus: knob 1 Punch, 2 Room, 4 Width, 5 Tone.",
+     "Tap <b>JAM</b> at the bottom: it takes you straight back to PROJECTS."),
+    ("Perform", "JAM &gt; LIVE FX", "wf-06", [(26, 262, 1230, 200)],
+     "Hold <b>REPEAT 1/16</b> for a stutter or <b>FILTER SWEEP</b> for a build. Let go and it drops back in. SCENES "
+     "saves and morphs whole setups.",
+     "With LIVE FX open, pads 1-8 are these eight effects. Hold to play.",
+     "Pad <b>9</b> holds a drum fill, pad <b>11</b> starts recording."),
+    ("Mutate for the next section", "JAM &gt; PROJECTS", "wf-07", [(792, 376, 470, 180)],
+     "Pick <b>MEDIUM</b>, tap <b>MUTATE ALL</b>. New bass, lead and drums land on the next bar, still in the acid "
+     "style. Not feeling it? <b>BACK</b>.",
+     "Keep playing: nothing stops while the sounds change.",
+     "Say “mutate” or “mutate drums”, or set AUTO to every 16 bars and let it evolve."),
+    ("Bounce the good bit", "CAPTURE &gt; STEMS", "wf-08", [(28, 166, 800, 196)],
+     "Tap <b>4 BARS</b>, then <b>BOUNCE</b>. It waits for the next bar, then records exactly 4 bars: the mix plus "
+     "drums, Synth 1, Synth 2 and FX as separate WAVs that loop.",
+     "Keep it playing until the bar counter finishes.",
+     "With STEMS open, BeatStep pad <b>3</b> bounces 4 bars (pads 1-4 = 1, 2, 4, 8 bars)."),
+    ("Chop it on the MPC", "CAPTURE &gt; STEMS", "wf-09", [(854, 100, 412, 400), (26, 552, 668, 170)],
+     "With <b>AUTO-SEND: ON</b> each bounce lands on the MPC's SD card in PotentialBox Loops. Tap a bounce's name to "
+     "open its folder on the PC.",
+     "On the MPC, open the browser, go to PotentialBox Loops and load the stems into a program to chop.",
+     "Pad <b>5</b> sends the last bounce if AUTO-SEND is off."),
+]
+for n, (title, where, shot_name, boxes, screen, bsp, free) in enumerate(WF, 1):
+    add(f'<div class="wfstep"><h2><span class="wfn">{n}</span>{E(title)}<span class="wfw">{where}</span></h2>')
+    img_hl(shot_name, "", boxes)
+    table(["", ""], [(b("On screen"), screen), (b("On the BeatStep"), bsp), (b("Hands-free"), free)], "wf")
+    add("</div>")
+note("BeatStep pad actions assume its Control Mode pads are on MIDI channel 16 (see Setting up the BeatStep Pro). "
+     "Ctrl + 1 to 5 on the keyboard jump between the five sections.")
 end()
 # ============================================================================ projects
 chapter("JAM: Projects", "PROJECTS is the screen to jam from. It gives your 16 BeatStep Pro genre sets their sounds: "
