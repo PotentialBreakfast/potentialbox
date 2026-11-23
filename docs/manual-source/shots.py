@@ -93,6 +93,11 @@ def capture():
     app.mpc_sender = type("S", (), {"busy": False, "error": None,
                                     "status": "On the MPC: MPC-SD > PotentialBox Loops > Techno 130bpm 4bar 213010"})()
 shot("capture", page="Capture", setup=capture)
+def bus():
+    app.state.subpage["Drums"] = 0
+    A.beatsmod.drum_bus(app.state.params, "Boom Bap")
+    app.select_kit("factory", 5, preview=False)
+shot("drums-bus", page="Drums", setup=bus)
 app.mpc_sender = None
 # --- knob pages
 shot("perform", page="Perform", setup=lambda: (flash(1), eng.s1.amp.gate_on()))

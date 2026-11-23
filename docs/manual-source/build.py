@@ -630,10 +630,15 @@ h2("Kit menu")
 p("Tap <b>KITS</b> on the drum panel (under the knobs on SOUNDS &gt; DRUMS), or &lt; and &gt; to step through kits. <b>KIT MAKER</b> beside it builds a new "
   "kit from your own samples (see Kit Maker).")
 img("kits", "The Kit menu: built-in kits, recent kits, My Kits and the drum machine library.")
-table(["Kit", "Sound"], [(b(k), d) for k, d in zip(kits.NAMES, [
-    "The original all-rounder", "Round booming kick, classic metal hats", "Clicky driven kick, noisy snare, rides",
-    "Small, snappy and crisp", "Punch kick, long distorted 808 to tune", "12-bit boom bap, crunchy and warm",
-    "Gated snare, big pitch-drop toms", "Clicks, blips and tight kicks", "Distorted, metallic and heavy"])])
+genre_of = {}
+for G in beats.GENRES:
+    genre_of.setdefault(G[4], []).append(G[0])
+table(["Kit", "Sound", "BEATS genres that use it"],
+      [(b(k["name"]), E(k["desc"]), E(", ".join(genre_of.get(i, [])) or "–")) for i, k in enumerate(kits.KITS)])
+p("Every built-in kit is synthesized the way the original machine or instrument makes its sound: kicks with a "
+  "two-stage pitch drop, a beater click and saturation; snares with two tuned drum modes and shaped snare wires; the "
+  "808's six metal oscillators for hats and cymbals; modal toms, congas and log drums. Each pad is levelled for its "
+  "role, and each sits in its own place in the stereo field (see the BUS page).")
 ul(["Tap a kit to load it and hear a short preview. PLAY DEMO BEAT plays a one-bar pattern.",
     "RESET PAD KNOBS puts every pad's tune, length and level back to normal.",
     "RECENT KITS lists the kits you used last. ADD FOLDER loads a folder of WAV files: the first 16 (in A-Z order) go on "
@@ -650,8 +655,23 @@ ul(["Pick a brand, then a machine, then one of its kits. Brands with fewer than 
     "and many more). Spare sounds fill any empty pads.",
     "With a machine kit loaded, &lt; and &gt; step through that machine's kits, then on to the next machine."])
 img("machinekits", "The kits inside one machine. Tap one to load and hear it.", "small")
+h2("The drum bus")
+p("The BUS page (the first page of SOUNDS &gt; DRUMS) processes the whole kit, like the drum bus on a mixing desk. "
+  "Picking a genre on BEATS, or loading a project, sets it for that genre: a punchy, roomy break for boom bap and "
+  "jungle, a tight dry kit for trap and drill, a big hall on the dub snare.")
+img("drums-bus", "SOUNDS &gt; DRUMS, BUS page.")
+ul([f"{b('Punch')}: parallel compression. A heavily squashed copy of the kit is blended in under the dry kit, so it "
+    "gets thicker and punchier without losing its hits.",
+    f"{b('Room')} and {b('Room size')}: a short room on the whole kit (without the kick's low end), so the drums sound "
+    "like they were played in a space.",
+    f"{b('Width')}: how far the hats, toms and percussion spread left and right, like a real kit. Kicks and snares stay "
+    "in the middle. Each pad's own PAN (MIX pages) moves it from there.",
+    f"{b('Tone')}: darker to the left, brighter to the right.",
+    f"{b('Drive')}, {b('Crush')} (fewer bits and a lower sample rate, SP-1200 style) and {b('Filter')}.",
+    f"{b('Kit tune')} tunes every pad up or down at once."])
+knob_table("Drums Bus", with_desc=False)
 h2("Drum knobs")
-p("SOUNDS &gt; DRUMS has seven pages, each for pads 1-8 or 9-16:")
+p("SOUNDS &gt; DRUMS also has seven pages, each for pads 1-8 or 9-16:")
 ul([f"{b('TUNE 1-8')} and {b('TUNE 9-16')}: a tune knob (semitones) and a length knob (shortens the sound) for each pad.",
     f"{b('MIX 1-8')} and {b('MIX 9-16')}: a level and a pan knob for each pad.",
     f"{b('GROOVE 1-8')} and {b('GROOVE 9-16')}: chance and plays-when for each pad (below).",

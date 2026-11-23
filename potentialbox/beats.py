@@ -21,10 +21,59 @@ ROLE_NAME = {"K": "Kick", "B": "808 / kick 2", "S": "Snare", "C": "Clap", "H": "
              "Z": "Shaker", "Y": "Cymbal", "F": "FX", "G": "Conga"}
 GROUPS = {"Kick": (0, 1), "Snare": (2, 3, 9), "Hats": (4, 5, 13), "Perc": (6, 7, 8, 10, 11, 12, 14, 15)}
 GROUP_NAMES = list(GROUPS)
-KIT_NAMES = ["Potential", "808 Boom", "909 Punch", "606 Tight", "Trap 808", "SP Dust", "Electro 80s", "Minimal Tech",
-             "Industrial"]
+from potentialbox.kits import NAMES as KIT_NAMES  # noqa: E402,F401  (kept for older code)
 
 E = "................................"
+
+# v2.1: how each genre's drums are processed on the drum bus (SOUNDS > DRUMS > BUS): punch (parallel
+# compression), room, room size, width, tone, drive, crush. Loaded with the genre's kit, and by the matching
+# Projects. Anything not listed goes back to its default, so one genre's room never carries into the next.
+DRUM_BUS_KEYS = ("dr.comp", "dr.room", "dr.roomsize", "dr.width", "dr.tone", "dr.drive", "dr.crush", "dr.filter",
+                 "dr.kittune")
+GENRE_DRUMS = {
+    "Techno":          dict(comp=0.55, room=0.18, roomsize=0.35, width=0.6, tone=0.1, drive=0.2),
+    "House":           dict(comp=0.45, room=0.2, roomsize=0.35, width=0.75, tone=0.1, drive=0.1),
+    "Deep House":      dict(comp=0.35, room=0.3, roomsize=0.45, width=0.8, tone=0.05, drive=0.1),
+    "Minimal":         dict(comp=0.4, room=0.22, roomsize=0.25, width=0.85, tone=0.15),
+    "UK Garage":       dict(comp=0.5, room=0.2, roomsize=0.3, width=0.75, tone=0.15, drive=0.15),
+    "Drum & Bass":     dict(comp=0.6, room=0.25, roomsize=0.3, width=0.7, tone=0.2, drive=0.15),
+    "Jungle":          dict(comp=0.55, room=0.3, roomsize=0.4, width=0.6, drive=0.25, crush=0.12),
+    "Dubstep":         dict(comp=0.5, room=0.35, roomsize=0.6, width=0.6, drive=0.2),
+    "Grime":           dict(comp=0.45, room=0.15, roomsize=0.25, width=0.7, tone=0.2, drive=0.15),
+    "UK Drill":        dict(comp=0.45, room=0.12, roomsize=0.25, width=0.75, tone=0.25, drive=0.2),
+    "Trap":            dict(comp=0.45, room=0.1, roomsize=0.25, width=0.8, tone=0.1, drive=0.2),
+    "Hip Hop":         dict(comp=0.5, room=0.2, roomsize=0.3, width=0.6, drive=0.25),
+    "Boom Bap":        dict(comp=0.6, room=0.25, roomsize=0.3, width=0.55, tone=-0.05, drive=0.3, crush=0.08),
+    "Lo-fi":           dict(comp=0.45, room=0.3, roomsize=0.35, width=0.55, tone=-0.35, drive=0.2, crush=0.2),
+    "Reggae One Drop": dict(comp=0.35, room=0.4, roomsize=0.6, width=0.7),
+    "Steppers":        dict(comp=0.45, room=0.35, roomsize=0.55, width=0.7, tone=0.15, drive=0.1),
+    "Dancehall":       dict(comp=0.45, room=0.18, roomsize=0.3, width=0.8, tone=0.1, drive=0.1),
+    "Reggaeton":       dict(comp=0.5, room=0.15, roomsize=0.3, width=0.75, tone=0.1, drive=0.2),
+    "Afrobeats":       dict(comp=0.4, room=0.2, roomsize=0.35, width=0.9, tone=0.05),
+    "Breakbeat":       dict(comp=0.55, room=0.25, roomsize=0.35, width=0.65, drive=0.2),
+    "Electro":         dict(comp=0.45, room=0.2, roomsize=0.4, width=0.7, drive=0.15),
+    "Disco":           dict(comp=0.45, room=0.3, roomsize=0.4, width=0.8, tone=0.05),
+    "Funk":            dict(comp=0.5, room=0.25, roomsize=0.35, width=0.75, drive=0.1),
+    "Footwork":        dict(comp=0.45, room=0.1, roomsize=0.25, width=0.7, tone=0.25, drive=0.2),
+}
+
+
+def drum_bus(p, genre_name):
+    """Set the drum bus for a genre (by name). Returns True if the genre has settings."""
+    from potentialbox.engine import SPECS
+    for k in DRUM_BUS_KEYS:
+        p.set_val(k, SPECS[k].default)
+    vals = GENRE_DRUMS.get(genre_name)
+    if not vals:
+        return False
+    for k, v in vals.items():
+        p.set_val("dr." + k, v)
+    return True
+
+
+def genre_drums(p, g):
+    """The drum bus for genre index g."""
+    return drum_bus(p, GENRES[g % len(GENRES)][0])
 
 # name, bpm, swing %, steps, factory kit, fill style, parts {role: [variants, first = the classic]}
 GENRES = [
@@ -44,7 +93,7 @@ GENRES = [
         "Z": ["xgxgxgxgxgxgxgxg", ""],
         "V": ["...?..?....?...?", ""],
         "G": ["......?.......?.", ""]}),
-    ("Deep House", 120, 58, 16, 5, "roll", {
+    ("Deep House", 120, 58, 16, 9, "roll", {
         "K": ["X...X...X...X..."],
         "R": ["....x.......x...", "...;x..;....x..;"],
         "C": ["", "............x..."],
@@ -58,39 +107,39 @@ GENRES = [
         "H": ["..x...x...x...x.", "..x..;x...x..;x."],
         "W": ["?..?...?..?....?", ""],
         "V": ["", ".?....?....?...."]}),
-    ("UK Garage", 132, 64, 16, 2, "roll", {
+    ("UK Garage", 132, 64, 16, 10, "roll", {
         "K": ["X.........X.....", "X......x..X.....", "X.....x...X....."],
         "S": ["....X.......X...", "....X.......X..g"],
         "C": ["....x.......x...", ""],
         "H": ["..x...x...x...x.", "..xx..x...xx..x."],
         "O": ["......x.......?.", ""],
         "R": ["...;...;...;..;.", "......;.....;..."]}),
-    ("Drum & Bass", 174, 50, 32, 0, "roll", {
+    ("Drum & Bass", 174, 50, 32, 11, "roll", {
         "K": ["X.........X.....X.........?.....", "X.........X.x...X.........X.....", "X.......X.X.....X.........X..x.."],
         "S": ["....X.......X.......X.......X...", "....X..g....X..g....X..g....X..g"],
         "H": ["x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.", "x.xxx.xxx.xxx.xxx.xxx.xxx.xxx.xx"],
         "O": ["..............x...............?.", ""],
         "Y": ["", "x.......x.......x.......x......."],
         "Z": ["", "gggggggggggggggggggggggggggggggg"]}),
-    ("Jungle", 168, 52, 32, 5, "break", {
+    ("Jungle", 168, 52, 32, 12, "break", {
         "K": ["X.........X.....X.x.......X.....", "X.X.......X.....X.........X.x..."],
         "S": ["....X..g.g.X..g.....X..g.g.X..g.", "....X.......X..g.g..X.......X.gg"],
         "H": ["x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.", "x;x;x;x;x;x;x;x;x;x;x;x;x;x;x;x;"],
         "Y": ["x...............x...............", ""],
         "R": ["", "...;.......;...;...;.......;...;"]}),
-    ("Dubstep", 140, 50, 32, 1, "toms", {
+    ("Dubstep", 140, 50, 32, 13, "toms", {
         "K": ["X.........x.....X.........?.....", "X.....x.........X.....x...x....."],
         "S": ["........X...............X.......", "........X...............X.....g."],
         "C": ["........x...............x.......", ""],
         "H": ["x...x...x...x...x...x...x...x...", "x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.", "..x...x...x...x...x...x...x...x."],
         "O": ["......x...............x.........", ""]}),
-    ("Grime", 140, 50, 16, 6, "break", {
+    ("Grime", 140, 50, 16, 14, "break", {
         "K": ["X.....x...X.x...", "X..x......X.....", "X.....X.....x..."],
         "S": ["....X.......X...", "........X......."],
         "C": ["....x.......x...", ""],
         "H": ["x.x.x.x.x.x.x.x.", "x...x...x...x...", "..x...x...x...x."],
         "V": ["...?......?....?", ""]}),
-    ("UK Drill", 142, 50, 32, 4, "toms", {
+    ("UK Drill", 142, 50, 32, 14, "toms", {
         "K": ["X.........................x.....", ""],
         "B": ["X.....x...x.....X......x..x.....", "X........x..X...X.....x.....x..."],
         "S": ["........X...............X.....x.", "........X.........;.....X......."],
@@ -113,44 +162,44 @@ GENRES = [
         "H": ["x.x.x.x.x.x.x.x.", "x.X.x.X.x.X.x.X."],
         "O": ["..............?.", ""],
         "R": ["...;......;....;", ""]}),
-    ("Lo-fi", 78, 66, 16, 5, "break", {
+    ("Lo-fi", 78, 66, 16, 17, "break", {
         "K": ["X......x..X.....", "X.....x...x..x.."],
         "S": ["....x.......x...", "....x..;....x..;"],
         "H": ["x;x;x;x;x;x;x;x;", "x.x.x.x.x.x.x.x."],
         "Z": ["g.g.g.g.g.g.g.g.", ""],
         "R": ["", "..;.......;....."]}),
-    ("Reggae One Drop", 76, 60, 16, 0, "toms", {
+    ("Reggae One Drop", 76, 60, 16, 13, "toms", {
         "K": ["........X......."],
         "R": ["........X.......", "....;...X.......", "........X.....;."],
         "H": ["x.x.x.x.x.x.x.x.", "..x...x...x...x.", "x.xxx.xxx.xxx.xx"],
         "O": ["..............?.", ""],
         "G": ["", "......?.......?."]}),
-    ("Steppers", 76, 58, 16, 0, "toms", {
+    ("Steppers", 76, 58, 16, 13, "toms", {
         "K": ["X...X...X...X..."],
         "R": ["........X.......", "....X.......X..."],
         "H": ["x.x.x.x.x.x.x.x.", "..x...x...x...x."],
         "O": ["", "..............x."],
         "W": ["", "x.......x......."]}),
-    ("Dancehall", 100, 52, 16, 1, "break", {
+    ("Dancehall", 100, 52, 16, 15, "break", {
         "K": ["X..x..x.X..x..x.", "X.......X.......", "X..x....X..x...."],
         "S": ["...x..x....x..x.", "...X..x.....x..."],
         "H": ["x.x.x.x.x.x.x.x.", ""],
         "V": ["x..x..x...x.x...", ""],
         "G": ["", "..?...x...?...x."]}),
-    ("Reggaeton", 95, 50, 16, 4, "break", {
+    ("Reggaeton", 95, 50, 16, 15, "break", {
         "K": ["X...X...X...X..."],
         "S": ["...x..x....x..x.", "...x..x....x.xx."],
         "H": ["x.x.x.x.x.x.x.x.", "................"],
         "V": ["", "x..x..x...x.x..."],
         "O": ["", "..............x."]}),
-    ("Afrobeats", 108, 56, 16, 0, "toms", {
+    ("Afrobeats", 108, 56, 16, 15, "toms", {
         "K": ["X......x..X.....", "X.....x...X..x.."],
         "R": ["...x..x....x..x.", "...x..x.x..x..x."],
         "Z": ["x.xxx.xxx.xxx.xx", "xgxgxgxgxgxgxgxg"],
         "G": ["......x.?.....x.", "..x...x...x.x..."],
         "C": ["", "....x.......x..."],
         "W": ["", "x.x.xx.x.x.x.xx."]}),
-    ("Breakbeat", 130, 52, 16, 6, "break", {
+    ("Breakbeat", 130, 52, 16, 11, "break", {
         "K": ["X.........X.x...", "X.X.......x....."],
         "S": ["....X..g.g..X..g", "....X.......X..."],
         "H": ["x.x.x.x.x.x.x.x.", "xxxxxxxxxxxxxxxx"],
@@ -161,14 +210,14 @@ GENRES = [
         "C": ["....x.......x...", ""],
         "H": ["x.x.x.x.x.x.x.x.", "xxxxxxxxxxxxxxxx"],
         "W": ["..x.....x.x.....", ""]}),
-    ("Disco", 118, 52, 16, 2, "roll", {
+    ("Disco", 118, 52, 16, 16, "roll", {
         "K": ["X...X...X...X..."],
         "S": ["....X.......X..."],
         "C": ["", "....x.......x..."],
         "O": ["..x...x...x...x."],
         "H": ["xgxgxgxgxgxgxgxg", "x.x.x.x.x.x.x.x."],
         "G": ["", "...x..x....x..x."]}),
-    ("Funk", 100, 56, 16, 5, "break", {
+    ("Funk", 100, 56, 16, 16, "break", {
         "K": ["X.x....x..X.....", "X..x...x.xX....."],
         "S": ["....X..g.g..X..g", "....X.g..g..X..."],
         "H": ["xgxgxgxgxgxgxgxg", "xxxxxxxxxxxxxxxx"],

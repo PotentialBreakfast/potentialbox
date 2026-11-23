@@ -47,8 +47,10 @@ from tkinter import font as tkfont, filedialog  # noqa: E402
 from potentialbox.engine import (Engine, ParamStore, SPECS, PAGES, PRESETS, MACROS, SUBPAGES,  # noqa: E402
                                  MOD_SOURCES, MOD_DESTS, PUNCH_FX, PRESET_CAT, PRESET_CATS, bounce_stems)
 from potentialbox import capture  # noqa: E402
+from potentialbox import kits as _kits  # noqa: E402
 from potentialbox.recorder import Recorder, write_wav, recordings_dir  # noqa: E402
 from potentialbox.looper import TRACKS, SOURCES, FX_TYPES, SPEEDS, LENGTHS, STATE_TEXT  # noqa: E402
+from potentialbox import beats as beatsmod  # noqa: E402
 from potentialbox.beats import (Beat, GENRES, GENRE_NAMES, ROLE_PAD, ROLE_NAME, GROUP_NAMES,  # noqa: E402
                                GROUPS as BEAT_GROUPS, BAR_CHOICES)
 from potentialbox import kits  # noqa: E402
@@ -65,7 +67,7 @@ except Exception:                         # pragma: no cover
     skins = None
 
 APP = "PotentialBox"
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 # v2.0: five big sections along the bottom; each has a few sub-tabs (shown in the header). A sub-tab is one of the
@@ -80,11 +82,12 @@ SECTIONS = [
 SECTION_OF = {pg: sec for sec, subs in SECTIONS for _, pg in subs}
 TABS = [pg for _, subs in SECTIONS for _, pg in subs]   # every page you can be on, in order (NEXT / PREVIOUS TAB)
 # pages from 1.x that are now part of another tab: old page -> (new page, its sub-page)
-OLD_PAGES = {"Drums 1-8": ("Drums", 0), "Drums 9-16": ("Drums", 1), "Mix & FX": ("Mix", 0)}
+OLD_PAGES = {"Drums 1-8": ("Drums", 1), "Drums 9-16": ("Drums", 2), "Mix & FX": ("Mix", 0)}
 TAB_LABEL = {"Arrangement": "Arrange"}
 SHORT_DEST = {"Wave position": "Wave pos", "Saw > Square": "Wave", "Pulse width": "Pulse w.", "Osc 2 pitch": "Osc 2",
               "Resonance": "Reso", "Velocity": "Vel", "Smooth random": "Smooth"}
 CFG_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.config"), APP)
+_kits.CACHE_DIR = os.path.join(CFG_DIR, "kit-cache")   # v2.1: built drum kits, made once
 CFG_FILE = os.path.join(CFG_DIR, "state.json")
 LOG_FILE = os.path.join(CFG_DIR, "log.txt")
 SOUNDS_FILE = os.path.join(CFG_DIR, "my-sounds.json")
@@ -135,6 +138,8 @@ def default_actions():
 
 KNOB_GROUPS = {
     "Perform": [(0, 4, "Synth 1 (bass)"), (4, 8, "Synth 2 (lead)"), (8, 12, "Drums"), (12, 16, "Effects & level")],
+    "Drums Bus": [(0, 4, "Punch, room & width"), (4, 8, "Tone, drive, crush & filter"), (8, 13, "Kit tune & levels"),
+                  (13, 16, "Sends & volume")],
     "Synth 1 Quick": [(0, 4, "Filter"), (4, 8, "Envelope"), (8, 12, "Character"), (12, 16, "Glide, space & level")],
     "Synth 2 Quick": [(0, 5, "Wave & filter"), (5, 8, "Envelope"), (8, 12, "Character"), (12, 16, "Movement, space & level")],
     "Synth 1": [(0, 4, "Filter"), (4, 8, "Oscillators"), (8, 12, "Amp envelope"), (12, 16, "Play & output")],
@@ -1215,6 +1220,22 @@ class App:
         self.last_save = time.time()
         self.last_draw = 0.0
         self.root.after(40, self.tick)
+        self.root.after(6000, self.warm_kits)
+
+    def warm_kits(self):
+        """v2.1: build the drum kits that aren't on disk yet, one at a time in the background, so picking any kit
+        is instant (a built kit is kept in the kit-cache folder)."""
+        sr = self.audio.engine.sr
+
+        def work():
+            for i in range(len(_kits.KITS)):
+                if (i, int(sr)) not in _kits._CACHE:
+                    try:
+                        _kits.build(i, sr)
+                    except Exception as e:  # noqa: BLE001
+                        log("kit warm-up", i, e)
+                    time.sleep(0.3)
+        threading.Thread(target=work, daemon=True).start()
 
     # ---------------------------------------------------------------- helpers
     def request_redraw(self):
@@ -2070,22 +2091,26 @@ class App:
 
     def draw_kits(self):
         self.overlay_base("Drum kits", "EVERY KIT USES THE SAME PAD LAYOUT, SO YOUR BEATSTEP PATTERNS CARRY OVER")
+        cols = 3
+        rows = -(-len(kits.KITS) // cols)
+        kh = min(108, (410 - (rows - 1) * 7) / rows)   # v2.1: 18 kits fit in 6 rows
         for i, kit in enumerate(kits.KITS):
-            r, c = divmod(i, 3)
-            x0, y0 = 34 + c * 272, 156 + r * 118
+            r, c = divmod(i, cols)
+            x0, y0 = 34 + c * 272, 152 + r * (kh + 7)
             on = self.kit_is_current("factory", i)
-            self.rrect(x0, y0, 260, 108, 12, T["seg_active"] if on else T["btn_bg"])
-            self.text(x0 + 130, y0 + 42, kit["name"].upper(), 22, T["accent"] if on else T["btn_text"], True)
-            self.text(x0 + 130, y0 + 76, kit["desc"], 12, T["ink_dim"])
-            self.hit(x0, y0, 260, 108, lambda j=i: self.select_kit("factory", j))
-        self.text(34, 530, "TAP A KIT TO HEAR IT. IT STAYS LOADED WHEN YOU CLOSE THIS MENU.", 13, T["ink_dim"], False, "w")
+            self.rrect(x0, y0, 260, kh, 10, T["seg_active"] if on else T["btn_bg"])
+            self.text_fit(x0 + 130, y0 + kh * 0.36, kit["name"].upper(), 18, 244,
+                          T["accent"] if on else T["btn_text"], True)
+            self.text_fit(x0 + 130, y0 + kh * 0.72, kit["desc"], 11, 244, T["ink_dim"] if on else T["key_dim"])
+            self.hit(x0, y0, 260, kh, lambda j=i: self.select_kit("factory", j))
+        self.text(34, 584, "TAP A KIT TO HEAR IT. IT STAYS LOADED WHEN YOU CLOSE THIS MENU.", 13, T["ink_dim"], False, "w")
         lib = self.audio.library()
         n = len(lib.machines) if lib.ok() else 0
-        self.button(132, 610, 196, 80, f"DRUM MACHINES ({n})" if n else "DRUM MACHINES",
+        self.button(132, 646, 196, 70, f"DRUM MACHINES ({n})" if n else "DRUM MACHINES",
                     lambda: self.open_overlay(("machines",)), accent=True, px=15)
-        self.button(336, 610, 196, 80, "KIT MAKER", lambda: self.open_overlay(("kitmaker",)), accent=True, px=18)
-        self.button(540, 610, 196, 80, "PLAY DEMO BEAT", self.demo_beat, px=15)
-        self.button(744, 610, 196, 80, "RESET PAD KNOBS", self.reset_pads, px=15)
+        self.button(336, 646, 196, 70, "KIT MAKER", lambda: self.open_overlay(("kitmaker",)), accent=True, px=18)
+        self.button(540, 646, 196, 70, "PLAY DEMO BEAT", self.demo_beat, px=15)
+        self.button(744, 646, 196, 70, "RESET PAD KNOBS", self.reset_pads, px=15)
         # recent library kits + folders
         self.text(866, 168, "RECENT KITS", 16, T["accent"], True, "w")
         recent = self.state.recent
@@ -2102,7 +2127,7 @@ class App:
             self.text(1056, 264, "or ADD FOLDER show up here", 14, T["ink_dim"])
         self.button(1056, 448, 380, 56, "MY KITS", lambda: self.open_overlay(("mykits",)), accent=True, px=18)
         self.button(1056, 518, 380, 56, "ADD FOLDER", self.load_kit, px=17)
-        self.button(1056, 610, 380, 70, "CLOSE", self.close_overlay, px=20)
+        self.button(1056, 646, 380, 70, "CLOSE", self.close_overlay, px=20)
 
     def draw_machines(self):
         lib = self.audio.library()
@@ -3269,6 +3294,8 @@ class App:
             self.km_new(kitmaker.GENRE_STYLE.get(name, "CLASSIC"), preview=False, toast=False)
         elif self.state.beat_kit:
             self.select_kit("factory", kit, preview=False)
+        if self.state.beat_kit:
+            beatsmod.drum_bus(self.state.params, name)   # v2.1: the genre's punch, room, width, tone, drive
         if not self.clock_live():
             eng.bpm = float(bpm)  # with CLOCK OUT on, the BeatStep follows this tempo
         self.beat_save()
@@ -3549,6 +3576,7 @@ class App:
         if st.project_fx:
             for k in projmod.FX_KEYS:
                 p.set_val(k, SPECS[k].default)
+            beatsmod.drum_bus(p, pr.get("drums", ""))     # v2.1: the genre's drum bus, then the project's own fx
             for k, v in pr["fx"].items():
                 p.set_val(k, v)
             if not self.clock_live():
@@ -3564,7 +3592,7 @@ class App:
         perc = pr["perc"]
         if perc == projmod.COWBELL and self.state.project_kit != "samples":
             pad11 = kits.KITS[int(kit) % len(kits.KITS)]["pads"][projmod.COWBELL][0]
-            if not any(w in pad11 for w in ("Cowbell", "Perc", "Clank", "Click")):
+            if not any(w in pad11 for w in ("Cowbell", "Perc", "Clank", "Click", "Agogo", "Anvil")):
                 perc = projmod.CLAVE  # this kit keeps a ride on that pad
         order = projmod.set_order(perc)
         d = self.audio.engine.drums
@@ -3589,8 +3617,6 @@ class App:
                 for part in ("tune", "decay", "level"):
                     k = f"dr.p{t + 1}.{part}"
                     p.set_val(k, SPECS[k].default)
-            for t, lvl in ((4, 0.65), (5, 0.6), (7, 0.55)):  # hats and shaker sit under the kick and snare
-                p.set_val(f"dr.p{t + 1}.level", lvl)
         for t in range(16):
             for part in ("pan", "chance", "cond", "choke"):
                 k = f"dr.p{t + 1}.{part}"

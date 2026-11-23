@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.1.0
+**Better drums.** Every built-in drum sound is rebuilt, there are nine new genre kits, and a drum bus gives each
+genre its own punch, room and width.
+
+- **Rebuilt synthesis** for all kits. Kicks have a two-stage pitch drop, a held body, a beater click and saturation
+  (808, 909 and a real bass drum with membrane modes). Snares have two tuned modes with a pitch kick, shaped
+  snare-wire noise and a crack; realistic ones add a stick, rattling wires and a baked-in room. Claps are 808-style
+  jittered bursts with a diffuse tail. Hats and cymbals use the 808's six metal oscillators, now band-limited so they
+  don't alias, and rides and crashes ring with dozens of inharmonic partials. Toms, congas, bongos and a new log drum
+  are modal.
+- **Balanced kits**: each pad is levelled for its role (kicks loudest, hats and shakers well under) instead of every
+  pad at full level, and each sits in its own place in the stereo field like a real kit.
+- **Nine new kits**: House Deep, Garage Shuffle, DnB Break, Jungle Crunch, Dub Steppa, Drill Slide, Afro Perc (log drum,
+  agogo, talking drum), Funk Room (a real-sounding kit) and Lo-fi Tape (vinyl crackle). 18 kits in all.
+- **Drum bus** (new BUS page, first on SOUNDS > DRUMS): Punch (parallel compression), Room and Room size, Width,
+  Tone, Drive, Crush, Filter and Kit tune, plus kick / snare / clap / hat levels and the delay and reverb sends.
+- **Every BEATS genre and every project** now loads its best kit and its own drum bus settings (for example a
+  crunchy, roomy break for Jungle, a tight dry kit for Trap, a big hall on the Dub snare).
+- The kit menu fits all 18 kits. Built kits are kept in a kit-cache folder and warmed up in the background, so
+  picking any kit is instant.
+
 ## 2.0.0
 A streamlined PotentialBox for jamming, with a new layout, new sounds and stem bouncing.
 

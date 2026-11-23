@@ -48,7 +48,7 @@ Everything lives under five big keys along the bottom; each has a few sub-tabs.
 - **Projects**: one tap (or a pad, or your voice) loads a genre's bass, lead, kit, effects and tempo to match your BeatStep genre sets; MUTATE changes them on the next bar, manually or every 8 / 16 bars
 - **Bounce stems**: bar-exact loops of the mix and each part, 24-bit WAV, named with the tempo, and sent to the MPC's SD card over SSH using MPC TOOLS' login
 - **Beat generator**, **arrangement**, **5-track looper**, **step locks**, **punch-in effects**, **scenes with morph**, **16 performance macros**, **side-chain ducking**, **EQ**, **delay**, **reverb** and a **master FX chain**
-- **Drums**: built-in kits, a drum machine library browser, a pad editor, 8 slots for your own kits, and the **Kit Maker**, which builds kits from all your one-shots (and can fetch your MPC's DRUM ONE SHOTS)
+- **Drums**: 18 synthesized kits (808, 909, acoustic-style and genre kits from house to jungle, dub, drill and afro), a drum bus with punch, room, width, tone and crush set per genre, a drum machine library browser, a pad editor, 8 slots for your own kits, and the **Kit Maker**, which builds kits from all your one-shots (and can fetch your MPC's DRUM ONE SHOTS)
 - **Hi-Fi look**: walnut cabinet, domed knobs, cream keys and green glass displays, like the BeatStep Pro on a hi-fi deck
 - **Low lag**: ASIO (your interface's own driver first), WASAPI exclusive and WASAPI
 

@@ -1,8 +1,8 @@
-POTENTIALBOX 2.0  -  a BeatStep Pro groovebox for jamming, on Windows
+POTENTIALBOX 2.1  -  a BeatStep Pro groovebox for jamming, on Windows
 =====================================================================
 
 INSTALL: double-click "Install PotentialBox.bat".
-Updating from 1.x? Same thing: your settings, saved sounds, kits, setups and loops are kept.
+Updating from 1.x or 2.0? Same thing: your settings, saved sounds, kits, setups and loops are kept.
 The full manual is PotentialBox-Manual.pdf (also in the Start menu after installing).
 
 WHAT PLAYS WHAT (factory BeatStep Pro settings)
@@ -21,7 +21,8 @@ THE FIVE SECTIONS (big keys along the bottom; sub-tabs top left)
   SOUNDS   SYNTH 1 / SYNTH 2  a sound browser: pick a type (BASS, LEAD, KEYS, PAD, PLUCK,
                      STAB, FX, MY SOUNDS), tap a sound. EDIT SOUND opens every setting;
                      < SOUNDS (or tapping the sub-tab again) comes back.
-           DRUMS     kits, KIT MAKER, and pad tune / mix / groove / choke pages.
+           DRUMS     18 kits, KIT MAKER, the drum BUS (punch, room, width, tone, crush),
+                     and pad tune / mix / groove / choke pages.
            MIX, FX   levels, ducking, EQ, mute/solo; delay, reverb and the master chain.
   BEATS    BEATS     beat generator in 24 genres, SEND TO BEATSTEP.   ARRANGE  chain beats.
   CAPTURE  STEMS     BOUNCE 1/2/4/8 bars: the mix + drums + synth 1 + synth 2 + FX + looper
@@ -46,6 +47,13 @@ LOW LAG (ASIO)
     WASAPI EXCLUSIVE ...      very low lag with no driver; other apps go quiet while it runs.
     WASAPI ...                works everywhere, a bit more lag.
   Smaller BUFFER = less lag (try 128 or 256; go up if you hear crackles).
+
+NEW IN 2.1
+  - Every drum sound rebuilt: proper 808/909/acoustic kicks, tuned snares with real
+    snare-wire noise, band-limited metal hats, ringing rides and crashes, modal toms.
+  - Kits are balanced (hats under the kick and snare) and spread in stereo like a real kit.
+  - 9 new genre kits (18 in all), and a drum BUS page: punch, room, width, tone, crush.
+  - Every BEATS genre and every project loads its own kit and drum bus.
 
 NEW IN 2.0
   - Five sections (JAM, SOUNDS, BEATS, CAPTURE, SETUP) instead of 14 tabs, with sub-tabs

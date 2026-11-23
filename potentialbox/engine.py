@@ -231,6 +231,10 @@ class Param:
             return f"{v:+.0f} st"
         if u == "oct":
             return f"{v:+.0f} oct"
+        if u == "tilt":  # v2.1: drum tone, centre is flat
+            if abs(v) < 0.02:
+                return "Flat"
+            return f"Darker {abs(v)*100:.0f}%" if v < 0 else f"Brighter {v*100:.0f}%"
         if u == "bip":  # DJ-style filter: centre is off
             if abs(v) < 0.02:
                 return "Off"
@@ -443,6 +447,14 @@ def _build_specs():
     a(Param("bt.human", "Humanize", 0, 1, 0.3, unit="%"))
     a(Param("dr.filter", "Drum filter", 200, 20000, 20000, "exp", unit="Hz"))
     a(Param("dr.drive", "Drum drive", 0, 1, 0.0, unit="%"))
+    # v2.1: the drum bus (SOUNDS > DRUMS > BUS). Each genre sets these when it loads its kit.
+    a(Param("dr.comp", "Punch", 0, 1, 0.35, unit="%"))          # parallel compression: thicker, punchier
+    a(Param("dr.room", "Room", 0, 1, 0.12, unit="%"))           # a short room on the whole kit
+    a(Param("dr.roomsize", "Room size", 0, 1, 0.3, unit="%"))
+    a(Param("dr.width", "Width", 0, 1, 0.7, unit="%"))          # spreads hats, toms and percussion like a real kit
+    a(Param("dr.tone", "Tone", -1, 1, 0.0, unit="tilt"))        # darker <-> brighter
+    a(Param("dr.crush", "Crush", 0, 1, 0.0, unit="%"))          # fewer bits and a lower sample rate (SP-1200 style)
+    a(Param("dr.kittune", "Kit tune", -12, 12, 0, step=1, unit="st"))
     a(Param("dr.vol", "Drums volume", 0, 1, 0.8, unit="%"))
     a(Param("m.master", "Master", 0, 1, 0.8, unit="%"))
     a(Param("m.drive", "Master drive", 0, 1, 0.0, unit="%"))
@@ -533,6 +545,9 @@ PAGES = collections.OrderedDict([
     ("Synth 2 LFO1 Steps", [f"s2.l1step{i}" for i in range(16)]),
     ("Synth 2 LFO2 Steps", [f"s2.l2step{i}" for i in range(16)]),
     ("Drums", [f"dr.p{i}.tune" for i in range(1, 9)] + [f"dr.p{i}.decay" for i in range(1, 9)]),
+    # v2.1: the drum bus
+    ("Drums Bus", ["dr.comp", "dr.room", "dr.roomsize", "dr.width", "dr.tone", "dr.drive", "dr.crush", "dr.filter",
+                   "dr.kittune", "dr.p1.level", "dr.p3.level", "dr.p4.level", "dr.p5.level", "fx.dr", "rv.dr", "dr.vol"]),
     ("Drums 1-8", [f"dr.p{i}.tune" for i in range(1, 9)] + [f"dr.p{i}.decay" for i in range(1, 9)]),
     ("Drums 1-8 Mix", [f"dr.p{i}.level" for i in range(1, 9)] + [f"dr.p{i}.pan" for i in range(1, 9)]),
     ("Drums 1-8 Groove", [f"dr.p{i}.chance" for i in range(1, 9)] + [f"dr.p{i}.cond" for i in range(1, 9)]),
@@ -567,7 +582,7 @@ SUBPAGES = {
     "Synth 2": [("Main", "Synth 2"), ("Osc+", "Synth 2 Osc+"), ("Uni+FX", "Synth 2 Uni+FX"), ("Mod", "Synth 2 Mod"), ("Mod2", "Synth 2 Mod 2"), ("Arp+", "Synth 2 Arp"), ("Env", "Synth 2 Env"),
                 ("LFO1 Steps", "Synth 2 LFO1 Steps"), ("LFO2 Steps", "Synth 2 LFO2 Steps")],
     # v2.0: one Drums tab for all 16 pads
-    "Drums": [("Tune 1-8", "Drums 1-8"), ("Tune 9-16", "Drums 9-16"), ("Mix 1-8", "Drums 1-8 Mix"),
+    "Drums": [("Bus", "Drums Bus"), ("Tune 1-8", "Drums 1-8"), ("Tune 9-16", "Drums 9-16"), ("Mix 1-8", "Drums 1-8 Mix"),
               ("Mix 9-16", "Drums 9-16 Mix"), ("Groove 1-8", "Drums 1-8 Groove"), ("Groove 9-16", "Drums 9-16 Groove"),
               ("Choke", "Drums Choke")],
     "Mix": [("Main", "Mix"), ("EQ", "Mix EQ"), ("Mute/Solo", "Track Mute/Solo")],
@@ -1962,7 +1977,15 @@ class Drums:
         self.rr = [0] * 16
         self.kit_index = 0
         self.kit_name = ""
+        self.pans = [0.0] * 16        # v2.1: each pad's place in the stereo field (scaled by Width)
         self.load_factory(0)
+        # v2.1 drum bus state
+        self.comp_env = 0.0
+        self.tone_zi = np.zeros((1, 2))
+        self.room = Reverb(eng.sr)
+        self.room_zi = np.zeros((1, 2))
+        self.crush_hold = np.zeros(2)
+        self.crush_ph = 0
 
     # Each pad remembers where its sound came from, so any kit (and any edit) can be saved and rebuilt:
     #   {"factory": kit_index, "pad": n}  or  {"file": path, "label": name}
@@ -1973,6 +1996,7 @@ class Drums:
         self.kit_name = kits.NAMES[self.kit_index]
         self.samples, self.names = [[s] for s in samples], list(names)
         self.sources = [{"factory": self.kit_index, "pad": i} for i in range(16)]
+        self.pans = [kits.pan_of(self.kit_index, i) for i in range(16)]
 
     def use_builtin(self):
         self.load_factory(0)
@@ -2023,6 +2047,10 @@ class Drums:
             names.append(fn[p])
             srcs.append({"factory": k, "pad": p})
         self.samples, self.names, self.sources, self.kit_name = samples, names, srcs, name
+        # a factory sound keeps its own place in the stereo field wherever it's moved; your samples sit where
+        # that pad's role does
+        self.pans = [kits.pan_of(s["factory"], s["pad"]) if "factory" in s else kits.pan_of(0, i)
+                     for i, s in enumerate(srcs)]
         return n
 
     def set_pad(self, pad, path, label):
@@ -2067,7 +2095,7 @@ class Drums:
                     for v in self.voices:
                         if v[0] == j:
                             v[5] = True
-        rate = 2.0 ** (val[f"dr.p{pad+1}.tune"] / 12.0)
+        rate = 2.0 ** ((val[f"dr.p{pad+1}.tune"] + val["dr.kittune"]) / 12.0)
         dec = val[f"dr.p{pad+1}.decay"]
         layers = self.samples[pad] if isinstance(self.samples[pad], list) else [self.samples[pad]]
         if not layers:
@@ -2085,7 +2113,8 @@ class Drums:
             tau = max(dec * dec * M / 2.0 / rate, 0.004 * self.sr)
             k = math.exp(-1.0 / tau)
         gain = val[f"dr.p{pad+1}.level"] * (vel / 127.0) ** 1.2
-        th = (val[f"dr.p{pad+1}.pan"] + 1.0) * (math.pi / 4.0)
+        pan = min(1.0, max(-1.0, val[f"dr.p{pad+1}.pan"] + self.pans[pad] * val["dr.width"]))
+        th = (pan + 1.0) * (math.pi / 4.0)
         # [pad, pos, rate, gain, env, choking, k, left, right]
         # a negative position = starts `offset` samples into the next block
         self.voices.append([pad, -float(offset) * rate, rate, gain, 1.0, False, k,
@@ -2096,7 +2125,9 @@ class Drums:
 
     def render(self, n):
         if not self.voices:
-            return None
+            if self.room.idle or self.eng.p.val["dr.room"] <= 0.01:
+                return None
+            return self.bus(np.zeros((n, 2)))   # let the room ring out
         out = np.zeros((n, 2))
         ar = np.arange(n)
         alive = []
@@ -2133,7 +2164,52 @@ class Drums:
             if st + m == n and e > 1e-4:
                 alive.append(v)
         self.voices = alive
+        return self.bus(out)
+
+    def bus(self, out):
+        """v2.1 drum bus: crush -> tone -> punch (parallel compression) -> filter -> drive -> room."""
         val = self.eng.p.val
+        n = len(out)
+        cr = val["dr.crush"]
+        if cr > 0.01:
+            hold = 1 + int(cr * 4.5)                     # 44.1 kHz down to ~8 kHz (sample and hold)
+            if hold > 1:
+                idx = np.arange(n)
+                starts = (self.crush_ph + idx) % hold == 0
+                last = np.maximum.accumulate(np.where(starts, idx, -1))
+                held = out[np.maximum(last, 0)]
+                held[last < 0] = self.crush_hold
+                self.crush_hold = held[-1].copy()
+                self.crush_ph = (self.crush_ph + n) % hold
+                out = held
+            q = 2.0 ** (15 - cr * 8)                      # 16 bits down to 8
+            out = np.round(out * q) / q
+        tone = val["dr.tone"]
+        a = math.exp(-TWO_PI * 900.0 / self.sr)          # tilt around ~900 Hz
+        low, self.tone_zi = lfilter([1 - a], [1, -a], out, axis=0, zi=self.tone_zi)
+        if abs(tone) > 0.02:
+            high = out - low
+            out = low * (1 - 0.6 * tone) + high * (1 + 0.9 * tone) if tone > 0 else \
+                low * (1 - 0.25 * tone) + high * (1 + 0.85 * tone)
+        pc = val["dr.comp"]
+        if pc > 0.01:
+            # fast peak follower on the summed kit; heavy compression blended in under the dry kit
+            lvl = np.abs(out).max(axis=1)
+            att, rel = math.exp(-1.0 / (0.002 * self.sr)), math.exp(-1.0 / (0.09 * self.sr))
+            env = np.empty(n)
+            e = self.comp_env
+            # a block is short: follow with a coarse 32-sample stride to keep it cheap
+            for j in range(0, n, 32):
+                pk = float(lvl[j:j + 32].max())
+                k = att ** 32 if pk > e else rel ** 32
+                e = pk + (e - pk) * k
+                env[j:j + 32] = e
+            self.comp_env = e
+            thr = 0.08
+            gain = np.where(env > thr, (thr / np.maximum(env, 1e-9)) ** 0.8, 1.0)  # ~5:1
+            squashed = out * gain[:, None] * 3.2
+            out = out + pc * 0.9 * squashed
+            out = out / (1 + 0.45 * pc)
         fc = val["dr.filter"]
         if fc < 19000:
             sos = np.array([lp_coeffs(fc, 0.9, self.sr)])
@@ -2142,6 +2218,13 @@ class Drums:
         if d > 0.01:
             g = 1 + 6 * d
             out = np.tanh(out * g) / math.tanh(g)
+        rm = val["dr.room"]
+        if rm > 0.01:
+            ar = math.exp(-TWO_PI * 250.0 / self.sr)     # keep the kick's low end out of the room
+            lo, self.room_zi = lfilter([1 - ar], [1, -ar], out, axis=0, zi=self.room_zi)
+            wet = self.room.process(out - lo, val["dr.roomsize"] * 0.12, 7000.0, 1.0)
+            if wet is not None:
+                out = out + wet * (rm * 0.9)
         return out * (val["dr.vol"] * 0.8)
 
 
