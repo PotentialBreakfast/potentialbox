@@ -1966,6 +1966,84 @@ def load_folder(folder, sr, max_pads=16):
     return out
 
 
+class DrumDrive:
+    """v2.1.1: a musical drive for the drum bus (the Drum drive knob).
+
+    The old one put up to 7x gain into a hard tanh and normalised it, so past about half way the kit became a
+    flat, fizzy square wave and jumped in level. This one:
+    - raises the gain on a curve (about +3 dB at 25%, +8 dB at 50%, +18 dB at 100%), so the top is crunch, not wreckage
+    - saturates slightly asymmetrically (a tube / tape-like curve) for warm even harmonics
+    - uses antiderivative anti-aliasing, so the high end stays smooth instead of fizzing
+    - keeps most of the kick's sub out of the saturation, so the low end stays solid
+    - blends the clean kit back under it (parallel drive), so hits keep their punch
+    - smooths the very top a little more as it's pushed, like an analog circuit
+    - matches the level, so the knob adds character, not volume
+    """
+
+    def __init__(self, sr):
+        self.sr = sr
+        self.prev_in = np.zeros(2)    # last sample into the saturator, before gain (anti-aliasing memory)
+        self.amt = 0.0                # the knob, glided so jumps don't click
+        self.last = (0.9, 0.0, 1.0, 0.0)   # gain, bias, level and sub kept clean, last block: ramped from
+        self.lo_zi = np.zeros((1, 2))
+        self.top_zi = np.zeros((1, 2))
+        self.dc_zi = np.zeros((1, 2))
+        self.mix = 0.0                # blend from the last block, faded per sample so moving the knob never clicks
+
+    @staticmethod
+    def _F(u):
+        """Antiderivative of tanh: log(cosh(u)), computed without overflow."""
+        a = np.abs(u)
+        return a + np.log1p(np.exp(-2.0 * a)) - math.log(2.0)
+
+    def _sat(self, u, u_prev):
+        """tanh with first-order antiderivative anti-aliasing; u_prev = the last block's final sample at this
+        block's gain, so a gain change never makes a jump."""
+        prev = np.vstack([u_prev[None, :], u[:-1]])
+        du = u - prev
+        small = np.abs(du) < 1e-6
+        safe = np.where(small, 1.0, du)
+        y = (self._F(u) - self._F(prev)) / safe
+        mid = np.tanh(0.5 * (u + prev))
+        return np.where(small, mid, y)
+
+    def process(self, x, target):
+        # glide the knob (0 -> 1 in about 60 ms) so turning it fast never clicks
+        amt = self.amt + max(-0.1, min(0.1, target - self.amt))
+        self.amt = amt
+        sr = self.sr
+        if amt <= 0.0 and self.mix <= 0.0:   # fully off: keep the memories warm, pass the kit through
+            a = math.exp(-TWO_PI * 110.0 / sr)
+            _, self.lo_zi = lfilter([1 - a], [1, -a], x, axis=0, zi=self.lo_zi)
+            self.prev_in = x[-1].copy()
+            return x
+        g = 10.0 ** ((18.0 * amt ** 1.4) / 20.0)          # input gain: 0 -> +18 dB on a curve
+        bias = 0.12 * amt                                 # asymmetry -> even harmonics (warmth)
+        n = len(x)
+        k0, b0, l0, c0 = self.last
+        k1, b1, l1, c1 = g * 0.9, bias, 1.0 / (g ** 0.78), 0.6 * amt   # level: divide tanh's gain back out
+        self.last = (k1, b1, l1, c1)
+        ramp = lambda v0, v1: (np.linspace(v0, v1, n, endpoint=False)[:, None] if v0 != v1 else v1)  # noqa: E731
+        kv, bv, lv, keep = ramp(k0, k1), ramp(b0, b1), ramp(l0, l1), ramp(c0, c1)
+        # keep most of the sub out of the drive
+        a = math.exp(-TWO_PI * 110.0 / sr)
+        lo, self.lo_zi = lfilter([1 - a], [1, -a], x, axis=0, zi=self.lo_zi)
+        drive_in = x - keep * lo
+        y = self._sat(drive_in * kv + bv, self.prev_in * k0 + b0) - np.tanh(bv)
+        self.prev_in = drive_in[-1].copy()
+        y, self.dc_zi = lfilter([1.0, -1.0], [1.0, -0.9995], y, axis=0, zi=self.dc_zi)   # asymmetry's DC out
+        # the very top rounds off a little as it's pushed
+        fc = 20000.0 - 11000.0 * amt
+        b = math.exp(-TWO_PI * fc / sr)
+        y, self.top_zi = lfilter([1 - b], [1, -b], y, axis=0, zi=self.top_zi)
+        y = y * lv
+        wet = y + keep * lo
+        target = min(1.0, 1.25 * amt)                     # the clean kit stays under it until 80%: keeps the punch
+        mix = np.linspace(self.mix, target, len(x), endpoint=False)[:, None] if target != self.mix else target
+        self.mix = target
+        return x * (1.0 - mix) + wet * mix
+
+
 class Drums:
     CHOKE = {4: [5]}  # closed hat (pad 5) chokes open hat (pad 6)
 
@@ -1984,6 +2062,7 @@ class Drums:
         self.tone_zi = np.zeros((1, 2))
         self.room = Reverb(eng.sr)
         self.room_zi = np.zeros((1, 2))
+        self.drive = DrumDrive(eng.sr)   # v2.1.1
         self.crush_hold = np.zeros(2)
         self.crush_ph = 0
 
@@ -2214,10 +2293,7 @@ class Drums:
         if fc < 19000:
             sos = np.array([lp_coeffs(fc, 0.9, self.sr)])
             out, self.zi = sosfilt(sos, out, axis=0, zi=self.zi)
-        d = val["dr.drive"]
-        if d > 0.01:
-            g = 1 + 6 * d
-            out = np.tanh(out * g) / math.tanh(g)
+        out = self.drive.process(out, val["dr.drive"])
         rm = val["dr.room"]
         if rm > 0.01:
             ar = math.exp(-TWO_PI * 250.0 / self.sr)     # keep the kick's low end out of the room

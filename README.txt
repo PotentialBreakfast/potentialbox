@@ -1,4 +1,4 @@
-POTENTIALBOX 2.1  -  a BeatStep Pro groovebox for jamming, on Windows
+POTENTIALBOX 2.1.1  -  a BeatStep Pro groovebox for jamming, on Windows
 =====================================================================
 
 INSTALL: double-click "Install PotentialBox.bat".
@@ -47,6 +47,9 @@ LOW LAG (ASIO)
     WASAPI EXCLUSIVE ...      very low lag with no driver; other apps go quiet while it runs.
     WASAPI ...                works everywhere, a bit more lag.
   Smaller BUFFER = less lag (try 128 or 256; go up if you hear crackles).
+
+NEW IN 2.1.1
+  - A smoother, more musical Drum drive: warm crunch all the way up, no fizz, no jump in level.
 
 NEW IN 2.1
   - Every drum sound rebuilt: proper 808/909/acoustic kicks, tuned snares with real

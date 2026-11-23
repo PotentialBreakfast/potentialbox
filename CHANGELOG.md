@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.1
+- **A musical Drum drive.** The old one hit a hard curve with up to 7x gain, so past about half way the kit turned
+  into a flat, fizzy square wave and jumped several dB louder. The new drive raises the gain on a curve, saturates
+  slightly asymmetrically for warmth (tube / tape-like), is anti-aliased so the top stays smooth, keeps most of the
+  kick's sub clean, blends the clean kit underneath so hits keep their punch, and holds its level: the knob adds
+  character, not volume. Full drive is a solid crunch, not distortion.
+
 ## 2.1.0
 **Better drums.** Every built-in drum sound is rebuilt, there are nine new genre kits, and a drum bus gives each
 genre its own punch, room and width.
