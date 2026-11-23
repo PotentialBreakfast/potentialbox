@@ -26,8 +26,9 @@ LFO_SYNC = [("Free", None), ("4 bars", 16), ("2 bars", 8), ("1 bar", 4), ("1/2",
             ("1/16", 0.25), ("1/32", 0.125), ("1/4T", 2 / 3), ("1/8T", 1 / 3), ("1/16T", 1 / 6)]
 MOD_SOURCES = ["Off", "LFO 1", "LFO 2", "Mod env", "Amp env", "Velocity", "Note", "Random"]
 MOD_DESTS = {"s1": ["Pitch", "Osc 2 pitch", "Cutoff", "Resonance", "Saw > Square", "Pulse width", "FM", "Ring mod",
-                    "Noise", "Volume", "Pan", "Drive", "Supersaw"],
-             "s2": ["Pitch", "Cutoff", "Resonance", "Wave position", "Unison", "Sub osc", "Noise", "Volume", "Pan"]}
+                    "Noise", "Volume", "Pan", "Drive", "Supersaw", "Unison", "Distortion"],
+             "s2": ["Pitch", "Cutoff", "Resonance", "Wave position", "Unison", "Sub osc", "Noise", "Volume", "Pan",
+                    "Warp", "Distortion"]}
 DEFAULT_ROUTES = {
     "s1": [("LFO 1", "Pitch"), ("LFO 1", "Cutoff"), ("LFO 2", "Pulse width"), ("Mod env", "Cutoff"),
            ("Velocity", "Cutoff"), ("LFO 2", "Pan"), ("Mod env", "Pitch"), ("LFO 2", "Volume"),
@@ -38,6 +39,58 @@ DEFAULT_ROUTES = {
 CHORDS = [("Off", (0,)), ("Octave", (0, 12)), ("Fifth", (0, 7)), ("Fifth + octave", (0, 7, 12)), ("Major", (0, 4, 7)),
           ("Minor", (0, 3, 7)), ("Sus2", (0, 2, 7)), ("Sus4", (0, 5, 7)), ("Major 7", (0, 4, 7, 11)),
           ("Minor 7", (0, 3, 7, 10)), ("Dominant 7", (0, 4, 7, 10)), ("Minor 9", (0, 3, 10, 14)), ("Stack", (0, 7, 12, 19))]
+# v1.12: scale chords. The played note is the top of the chord and the notes under it are stacked in thirds from the
+# key's scale, so a melody on Seq 2 turns into a chord progression that always fits the key (melody on top).
+CHORDS += [("Scale triad", None), ("Scale 7th", None), ("Scale 9th", None)]
+HARM_SCALES = {"Minor": (0, 2, 3, 5, 7, 8, 10), "Major": (0, 2, 4, 5, 7, 9, 11), "Dorian": (0, 2, 3, 5, 7, 9, 10),
+               "Phrygian": (0, 1, 3, 5, 7, 8, 10), "Mixolydian": (0, 2, 4, 5, 7, 9, 10),
+               "Harmonic minor": (0, 2, 3, 5, 7, 8, 11)}
+HARM_SCALE_NAMES = list(HARM_SCALES)
+KEY_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+def scale_chord(note, key, scale, size, voicing=0):
+    """Offsets (semitones from the played note) of a chord in the key with the played note on top: size 3, 4 or 5
+    notes stacked down in scale thirds. Notes outside the scale are harmonised as the scale note just under them.
+    voicing 1 = drop 2 (open), 2 = drop 2 and 4 (wide)."""
+    pcs = sorted((key + iv) % 12 for iv in HARM_SCALES[scale])
+    n = int(round(note))
+    below = []
+    m = n
+    while len(below) < 2 * (size - 1) + 1:
+        m -= 1
+        if m % 12 in pcs:
+            below.append(m)
+    top = n if n % 12 in pcs else None
+    offs = [0]
+    k = 1 if top is not None else 2   # the scale note a third under the top (or under its in-scale stand-in)
+    for i in range(size - 1):
+        offs.append(below[k + 2 * i] - n)
+    if voicing >= 1 and len(offs) >= 3:
+        offs[1] -= 12
+    if voicing >= 2 and len(offs) >= 4:
+        offs[3] -= 12
+    return offs
+
+
+def lane_chord(note, key, scale, degree, size, voicing=0):
+    """The chord the chord lane asked for (scale degree 1-7, as a triad / 7th / 9th), voiced close under the played
+    note, which stays on top. A top note outside the chord adds colour (a 9th, 11th or 6th) over it."""
+    sc = HARM_SCALES[scale]
+    pcs = {(key + sc[(degree - 1 + 2 * i) % 7]) % 12 for i in range(size)}
+    n = int(round(note))
+    offs = [0]
+    m = n
+    while len(offs) < size and m > n - 30:
+        m -= 1
+        if m % 12 in pcs and n - m != 1:   # no semitone rub right under the melody
+            offs.append(m - n)
+    if voicing >= 1 and len(offs) >= 3:
+        offs[1] -= 12
+    if voicing >= 2 and len(offs) >= 4:
+        offs[3] -= 12
+    return offs
+
 VOICINGS = ["Close", "Open", "Wide"]
 FTYPES = ["LP 24", "LP 12", "HP 12", "Band-pass", "Notch", "Comb", "Formant"]
 VOWELS = [(730, 1090, 2440), (530, 1840, 2480), (270, 2290, 3010), (570, 840, 2410), (300, 870, 2240)]
@@ -50,6 +103,14 @@ DRUM_CONDS = ["Always", "Fill only", "Not in fill", "1st of 2", "2nd of 2", "1st
               "4th of 4", "1st of 8", "8th of 8"]
 DUCK_SOURCES = [f"Pad {i}" for i in range(1, 17)] + ["Every beat"]
 GLUE_SPEEDS = [("Fast", 0.003, 0.06), ("Medium", 0.01, 0.15), ("Slow", 0.03, 0.4)]
+# ---- v1.12: pro synth engine (unison, drive, distortion, synth FX, wavetable warp)
+UNI_COUNTS = [1, 2, 3, 4, 5, 7]
+UNI_POS = {1: (0.0,), 2: (-1.0, 1.0), 3: (-1.0, 0.0, 1.0), 4: (-1.0, -0.36, 0.33, 1.0),
+           5: (-1.0, -0.47, 0.03, 0.52, 1.0), 7: (-1.0, -0.66, -0.3, 0.02, 0.31, 0.63, 1.0)}
+SUB_TYPES = ["-1 oct, filtered", "-1 oct, clean", "Root, clean"]  # clean = added after the filter and distortion
+DIST_TYPES = ["Off", "Tube", "Tape", "Fold", "Crush", "Hard clip"]
+SYN_FX = ["Off", "Chorus", "Ensemble", "Dimension", "Phaser", "Flanger"]
+WARPS = ["Off", "Bend +", "Bend -", "Mirror", "Sync", "Squeeze", "Phase FM", "Quantize"]
 PUNCH_FX = ["Repeat 1/8", "Repeat 1/16", "Roll 1/32", "Tape stop", "Reverse", "Filter sweep", "Gate 1/16", "Echo throw"]
 
 
@@ -274,6 +335,9 @@ def _build_specs():
         a(Param(pre + ".noise", "Noise", 0, 1, 0.0, unit="%"))
         a(Param(pre + ".chord", "Chord", 0, len(CHORDS) - 1, 0, step=1, choices=[c[0] for c in CHORDS]))
         a(Param(pre + ".voicing", "Chord voicing", 0, len(VOICINGS) - 1, 0, step=1, choices=VOICINGS))
+        a(Param(pre + ".hkey", "Chord key", 0, 11, 0, step=1, choices=KEY_NAMES))
+        a(Param(pre + ".hscale", "Chord scale", 0, len(HARM_SCALE_NAMES) - 1, 0, step=1, choices=HARM_SCALE_NAMES))
+        a(Param(pre + ".lane", "Chord lane", 0, 1, 0, step=1, choices=["Off", "On"]))
         a(Param(pre + ".pan", "Pan", -1, 1, 0.0, unit="pan"))
         a(Param(pre + ".drift", "Analog drift", 0, 1, 0.0, unit="%"))
         a(Param(pre + ".penv", "Pitch env", -24, 24, 0.0, unit="st"))
@@ -282,6 +346,21 @@ def _build_specs():
         a(Param(pre + ".keytrk", "Key tracking", 0, 1, 0.0, unit="%"))
         a(Param(pre + ".velamp", "Velocity > volume", 0, 1, 0.65, unit="%"))
         a(Param(pre + ".glmode", "Glide mode", 0, 1, 0, step=1, choices=GLIDE_MODES))
+        # ---- v1.12: unison, filter drive, distortion, synth FX (and wavetable warp on Synth 2)
+        a(Param(pre + ".uni", "Unison voices", 0, len(UNI_COUNTS) - 1, 0 if pre == "s1" else 1, step=1,
+                choices=[str(c) for c in UNI_COUNTS]))
+        if pre == "s1":
+            a(Param("s1.unidet", "Unison detune", 0, 1, 0.3, unit="%"))
+            a(Param("s1.subtype", "Sub mode", 0, len(SUB_TYPES) - 1, 0, step=1, choices=SUB_TYPES))
+        a(Param(pre + ".uniwid", "Unison width", 0, 1, 0.8 if pre == "s1" else 0.5, unit="%"))
+        a(Param(pre + ".fdrive", "Filter drive", 0, 1, 0.0, unit="%"))
+        a(Param(pre + ".dist", "Distortion", 0, len(DIST_TYPES) - 1, 0, step=1, choices=DIST_TYPES))
+        a(Param(pre + ".distamt", "Dist amount", 0, 1, 0.4, unit="%"))
+        a(Param(pre + ".sfx", "Synth FX", 0, len(SYN_FX) - 1, 0, step=1, choices=SYN_FX))
+        a(Param(pre + ".sfxamt", "Synth FX amount", 0, 1, 0.5, unit="%"))
+        if pre == "s2":
+            a(Param("s2.warp", "Warp", 0, len(WARPS) - 1, 0, step=1, choices=WARPS))
+            a(Param("s2.warpamt", "Warp amount", 0, 1, 0.3, unit="%"))
         for L, (shape, rate) in ((1, (0, 2.0)), (2, (1, 0.5))):
             a(Param(f"{pre}.l{L}shape", f"LFO {L} shape", 0, len(LFO_SHAPES) - 1, shape, step=1, choices=LFO_SHAPES))
             a(Param(f"{pre}.l{L}rate", f"LFO {L} speed", 0.05, 20, rate, "exp", unit="Hz"))
@@ -386,6 +465,8 @@ SPECS = _build_specs()
 PAGES = collections.OrderedDict([
     ("Perform", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s2.pos", "s2.cutoff", "s2.envamt", "s2.decay",
                  "dr.p1.tune", "dr.p1.decay", "dr.p3.tune", "dr.p5.decay", "dr.filter", "s1.vol", "s2.vol", "dr.vol"]),
+    ("Projects", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.drive", "s2.cutoff", "s2.pos", "s2.envamt", "s2.decay",
+                  "dr.p1.tune", "dr.p3.tune", "dr.filter", "dr.drive", "fx.s2", "rv.s2", "m.crush", "m.master"]),
     ("Beats", ["bt.busy", "bt.var", "bt.swing", "bt.human", "dr.vol", "dr.filter", "dr.drive", "rv.dr",
                "dr.p1.level", "dr.p2.level", "dr.p3.level", "dr.p4.level", "dr.p5.level", "dr.p6.level",
                "dr.p13.level", "dr.p1.tune"]),
@@ -396,8 +477,11 @@ PAGES = collections.OrderedDict([
     ("Macros", [f"mc.{i}" for i in range(1, 17)]),
     ("Synth 1", ["s1.cutoff", "s1.reso", "s1.envamt", "s1.fdecay", "s1.wave", "s1.pw", "s1.detune", "s1.sub",
                  "s1.attack", "s1.decay", "s1.sustain", "s1.release", "s1.glide", "s1.octave", "s1.drive", "s1.vol"]),
-    ("Synth 1 Osc+", ["s1.osc2", "s1.fm", "s1.ring", "s1.sync", "s1.noise", "s1.chord", "s1.voicing", "s1.pan",
-                      "s1.ftype", "s1.keytrk", "s1.velamp", "s1.drift", "s1.penv", "s1.pdec", "s1.glmode", "s1.supersaw"]),
+    ("Synth 1 Osc+", ["s1.osc2", "s1.fm", "s1.ring", "s1.sync", "s1.noise", "s1.ftype", "s1.keytrk", "s1.velamp",
+                      "s1.chord", "s1.voicing", "s1.hkey", "s1.hscale", "s1.lane", "s1.penv", "s1.pdec", "s1.glmode"]),
+    ("Synth 1 Uni+FX", ["s1.uni", "s1.unidet", "s1.uniwid", "s1.supersaw", "s1.fdrive", "s1.drive", "s1.dist",
+                        "s1.distamt", "s1.sfx", "s1.sfxamt", "s1.cutoff", "s1.reso", "s1.ftype", "s1.sub", "s1.subtype",
+                        "s1.vol"]),
     ("Synth 1 Mod", ["s1.l1shape", "s1.l1rate", "s1.l1sync", "s1.l2shape", "s1.l2rate", "s1.l2sync", "s1.mea", "s1.med"]
                     + [f"s1.m{j}amt" for j in range(1, 9)]),
     ("Synth 1 Mod 2", [f"s1.m{j}amt" for j in range(9, 13)] + ["s1.l1shape", "s1.l1rate", "s1.l1sync", "s1.mea",
@@ -405,7 +489,9 @@ PAGES = collections.OrderedDict([
     ("Synth 2", ["s2.pos", "s2.posenv", "s2.lforate", "s2.lfoamt", "s2.cutoff", "s2.reso", "s2.envamt", "s2.table",
                  "s2.attack", "s2.decay", "s2.sustain", "s2.release", "s2.glide", "s2.octave", "s2.detune", "s2.vol"]),
     ("Synth 2 Osc+", ["s2.chord", "s2.voicing", "s2.sub", "s2.noise", "s2.pan", "s2.drift", "s2.penv", "s2.pdec",
-                      "s2.ftype", "s2.keytrk", "s2.velamp", "s2.glmode", "s2.table", "s2.pos", "s2.cutoff", "s2.vol"]),
+                      "s2.ftype", "s2.keytrk", "s2.velamp", "s2.glmode", "s2.hkey", "s2.hscale", "s2.lane", "s2.vol"]),
+    ("Synth 2 Uni+FX", ["s2.uni", "s2.detune", "s2.uniwid", "s2.sub", "s2.warp", "s2.warpamt", "s2.table", "s2.pos",
+                        "s2.fdrive", "s2.dist", "s2.distamt", "s2.sfx", "s2.sfxamt", "s2.cutoff", "s2.reso", "s2.vol"]),
     ("Synth 2 Mod", ["s2.l1shape", "s2.l1rate", "s2.l1sync", "s2.l2shape", "s2.l2rate", "s2.l2sync", "s2.mea", "s2.med"]
                     + [f"s2.m{j}amt" for j in range(1, 9)]),
     ("Synth 2 Mod 2", [f"s2.m{j}amt" for j in range(9, 13)] + ["s2.l1shape", "s2.l1rate", "s2.l1sync", "s2.mea",
@@ -466,6 +552,47 @@ PRESETS = {
                              m2amt=0.55, attack=0.002, decay=0.5, sustain=0.9, release=0.1, drive=0.5)),
         ("Minor 7 Stab", dict(chord=9, voicing=1, wave=0.3, octave=0, cutoff=900, reso=0.3, envamt=0.6, fdecay=0.15,
                               attack=0.001, decay=0.3, sustain=0, release=0.25, drift=0.3, drive=0.1)),
+        # ---- v1.12: sounds that use unison, filter drive, distortion and the synth FX
+        ("Hyper Saw Lead", dict(wave=0, octave=0, uni=5, unidet=0.45, uniwid=1.0, sub=0, cutoff=5500, reso=0.15,
+                                envamt=0.25, fdecay=0.5, attack=0.004, decay=1.2, sustain=0.85, release=0.35,
+                                glide=0.05, sfx=2, sfxamt=0.45, drive=0.15)),
+        ("Reese Bass", dict(wave=0, octave=-1, uni=3, unidet=0.3, uniwid=0.4, sub=0.6, cutoff=420, reso=0.2,
+                            envamt=0.1, attack=0.004, decay=1.0, sustain=1.0, release=0.12, l1rate=0.2, m2amt=0.12,
+                            fdrive=0.45, dist=1, distamt=0.35, drive=0.2)),
+        ("Neuro Growl", dict(wave=0.6, octave=-1, osc2=7, fm=0.45, uni=1, unidet=0.2, uniwid=0.3, sub=0.4, ftype=3,
+                             cutoff=700, reso=0.55, envamt=0.15, l1sync=7, m2amt=0.55, fdrive=0.6, dist=3, distamt=0.5,
+                             attack=0.002, decay=0.6, sustain=0.9, release=0.08)),
+        ("Hoover", dict(wave=0, pw=0.3, octave=0, osc2=-12, uni=5, unidet=0.75, uniwid=1.0, penv=-5, pdec=0.18,
+                        glide=0.12, glmode=1, cutoff=3500, reso=0.1, envamt=0.15, attack=0.01, decay=1.0, sustain=0.9,
+                        release=0.3, sfx=1, sfxamt=0.6, dist=1, distamt=0.3)),
+        ("Stack Pluck", dict(wave=0.2, octave=0, uni=4, unidet=0.25, uniwid=0.9, sub=0, cutoff=650, reso=0.3,
+                             envamt=0.8, fdecay=0.14, attack=0.001, decay=0.32, sustain=0, release=0.3, sfx=3,
+                             sfxamt=0.6)),
+        ("Analog Brass", dict(wave=0, octave=0, uni=1, unidet=0.2, uniwid=0.7, sub=0, cutoff=800, reso=0.15,
+                              envamt=0.55, fdecay=0.35, attack=0.03, decay=0.8, sustain=0.75, release=0.25, drift=0.4,
+                              sfx=2, sfxamt=0.3)),
+        ("Acid Screamer", dict(wave=0, octave=-1, sub=0, cutoff=380, reso=0.9, envamt=0.75, fdecay=0.15, attack=0.001,
+                               decay=0.3, sustain=0.6, release=0.05, glide=0.07, fdrive=0.6, drive=0.4, dist=1,
+                               distamt=0.45, velamp=0.4)),
+        ("Pro Sub", dict(wave=1, octave=-1, sub=1.0, cutoff=170, reso=0.0, envamt=0.05, attack=0.003, decay=0.8,
+                         sustain=0.9, release=0.12, dist=2, distamt=0.25)),
+        ("Detuned Keys", dict(wave=0.5, pw=0.4, octave=0, uni=1, unidet=0.18, uniwid=0.8, sub=0, cutoff=2400,
+                              reso=0.1, envamt=0.3, fdecay=0.4, attack=0.002, decay=0.9, sustain=0.35, release=0.4,
+                              drift=0.5, sfx=1, sfxamt=0.5)),
+        ("Wide Square Lead", dict(wave=1, pw=0.35, octave=0, uni=2, unidet=0.3, uniwid=1.0, sub=0, cutoff=4200,
+                                  reso=0.15, envamt=0.2, attack=0.005, decay=1.0, sustain=0.8, release=0.25, glide=0.1,
+                                  sfx=4, sfxamt=0.45)),
+        ("Sync Scream", dict(wave=0, sync=1, osc2=19, octave=0, uni=1, unidet=0.25, uniwid=0.8, sub=0, cutoff=6000,
+                             reso=0.15, envamt=0.2, mea=0.001, med=0.5, m7dst=1, m7amt=0.5, attack=0.003, decay=0.8,
+                             sustain=0.8, release=0.2, dist=5, distamt=0.25)),
+        ("Trance Supersaw", dict(wave=0, supersaw=0.8, octave=0, sub=0, cutoff=7000, reso=0.1, envamt=0.15,
+                                 attack=0.005, decay=1.5, sustain=0.9, release=0.5, sfx=2, sfxamt=0.5)),
+        ("Dub Chord Pro", dict(chord=5, voicing=1, wave=0.3, octave=0, sub=0, cutoff=1200, reso=0.25, envamt=0.5,
+                               fdecay=0.2, attack=0.001, decay=0.3, sustain=0, release=0.3, sfx=3, sfxamt=0.5, dist=2,
+                               distamt=0.3)),
+        ("Wobble Pro", dict(wave=0.6, octave=-1, uni=1, unidet=0.2, uniwid=0.3, sub=0.6, ftype=1, cutoff=250,
+                            reso=0.6, envamt=0.1, l1sync=6, m2amt=0.6, fdrive=0.5, dist=3, distamt=0.35, attack=0.002,
+                            decay=0.5, sustain=0.9, release=0.1)),
     ],
     "s2": [
         ("Glass Bell", dict(table=4, pos=0.4, posenv=0.3, lfoamt=0.1, cutoff=9000, reso=0.1, envamt=0.2,
@@ -492,15 +619,58 @@ PRESETS = {
         ("Granular Drone", dict(table=10, pos=0.3, posenv=0, lfoamt=0, l2shape=6, l2rate=0.15, m3amt=0.7, attack=1.0,
                                 decay=3, sustain=1, release=2.5, cutoff=3000, reso=0.3, envamt=0.1, detune=0.6, sub=0.3,
                                 octave=-1)),
+        # ---- v1.12: sounds that use unison, warp, distortion and the synth FX
+        ("Lush Pad", dict(table=0, pos=0.35, posenv=0, lforate=0.15, lfoamt=0.25, uni=5, detune=0.55, uniwid=1.0,
+                          attack=0.7, decay=2, sustain=0.9, release=2.2, cutoff=3000, reso=0.1, envamt=0.1, sfx=2,
+                          sfxamt=0.6, warp=3, warpamt=0.25, drift=0.3, octave=0)),
+        ("Glass Keys", dict(table=4, pos=0.45, posenv=0.2, lfoamt=0, uni=1, detune=0.15, uniwid=0.6, warp=1,
+                            warpamt=0.2, cutoff=9000, reso=0.05, envamt=0.1, attack=0.002, decay=1.4, sustain=0.15,
+                            release=1.0, sfx=1, sfxamt=0.4, octave=0)),
+        ("Super Pluck", dict(table=28, pos=0.4, posenv=0.3, lfoamt=0, uni=4, detune=0.35, uniwid=1.0, cutoff=1800,
+                             reso=0.2, envamt=0.7, attack=0.001, decay=0.35, sustain=0, release=0.3, sfx=3, sfxamt=0.5,
+                             octave=0)),
+        ("Formant Lead", dict(table=1, pos=0.3, posenv=0.2, lfoamt=0, warp=4, warpamt=0.45, uni=1, detune=0.2,
+                              uniwid=0.7, cutoff=7000, reso=0.1, envamt=0.2, attack=0.005, decay=0.8, sustain=0.7,
+                              release=0.2, glide=0.06, mea=0.002, med=0.4, m4amt=0.4, octave=0)),
+        ("Vowel Growl", dict(table=1, pos=0.4, posenv=0, lfoamt=0, warp=4, warpamt=0.3, l2sync=7, m3amt=0.5,
+                             dist=3, distamt=0.3, uni=1, detune=0.15, cutoff=6000, reso=0.15, envamt=0.1,
+                             attack=0.003, decay=0.6, sustain=0.9, release=0.1, octave=-1, sub=0.4)),
+        ("Evolving Texture", dict(table=10, pos=0.3, posenv=0, lfoamt=0, l2shape=6, l2rate=0.12, m3amt=0.6, warp=6,
+                                  warpamt=0.3, uni=3, detune=0.4, uniwid=1.0, attack=1.2, decay=3, sustain=1,
+                                  release=2.5, cutoff=4000, reso=0.2, envamt=0.1, sfx=2, sfxamt=0.5, octave=0)),
+        ("Digital Stab", dict(table=5, chord=9, voicing=1, warp=7, warpamt=0.35, pos=0.4, posenv=0.3, lfoamt=0,
+                              cutoff=5000, reso=0.2, envamt=0.4, attack=0.001, decay=0.3, sustain=0, release=0.25,
+                              dist=4, distamt=0.25, sfx=3, sfxamt=0.4, octave=0)),
+        ("Choir Air", dict(table=9, pos=0.5, posenv=0, lforate=0.2, lfoamt=0.25, uni=3, detune=0.5, uniwid=1.0,
+                           warp=3, warpamt=0.2, attack=0.5, decay=2, sustain=0.85, release=1.8, cutoff=5000, reso=0.1,
+                           envamt=0.1, sfx=2, sfxamt=0.55, octave=0)),
+        ("Folded Lead", dict(table=0, pos=0.3, posenv=0.2, lfoamt=0, warp=6, warpamt=0.45, dist=3, distamt=0.35,
+                             uni=1, detune=0.3, uniwid=0.5, cutoff=6000, reso=0.15, envamt=0.2, attack=0.004,
+                             decay=0.8, sustain=0.75, release=0.2, glide=0.06, octave=0)),
+        ("Retro Poly", dict(table=28, pos=0.4, posenv=0.1, lfoamt=0, uni=4, detune=0.45, uniwid=1.0, cutoff=5000,
+                            reso=0.15, envamt=0.2, attack=0.01, decay=1.0, sustain=0.7, release=0.5, sfx=1, sfxamt=0.5,
+                            glide=0.05, octave=0)),
+        ("Hollow Reed", dict(table=23, pos=0.4, posenv=0, lfoamt=0, warp=5, warpamt=0.4, uni=1, detune=0.15,
+                             cutoff=5000, reso=0.1, envamt=0.15, attack=0.03, decay=1, sustain=0.8, release=0.4, sfx=3,
+                             sfxamt=0.4, octave=0)),
+        ("Chip Arp Pro", dict(table=11, pos=0.3, posenv=0, lfoamt=0, warp=7, warpamt=0.25, uni=1, detune=0.1,
+                              cutoff=9000, reso=0.05, envamt=0.1, attack=0.001, decay=0.25, sustain=0.4, release=0.1,
+                              glide=0.02, glmode=1, sfx=3, sfxamt=0.3, octave=1)),
+        ("Dark Drone Pro", dict(table=10, octave=-1, pos=0.3, posenv=0, lfoamt=0, l2shape=6, l2rate=0.1, m3amt=0.7,
+                                warp=4, warpamt=0.25, uni=3, detune=0.6, uniwid=1.0, attack=1.5, decay=3, sustain=1,
+                                release=3, cutoff=1500, reso=0.35, envamt=0.1, sfx=5, sfxamt=0.3)),
+        ("Bell Tower", dict(table=4, pos=0.5, posenv=0.1, lfoamt=0, warp=2, warpamt=0.35, uni=2, detune=0.25,
+                            uniwid=0.9, attack=0.002, decay=2.5, sustain=0, release=2, cutoff=9000, reso=0.05,
+                            envamt=0.1, sfx=2, sfxamt=0.4, octave=0)),
     ],
 }
 
 
 # tab -> [(sub-page button, page)]; tapping a tab again goes to its next sub-page
 SUBPAGES = {
-    "Synth 1": [("Main", "Synth 1"), ("Osc+", "Synth 1 Osc+"), ("Mod", "Synth 1 Mod"), ("Mod2", "Synth 1 Mod 2"), ("Arp+", "Synth 1 Arp"), ("Env", "Synth 1 Env"),
+    "Synth 1": [("Main", "Synth 1"), ("Osc+", "Synth 1 Osc+"), ("Uni+FX", "Synth 1 Uni+FX"), ("Mod", "Synth 1 Mod"), ("Mod2", "Synth 1 Mod 2"), ("Arp+", "Synth 1 Arp"), ("Env", "Synth 1 Env"),
                 ("LFO1 Steps", "Synth 1 LFO1 Steps"), ("LFO2 Steps", "Synth 1 LFO2 Steps")],
-    "Synth 2": [("Main", "Synth 2"), ("Osc+", "Synth 2 Osc+"), ("Mod", "Synth 2 Mod"), ("Mod2", "Synth 2 Mod 2"), ("Arp+", "Synth 2 Arp"), ("Env", "Synth 2 Env"),
+    "Synth 2": [("Main", "Synth 2"), ("Osc+", "Synth 2 Osc+"), ("Uni+FX", "Synth 2 Uni+FX"), ("Mod", "Synth 2 Mod"), ("Mod2", "Synth 2 Mod 2"), ("Arp+", "Synth 2 Arp"), ("Env", "Synth 2 Env"),
                 ("LFO1 Steps", "Synth 2 LFO1 Steps"), ("LFO2 Steps", "Synth 2 LFO2 Steps")],
     "Drums 1-8": [("Main", "Drums 1-8"), ("Mix", "Drums 1-8 Mix"), ("Groove", "Drums 1-8 Groove"), ("Choke", "Drums Choke")],
     "Drums 9-16": [("Main", "Drums 9-16"), ("Mix", "Drums 9-16 Mix"), ("Groove", "Drums 9-16 Groove"), ("Choke", "Drums Choke")],
@@ -939,6 +1109,9 @@ class MonoSynth:
         self.arp_seq = []
         self.arp_last_stop = -10 ** 12
         self.arp_rng = np.random.default_rng(51 if pre == "s1" else 61)
+        self.sfx_units = None   # chorus / ensemble / dimension / phaser / flanger, made the first time one is used
+        self.lane_deg = None    # chord lane: the scale degree (1-7) of the chord the BeatStep asked for
+        self.crush_hold = 0.0
 
     # ---- notes (the arpeggiator sits in front of the voice)
     def note_on(self, note, vel):
@@ -996,9 +1169,17 @@ class MonoSynth:
     def arp_pool(self):
         v = self.eng.p.val
         pre = self.pre
-        ints = CHORDS[int(v[pre + ".chord"])][1]
+        ci = int(v[pre + ".chord"])
         base = []
         for nt in self.arp_notes:
+            ints = CHORDS[ci][1]
+            if ints is None:
+                size = {"Scale triad": 3, "Scale 7th": 4, "Scale 9th": 5}[CHORDS[ci][0]]
+                key, scale = int(v[pre + ".hkey"]), HARM_SCALE_NAMES[int(v[pre + ".hscale"])]
+                if v[pre + ".lane"] >= 0.5 and self.lane_deg:
+                    ints = lane_chord(nt, key, scale, self.lane_deg, size)
+                else:
+                    ints = scale_chord(nt, key, scale, size)
             for iv in ints:
                 if nt + iv not in base:
                     base.append(nt + iv)
@@ -1098,6 +1279,9 @@ class MonoSynth:
                 self.cur = self.tgt
             self.vel_raw = vel / 127.0
             self.rnd = float(self.rng.uniform(-1, 1))
+            uph = getattr(self, "uph", None)
+            if uph is not None and UNI_COUNTS[int(v[self.pre + ".uni"])] > 1:
+                uph[:] = self.rng.random(uph.shape)
             self.ptime = 0
             self.amp.gate_on()
             self.fenv.gate_on()
@@ -1149,8 +1333,15 @@ class MonoSynth:
         if self.arp_running:  # the arp plays the chord one note at a time
             return [0]
         v = self.eng.p.val
-        ints = list(CHORDS[int(v[self.pre + ".chord"])][1])
         voicing = int(v[self.pre + ".voicing"])
+        ci = int(v[self.pre + ".chord"])
+        if CHORDS[ci][1] is None:
+            size = {"Scale triad": 3, "Scale 7th": 4, "Scale 9th": 5}[CHORDS[ci][0]]
+            key, scale = int(v[self.pre + ".hkey"]), HARM_SCALE_NAMES[int(v[self.pre + ".hscale"])]
+            if v[self.pre + ".lane"] >= 0.5 and self.lane_deg:
+                return lane_chord(self.tgt, key, scale, self.lane_deg, min(size, self.MAXV), voicing)
+            return scale_chord(self.tgt, key, scale, size, voicing)[: self.MAXV]
+        ints = list(CHORDS[ci][1])
         if voicing >= 1 and len(ints) >= 3:
             ints[1] += 12
         if voicing >= 2 and len(ints) >= 4:
@@ -1334,6 +1525,48 @@ class MonoSynth:
         for L in (0, 1):
             self.lfos[L].ph = (self.lfos[L].ph + n * self.lfo_hz(L + 1) / self.sr) % 1.0
 
+    def pre_drive(self, x):
+        """Filter drive: saturate what goes into the filter (a driven ladder's grit and thickness)."""
+        fd = self.eng.p.val[self.pre + ".fdrive"]
+        if fd <= 0.001:
+            return x
+        g = 1.0 + 7.0 * fd
+        return np.tanh(x * g) / math.tanh(g) * (1.0 + 0.4 * fd)
+
+    def distortion(self, y, mods):
+        v = self.eng.p.val
+        kind = int(v[self.pre + ".dist"])
+        amt = min(max(v[self.pre + ".distamt"] + _mean(mods.get("Distortion", 0.0)), 0.0), 1.0)
+        if kind == 0 or amt <= 0.001:
+            return y
+        if y.ndim == 2:  # distort the middle, keep the unison's width clean: stays solid in mono
+            mid = 0.5 * (y[:, 0] + y[:, 1])
+            side = 0.5 * (y[:, 0] - y[:, 1])
+            md = distort(mid, DIST_TYPES[kind], amt, self)
+            trim = 1.0 - 0.3 * amt
+            return np.stack([md + side * 0.8, md - side * 0.8], axis=1) * trim
+        return distort(y, DIST_TYPES[kind], amt, self) * (1.0 - 0.3 * amt)
+
+    def synth_fx(self, out):
+        v = self.eng.p.val
+        k = int(v[self.pre + ".sfx"])
+        if k <= 0:
+            return out
+        if self.sfx_units is None:
+            self.sfx_units = [None, Chorus(self.sr), Ensemble(self.sr), Dimension(self.sr), Phaser(self.sr),
+                              Flanger(self.sr)]
+        return self.sfx_units[k].process(out, v[self.pre + ".sfxamt"])
+
+    def unison(self, mods, det_key, scale):
+        """Unison voices for this block: (positions -1..1, detune in semitones for position 1, width)."""
+        v = self.eng.p.val
+        U = UNI_COUNTS[int(v[self.pre + ".uni"])]
+        if len(self.chord()) > 1:
+            U = max(1, min(U, 8 // len(self.chord())))  # chords x unison stays within 8 oscillators
+            U = max(k for k in UNI_POS if k <= U)
+        det = min(max(v[det_key] + _mean(mods.get("Unison", 0.0)), 0.0), 1.0)
+        return UNI_POS[U], scale(det), v[self.pre + ".uniwid"]
+
     def finish(self, y, ae, mods, vol_key):
         """Velocity, volume, tremolo and pan -> stereo (n, 2)."""
         v = self.eng.p.val
@@ -1347,8 +1580,10 @@ class MonoSynth:
         gl = np.cos(th) * math.sqrt(2.0)
         gr = np.sin(th) * math.sqrt(2.0)
         if y.ndim == 1:
-            return np.stack([y * gain * gl, y * gain * gr], axis=1)
-        return np.stack([y[:, 0] * gain * gl, y[:, 1] * gain * gr], axis=1)
+            out = np.stack([y * gain * gl, y * gain * gr], axis=1)
+        else:
+            out = np.stack([y[:, 0] * gain * gl, y[:, 1] * gain * gr], axis=1)
+        return self.synth_fx(out)
 
 
 def _osc(t, d, wave, pw):
@@ -1359,12 +1594,68 @@ def _osc(t, d, wave, pw):
     return (1 - wave) * saw + wave * pulse
 
 
+def _pan_lr(pan):
+    th = (pan + 1.0) * (math.pi / 4.0)
+    return math.cos(th) * math.sqrt(2.0), math.sin(th) * math.sqrt(2.0)
+
+
+def distort(y, kind, amt, owner=None):
+    """Synth distortion, roughly level-matched so turning it up adds grit rather than volume."""
+    if kind == "Tube":  # asymmetric: even harmonics, warm
+        g = 1.0 + 9.0 * amt
+        b = 0.35 * amt
+        return (np.tanh(g * y + b) - math.tanh(b)) / math.tanh(g) * (1.0 - 0.15 * amt)
+    if kind == "Tape":  # soft, rounded
+        g = 1.0 + 6.0 * amt
+        return np.arctan(g * y) / math.atan(g)
+    if kind == "Fold":  # wavefolder: harmonics fold back in, metallic and buzzy
+        g = 1.0 + 5.0 * amt
+        return np.sin(np.clip(y * g, -40.0, 40.0) * (math.pi / 2.0)) * (0.85 + 0.15 * (1.0 - amt))
+    if kind == "Crush":  # fewer bits and a lower sample rate
+        bits = 12.0 - 9.0 * amt
+        q = 2.0 ** (1.0 - bits)
+        ds = 1 + int(amt * 14)
+        if ds > 1:
+            idx = (np.arange(len(y)) // ds) * ds
+            y = y[idx]
+        return np.round(y / q) * q
+    if kind == "Hard clip":
+        g = 1.0 + 8.0 * amt
+        return np.clip(y * g, -1.0, 1.0) * (0.9 - 0.2 * amt)
+    return y
+
+
+def warp_phase(p, kind, a):
+    """Synth 2's warp modes: reshape the read position through the wave (0..1)."""
+    if kind == "Bend +":
+        p = p ** (1.0 + 4.0 * a)
+    elif kind == "Bend -":
+        p = 1.0 - (1.0 - p) ** (1.0 + 4.0 * a)
+    elif kind == "Mirror":
+        m = np.where(p < 0.5, 2.0 * p, 2.0 - 2.0 * p)
+        p = (1.0 - a) * p + a * m
+    elif kind == "Sync":
+        p = (p * (1.0 + 7.0 * a)) % 1.0
+    elif kind == "Squeeze":
+        p = np.minimum(p / (1.0 - 0.85 * a), 1.0)
+    elif kind == "Phase FM":
+        p = (p + a * 0.4 * np.sin(TWO_PI * 2.0 * p)) % 1.0
+    elif kind == "Quantize":
+        st = max(4.0, 96.0 - 90.0 * a)
+        p = np.floor(p * st) / st
+    return np.minimum(p, 1.0 - 1e-9)
+
+
+WARP_BANDLIMIT = {"Sync": 6.0, "Squeeze": 4.0, "Bend +": 2.5, "Bend -": 2.5, "Phase FM": 2.0, "Mirror": 1.5}
+
+
 class OscSynth(MonoSynth):
     SS_SPREAD = (-1.0, -0.58, -0.18, 0.19, 0.6, 0.98)  # JP-8000 style uneven spacing (x detune)
 
     def __init__(self, eng, pre="s1"):
-        super().__init__(eng, pre, 1)
+        super().__init__(eng, pre, 2)
         self.ph = np.zeros((self.MAXV, 3))
+        self.uph = np.random.default_rng(9).random((self.MAXV, 7, 2))  # unison voices' own phases
         # supersaw: 6 extra saws per voice, each with its own phase, detuned around the main one
         self.ssph = np.random.default_rng(7).random((self.MAXV, len(self.SS_SPREAD)))
 
@@ -1393,54 +1684,89 @@ class OscSynth(MonoSynth):
         sub = v["s1.sub"]
         ints = self.chord()
         drift = self.drift(n)
-        x = np.zeros(n)
+        pos, det, wid = self.unison(mods, "s1.unidet", lambda d: 0.55 * d ** 1.5)
+        x = np.zeros((n, 2))
+        subtype = int(v["s1.subtype"])
+        clean = 0.0
         use_fm = isinstance(fm, np.ndarray) or fm > 0.001
         use_ring = isinstance(ring, np.ndarray) or ring > 0.001
         for vi, iv in enumerate(ints):
             ph = self.ph[vi]
             f1 = 440.0 * 2.0 ** ((sem + iv + drift[vi] - 69.0) / 12.0)
             dt1 = f1 / self.sr
-            dt2 = dt1 * 2.0 ** (o2st / 12.0)
-            t1 = (ph[0] + np.cumsum(dt1)) % 1.0
-            ph[0] = t1[-1]
-            if sync:
-                t2 = (t1 * (dt2 / dt1)) % 1.0
+            if len(pos) == 1:
+                dt2 = dt1 * 2.0 ** (o2st / 12.0)
+                t1 = (ph[0] + np.cumsum(dt1)) % 1.0
+                ph[0] = t1[-1]
+                if sync:
+                    t2 = (t1 * (dt2 / dt1)) % 1.0
+                else:
+                    t2 = (ph[1] + np.cumsum(dt2)) % 1.0
+                    ph[1] = t2[-1]
+                o2 = _osc(t2, dt2, wave, pw)
+                t1m = (t1 + fm * 0.5 * np.sin(TWO_PI * t2)) % 1.0 if use_fm else t1
+                o1 = _osc(t1m, dt1, wave, pw)
+                if isinstance(ss, np.ndarray) or ss > 0.001:
+                    # real supersaw: detuned saws (own phases) blended in; more Supersaw = wider and louder stack
+                    spread = 0.06 + 0.5 * _mean(ss)  # semitones for the outer saws
+                    stack = np.zeros(n)
+                    sph = self.ssph[vi]
+                    for j, off in enumerate(self.SS_SPREAD):
+                        dtj = dt1 * 2.0 ** (off * spread / 12.0)
+                        tj = (sph[j] + np.cumsum(dtj)) % 1.0
+                        sph[j] = tj[-1]
+                        stack += 2.0 * tj - 1.0 - polyblep(tj, dtj)
+                    saw1 = 2.0 * t1 - 1.0 - polyblep(t1, dt1)
+                    stack = (stack + saw1) * (1.0 / math.sqrt(7.0))
+                    o1 = (1.0 - ss) * o1 + ss * stack * 1.4
+                mix = (o1 + o2) * 0.5
+                if use_ring:
+                    mix = mix * (1.0 - ring) + o1 * o2 * ring
+                x += mix[:, None]
             else:
-                t2 = (ph[1] + np.cumsum(dt2)) % 1.0
-                ph[1] = t2[-1]
-            o2 = _osc(t2, dt2, wave, pw)
-            t1m = (t1 + fm * 0.5 * np.sin(TWO_PI * t2)) % 1.0 if use_fm else t1
-            o1 = _osc(t1m, dt1, wave, pw)
-            if isinstance(ss, np.ndarray) or ss > 0.001:
-                # real supersaw: detuned saws (own phases) blended in; more Supersaw = wider and louder stack
-                spread = 0.06 + 0.5 * _mean(ss)  # semitones for the outer saws
-                stack = np.zeros(n)
-                sph = self.ssph[vi]
-                for j, off in enumerate(self.SS_SPREAD):
-                    dtj = dt1 * 2.0 ** (off * spread / 12.0)
-                    tj = (sph[j] + np.cumsum(dtj)) % 1.0
-                    sph[j] = tj[-1]
-                    stack += 2.0 * tj - 1.0 - polyblep(tj, dtj)
-                saw1 = 2.0 * t1 - 1.0 - polyblep(t1, dt1)
-                stack = (stack + saw1) * (1.0 / math.sqrt(7.0))
-                o1 = (1.0 - ss) * o1 + ss * stack * 1.4
-            mix = (o1 + o2) * 0.5
-            if use_ring:
-                mix = mix * (1.0 - ring) + o1 * o2 * ring
-            if sub > 0.001:
-                ts = (ph[2] + np.cumsum(dt1 * 0.5)) % 1.0
+                # unison: each voice is a full osc 1 + osc 2 pair, detuned and spread across the stereo field
+                norm = 1.0 / math.sqrt(len(pos))
+                for u, pu in enumerate(pos):
+                    up = self.uph[vi, u]
+                    du = dt1 * 2.0 ** (pu * det / 12.0)
+                    d2 = du * 2.0 ** (o2st / 12.0)
+                    t1 = (up[0] + np.cumsum(du)) % 1.0
+                    up[0] = t1[-1]
+                    if sync:
+                        t2 = (t1 * (d2 / du)) % 1.0
+                    else:
+                        t2 = (up[1] + np.cumsum(d2)) % 1.0
+                        up[1] = t2[-1]
+                    o2 = _osc(t2, d2, wave, pw)
+                    t1m = (t1 + fm * 0.5 * np.sin(TWO_PI * t2)) % 1.0 if use_fm else t1
+                    o1 = _osc(t1m, du, wave, pw)
+                    mix = (o1 + o2) * 0.5
+                    if use_ring:
+                        mix = mix * (1.0 - ring) + o1 * o2 * ring
+                    gl, gr = _pan_lr(wid * pu)
+                    x[:, 0] += mix * (gl * norm)
+                    x[:, 1] += mix * (gr * norm)
+            if sub > 0.001:  # the sub stays in the middle, under the unison
+                ts = (ph[2] + np.cumsum(dt1 * (1.0 if subtype == 2 else 0.5))) % 1.0
                 ph[2] = ts[-1]
-                mix = mix + sub * np.sin(TWO_PI * ts)
-            x += mix
+                if subtype == 0:
+                    x += (sub * np.sin(TWO_PI * ts))[:, None]
+                else:  # clean sub: a pure sine that skips the filter, drive and distortion (solid, deep low end)
+                    clean = clean + sub * 0.62 * np.sin(TWO_PI * ts)
         if len(ints) > 1:
             x /= math.sqrt(len(ints))
         noise = v["s1.noise"] + _mean(mods.get("Noise", 0.0))
         if noise > 0.001:
-            x += min(noise, 1.0) * 0.8 * self.rng.uniform(-1.0, 1.0, n)
-        y = self.filt(x, fe, mods)
+            x += (min(noise, 1.0) * 0.8 * self.rng.uniform(-1.0, 1.0, n))[:, None]
+        y = self.filt(self.pre_drive(x), fe, mods)
         drv = min(max(v["s1.drive"] + _mean(mods.get("Drive", 0.0)), 0.0), 1.0)
         g = 1.0 + 4.0 * drv
         y = np.tanh(y * g) / math.tanh(g) * 0.8
+        y = self.distortion(y, mods)
+        if isinstance(clean, np.ndarray):
+            if len(ints) > 1:
+                clean = clean / math.sqrt(len(ints))
+            y = y + clean[:, None]
         return self.finish(y, ae, mods, "s1.vol")
 
 
@@ -1549,6 +1875,7 @@ class WaveSynth(MonoSynth):
             _WT_CACHE["bank"] = _build_wavetables(self.N)
         self.bank, self.levels = _WT_CACHE["bank"]
         self.ph = np.zeros((self.MAXV, 3))
+        self.uph = np.random.default_rng(13).random((self.MAXV, 7))  # unison voices' own phases
         self.lfo = 0.0
 
     def render(self, n):
@@ -1562,7 +1889,6 @@ class WaveSynth(MonoSynth):
         sem = self.pitch(n)
         if "Pitch" in mods:
             sem = sem + 12.0 * mods["Pitch"]
-        det = min(max(v["s2.detune"] + _mean(mods.get("Unison", 0.0)), 0.0), 1.0) * 30.0
         lfo_ph = self.lfo + np.arange(1, n + 1) * (v["s2.lforate"] / self.sr)
         self.lfo = float(lfo_ph[-1] % 1.0)
         pos = v["s2.pos"] + v["s2.posenv"] * fe + v["s2.lfoamt"] * 0.5 * np.sin(TWO_PI * lfo_ph)
@@ -1575,19 +1901,27 @@ class WaveSynth(MonoSynth):
         fi = np.minimum(fpos.astype(np.int64), F - 2)
         ff = fpos - fi
         sub = min(max(v["s2.sub"] + _mean(mods.get("Sub osc", 0.0)), 0.0), 1.0)
+        warp = WARPS[int(v["s2.warp"])]
+        wa = min(max(v["s2.warpamt"] + _mean(mods.get("Warp", 0.0)), 0.0), 1.0)
+        if warp == "Off" or wa <= 0.001:
+            warp = None
+        bl = 1.0 + (WARP_BANDLIMIT.get(warp, 1.0) - 1.0) * wa if warp else 1.0
         ints = self.chord()
         drift = self.drift(n)
+        upos, det, wid = self.unison(mods, "s2.detune", lambda d: d * 0.3)
+        norm = 0.8 / math.sqrt(len(upos)) if len(upos) > 1 else 1.0  # 2 voices = the level Synth 2 always had
         L = np.zeros(n)
         R = np.zeros(n)
         for vi, iv in enumerate(ints):
             ph = self.ph[vi]
             f = 440.0 * 2.0 ** ((sem + iv + drift[vi] - 69.0) / 12.0)
-            chans = []
-            for idx, cents in enumerate((-det, det)):
-                dt = f * 2.0 ** (cents / 1200.0) / self.sr
-                p = (ph[idx] + np.cumsum(dt)) % 1.0
-                ph[idx] = p[-1]
-                hmax = 0.45 / max(float(dt.max()), 1e-9)
+            for u, pu in enumerate(upos):
+                dt = f * 2.0 ** (pu * det / 12.0) / self.sr
+                p = (self.uph[vi, u] + np.cumsum(dt)) % 1.0
+                self.uph[vi, u] = p[-1]
+                if warp:
+                    p = warp_phase(p, warp, wa)
+                hmax = 0.45 / max(float(dt.max()) * bl, 1e-9)
                 li = next((i for i, hh in enumerate(self.levels) if hh <= hmax), len(self.levels) - 1)
                 tb = tables[li]
                 x = p * self.N
@@ -1595,9 +1929,14 @@ class WaveSynth(MonoSynth):
                 xf = x - xi
                 a = tb[fi, xi] * (1 - xf) + tb[fi, xi + 1] * xf
                 b = tb[fi + 1, xi] * (1 - xf) + tb[fi + 1, xi + 1] * xf
-                chans.append(a * (1 - ff) + b * ff)
-            L += chans[0] * 0.75 + chans[1] * 0.25
-            R += chans[0] * 0.25 + chans[1] * 0.75
+                w = a * (1 - ff) + b * ff
+                if len(upos) == 1:
+                    L += w
+                    R += w
+                else:
+                    gl, gr = _pan_lr(wid * pu)
+                    L += w * (gl * norm)
+                    R += w * (gr * norm)
             if sub > 0.001:
                 ts = (ph[2] + np.cumsum(f * 0.5 / self.sr)) % 1.0
                 ph[2] = ts[-1]
@@ -1613,8 +1952,9 @@ class WaveSynth(MonoSynth):
             L += nz
             R += nz
         x = np.stack([L, R], axis=1)
-        y = self.filt(x, fe, mods)
+        y = self.filt(self.pre_drive(x), fe, mods)
         y = np.tanh(y * 1.2)
+        y = self.distortion(y, mods)
         return self.finish(y, ae, mods, "s2.vol")
 
 
@@ -2066,6 +2406,60 @@ class Flanger(_ModDelay):
             self.w = (self.w + m) % self.L
         mix = 0.5 * min(1.0, amt * 1.5)
         return x * (1.0 - mix) + wet * mix
+
+
+class Ensemble(_ModDelay):
+    """String-machine ensemble: three delay taps per side, each swept by a slow and a fast sine at different
+    phases. Big, lush and wide (the sound of a Solina or a Juno pad)."""
+
+    def __init__(self, sr):
+        super().__init__(sr)
+        self.ph2 = 0.0
+
+    def process(self, x, amt):
+        if not self._wake(amt):
+            return x
+        n = len(x)
+        ar = np.arange(n)
+        self.buf[(self.w + ar) % self.L] = x
+        ph = self._lfo(n, 0.62)
+        ph2 = self.ph2 + np.arange(1, n + 1) * (5.4 / self.sr)
+        self.ph2 = float(ph2[-1] % 1.0)
+        base, slow, fast = 0.008 * self.sr, (0.0015 + 0.002 * amt) * self.sr, 0.00035 * self.sr
+        now = self.w + ar
+        wet = np.zeros_like(x)
+        for k, (gl, gr) in enumerate(((1.0, 0.35), (0.35, 1.0), (0.7, 0.7))):
+            off = k / 3.0
+            d = base + slow * (0.5 + 0.5 * np.sin(TWO_PI * (ph + off))) + fast * np.sin(TWO_PI * (ph2 + off))
+            tap = self._read(now - d)
+            wet[:, 0] += tap[:, 0] * gl
+            wet[:, 1] += tap[:, 1] * gr
+        self.w = (self.w + n) % self.L
+        mix = 0.7 * amt
+        return x * (1.0 - 0.45 * mix) + wet * (mix * 0.4)
+
+
+class Dimension(_ModDelay):
+    """Subtle, wide stereo chorus in the style of the Roland Dimension D: two short delays, slow and shallow,
+    each fed from the other side. Thickens without sounding like a chorus."""
+
+    def process(self, x, amt):
+        if not self._wake(amt):
+            return x
+        n = len(x)
+        ar = np.arange(n)
+        self.buf[(self.w + ar) % self.L] = x
+        ph = self._lfo(n, 0.25 + 0.25 * amt)
+        base, depth = 0.0045 * self.sr, (0.0006 + 0.0012 * amt) * self.sr
+        now = self.w + ar
+        dl = base + depth * np.sin(TWO_PI * ph)
+        dr = base - depth * np.sin(TWO_PI * ph)
+        wet = np.empty_like(x)
+        wet[:, 0] = self._read(now - dl)[:, 1]
+        wet[:, 1] = self._read(now - dr)[:, 0]
+        self.w = (self.w + n) % self.L
+        mix = 0.55 * amt
+        return x * (1.0 - 0.25 * mix) + wet * mix
 
 
 class Phaser:

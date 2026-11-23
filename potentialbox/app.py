@@ -56,13 +56,15 @@ from potentialbox.samples import (SampleIndex, default_roots, GROUPS, TYPES,  # 
                                   SHORT as SHORT_TYPE, group_of_type)
 from potentialbox import kitmaker  # noqa: E402
 from potentialbox.mpcsync import MpcSync  # noqa: E402
+from potentialbox import projects as projmod  # noqa: E402
+from potentialbox.voice import Voice, friendly_error, MIN_CONFIDENCE  # noqa: E402
 try:                                      # hi-fi sprites are optional; the app falls back to flat drawing
     from potentialbox import skins
 except Exception:                         # pragma: no cover
     skins = None
 
 APP = "PotentialBox"
-VERSION = "1.11.0"
+VERSION = "1.13.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 TABS = [p for p in PAGES if p not in HIDDEN_PAGES] + ["Setup"]
@@ -79,8 +81,8 @@ SETUPS_FILE = os.path.join(CFG_DIR, "my-setups.json")
 SAMPLE_INDEX_FILE = os.path.join(CFG_DIR, "sample-index.json")
 MPC_ONESHOTS_DIR = os.path.join(os.path.expanduser("~"), "Music", "MPC Drum One Shots")
 RESAMPLE_DIR = os.path.join(CFG_DIR, "Resampled")
-NO_LOCK_PAGES = ("Macros", "Beats", "Live", "Loop", "Setup")
-OWN_SCREEN_PAGES = ("Beats", "Live", "Loop")  # tabs that draw their own screen and turn the pads into their own pads
+NO_LOCK_PAGES = ("Macros", "Projects", "Beats", "Live", "Loop", "Setup")
+OWN_SCREEN_PAGES = ("Projects", "Beats", "Live", "Loop")  # tabs that draw their own screen and turn the pads into their own pads
 LOOP_PADS = [f"Track {t} rec / play / dub" for t in range(1, 6)] + ["Undo / redo", "All stop / play",
              "Record next empty track"] + [f"Track {t} stop (hold: clear)" for t in range(1, 6)] + [
              "Reverse last track", "Speed last track", "Back to last tab"]
@@ -95,8 +97,10 @@ ACTIONS = [("rand_s1", "Random Synth 1"), ("rand_s2", "Random Synth 2"), ("rand_
            ("panic", "All Notes Off"),
            # v1.6: no default pad, tap the card and press a pad or step to use them
            ("tab:Live", "Live Tab"), ("tab:FX", "FX Tab"), ("rec", "Record On/Off"), ("fill", "Fill (hold)"),
-           ("tab:Loop", "Loop Tab"), ("tab:Beats", "Beats Tab")]
+           ("tab:Loop", "Loop Tab"), ("tab:Beats", "Beats Tab"), ("tab:Projects", "Projects Tab"),
+           ("proj_mutate", "Mutate Project Sounds"), ("proj_back", "Project Sounds Back")]
 ACTION_NAMES = dict(ACTIONS)
+PROJECT_PADS = [f"Load project {i} ({n})" for i, n in enumerate(projmod.NAMES, 1)]  # Projects tab pads
 PAD_ACTIONS = [aid for aid, _ in ACTIONS[:16]]
 HOLD_ACTIONS = {"fill"}
 # On the Live tab the 16 BeatStep pads (the ones set to pad actions 1-16) play these instead
@@ -118,13 +122,18 @@ KNOB_GROUPS = {
     "Drums 1-8": [(0, 8, "Tune · pads 1-8"), (8, 16, "Length · pads 1-8")],
     "Drums 9-16": [(0, 8, "Tune · pads 9-16"), (8, 16, "Length · pads 9-16")],
     "Macros": [(0, 8, "Synth moves"), (8, 16, "Space & performance")],
-    "Synth 1 Osc+": [(0, 4, "Oscillator 2"), (4, 5, "Noise"), (5, 7, "Chord"), (7, 8, "Pan"), (8, 10, "Filter"),
-                     (10, 12, "Feel"), (12, 14, "Pitch env"), (14, 16, "Glide & level")],
+    "Synth 1 Osc+": [(0, 4, "Oscillator 2"), (4, 5, "Noise"), (5, 7, "Filter"), (7, 8, "Feel"),
+                     (8, 13, "Chord · key · scale · lane"), (13, 15, "Pitch env"), (15, 16, "Glide")],
+    "Synth 1 Uni+FX": [(0, 4, "Unison & supersaw"), (4, 6, "Drive"), (6, 8, "Distortion"), (8, 10, "Synth FX"),
+                       (10, 13, "Filter"), (13, 16, "Sub & level")],
+    "Synth 2 Uni+FX": [(0, 4, "Unison & sub"), (4, 8, "Warp & wavetable"), (8, 11, "Drive & distortion"),
+                       (11, 13, "Synth FX"), (13, 16, "Filter & level")],
     "Synth 1 Mod": [(0, 3, "LFO 1"), (3, 6, "LFO 2"), (6, 8, "Mod env"), (8, 16, "Mod slots · tap a name to change it")],
     "Synth 2 Osc+": [(0, 2, "Chord"), (2, 4, "Sub & noise"), (4, 6, "Pan & drift"), (6, 8, "Pitch env"),
-                     (8, 10, "Filter"), (10, 12, "Feel"), (12, 16, "Quick access")],
+                     (8, 10, "Filter"), (10, 12, "Feel"), (12, 15, "Chord key · scale · lane"), (15, 16, "Level")],
     "Synth 2 Mod": [(0, 3, "LFO 1"), (3, 6, "LFO 2"), (6, 8, "Mod env"), (8, 16, "Mod slots · tap a name to change it")],
     "Mix": [(0, 4, "Levels"), (4, 8, "Bus & DJ filter"), (8, 13, "Side-chain duck"), (13, 16, "Glue & width")],
+    "Projects": [(0, 4, "Synth 1 (bass)"), (4, 8, "Synth 2 (lead)"), (8, 12, "Drums"), (12, 16, "Effects & level")],
     "Beats": [(0, 4, "Beat feel"), (4, 8, "Drum bus"), (8, 15, "Pad levels"), (15, 16, "Kick")],
     "Live": [(0, 1, "Scenes"), (1, 8, "Mix and macros"), (8, 12, "Synths"), (12, 14, "Duck"), (14, 16, "Effects")],
     "Mix EQ": [(0, 3, "Synth 1 EQ"), (3, 6, "Synth 2 EQ"), (6, 8, "EQ frequencies"), (8, 11, "Drums EQ"),
@@ -302,6 +311,12 @@ class State:
         self.loop_cfg = {}
         self.beat = None          # Beat.to_json()
         self.beat_kit = True      # picking a genre also loads its kit: True (built-in), "samples" (Kit Maker) or False
+        self.project = None       # Projects tab: which BeatStep genre set (0-15) is loaded
+        self.project_take = 0     # which of its sound choices (NEW SOUNDS steps through them)
+        self.project_kit = True   # True: built-in genre kit, "samples": Kit Maker kit from your one-shots
+        self.project_fx = True    # a project also sets the effects, ducking and tempo
+        self.mut_amount = "MEDIUM"  # Projects tab MUTATE: MILD / MEDIUM / WILD
+        self.mut_auto = 0         # auto mutate every 0 (off) / 8 / 16 bars while the BeatStep plays
         self.sample_folders = []  # Kit Maker / pad editor: folders of one-shots besides the Drum Machine Collection
         self.km = {"style": "CLASSIC", "scope": "all", "one": False}
         self.mpc_host = ""        # only if MPC TOOLS' settings don't say
@@ -475,6 +490,14 @@ class State:
         self.beat_mutes = [g for g in d.get("beat_mutes", []) if g in GROUP_NAMES]
         self.beat_bars = int(d.get("beat_bars", 2)) if int(d.get("beat_bars", 2)) in BAR_CHOICES else 2
         self.clock_master = bool(d.get("clock_master", False))
+        pr = d.get("project")
+        self.project = pr if isinstance(pr, int) and 0 <= pr < len(projmod.PROJECTS) else None
+        self.project_take = int(d.get("project_take", 0)) if isinstance(d.get("project_take", 0), int) else 0
+        pk = d.get("project_kit", True)
+        self.project_kit = "samples" if pk == "samples" else True
+        self.project_fx = bool(d.get("project_fx", True))
+        self.mut_amount = d.get("mut_amount") if d.get("mut_amount") in projmod.AMOUNTS else "MEDIUM"
+        self.mut_auto = d.get("mut_auto") if d.get("mut_auto") in (0, 8, 16) else 0
         self.look = d.get("look") if d.get("look") in LOOKS else "print"
         self.last_tab = d.get("last_tab", "Perform") if d.get("last_tab") in TABS else "Perform"
         self.midi_off = d.get("midi_off", [])
@@ -493,7 +516,9 @@ class State:
                      beat_mutes=self.beat_mutes, beat_bars=self.beat_bars,
                      arrangement=self.arrangement, locked_pads=sorted(self.locked_pads),
                      clock_master=self.clock_master, look=self.look, sample_folders=self.sample_folders,
-                     km=self.km, mpc_host=self.mpc_host, mpc_dest=self.mpc_dest)
+                     km=self.km, mpc_host=self.mpc_host, mpc_dest=self.mpc_dest, project=self.project,
+                     project_take=self.project_take, project_kit=self.project_kit, project_fx=self.project_fx,
+                     mut_amount=self.mut_amount, mut_auto=self.mut_auto)
             tmp = CFG_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(d, f, indent=1)
@@ -992,6 +1017,9 @@ class Midi:
                     app.loop_pad(PAD_ACTIONS.index(aid), val > 0)
                 elif app.state.page == "Beats" and aid in PAD_ACTIONS and app.overlay is None:
                     app.beat_pad(PAD_ACTIONS.index(aid), val > 0)
+                elif app.state.page == "Projects" and aid in PAD_ACTIONS and app.overlay is None:
+                    if val > 0:
+                        app.action_q.append(("project", PAD_ACTIONS.index(aid)))
                 elif aid in HOLD_ACTIONS:
                     eng.set_fill(val > 0)
                     app.action_flash[aid] = time.time()
@@ -1010,6 +1038,11 @@ class Midi:
             if target == "dr":
                 if eng.beats.send == "sending":
                     return  # the BeatStep echoing the beat we're sending it: don't play it twice
+                pad = (msg.note - 36) % 16
+                if 8 <= pad <= 14 and (app.state.params.val["s2.lane"] >= 0.5 or app.state.params.val["s1.lane"] >= 0.5):
+                    if vel > 0:  # chord lane: drum tracks 9-15 say which chord (scale degree 1-7) the bar is on
+                        eng.s1.lane_deg = eng.s2.lane_deg = pad - 7
+                    return
                 if vel > 0:
                     eng.note_on("dr", (msg.note - 36) % 16, vel)
             elif target:
@@ -1147,6 +1180,13 @@ class App:
         self.audio.on_engine = self.apply_engine_state
         self.apply_engine_state(self.audio.engine)
         self.clockout = ClockOut(self)
+        self.voice = Voice(projmod.PHRASES)
+        self.voice_heard = ("", 0.0)
+        self.mut_pending = None   # a mutation waiting for the next bar
+        self.mut_hist = collections.deque()
+        self.mut_count = {"bass": 0, "lead": 0, "drums": 0}
+        self.morph = None         # synth settings gliding to a mutation
+        self.auto_block = None
         self.send_countdown = None
         if self.state.clock_master:
             self.root.after(1500, lambda: self.clockout.enable() or self.show_toast("CLOCK OUT: BEATSTEP NOT FOUND"))
@@ -1524,6 +1564,8 @@ class App:
             self.draw_loop()
         elif self.state.page == "Beats":
             self.draw_beats()
+        elif self.state.page == "Projects":
+            self.draw_projects()
         elif self.state.page == "Arrangement":
             self.draw_arrangement()
         else:
@@ -2887,6 +2929,10 @@ class App:
             self.panic()
         elif aid == "rec":
             self.toggle_rec()
+        elif aid == "proj_mutate":
+            self.project_mutate("all")
+        elif aid == "proj_back":
+            self.project_back()
         self.request_redraw()
 
     # ---------------------------------------------------------------- live tab
@@ -3294,6 +3340,8 @@ class App:
             self.beat_tempo(item[1])
         elif item[0] == "send":
             self.beat_send()
+        elif item[0] == "project":
+            self.load_project(item[1])
 
     def beat_cell(self, role, step):
         bp = self.audio.engine.beats
@@ -3411,6 +3459,397 @@ class App:
             else:
                 msg += "  ·  " + ("TEMPO FROM THE BEATSTEP" if live else "OWN TEMPO")
         self.text(30, 714, msg[:150], 11, T["accent"] if bp.send else T["ink_dim"], bool(bp.send), "w")
+
+    # ---------------------------------------------------------------- projects tab: sounds for the BeatStep genre sets
+    def load_project(self, i, take=None, toast=True):
+        """Load BeatStep project i's sounds: Synth 1 bass, Synth 2 lead, the genre kit in the sets' drum order,
+        and (PROJECT FX on) its effects and tempo. take picks one of its sound choices (NEW SOUNDS)."""
+        i %= len(projmod.PROJECTS)
+        pr = projmod.PROJECTS[i]
+        st = self.state
+        if take is None:
+            take = st.project_take if st.project == i else 0
+        st.project, st.project_take = i, take
+        self.mut_pending, self.morph = None, None
+        self.mut_count = {"bass": 0, "lead": 0, "drums": 0}
+        (bname, bass), (lname, lead), kit = projmod.take(pr, take)
+        p = st.params
+        p.apply_preset("s1", bass)
+        p.apply_preset("s2", lead)
+        st.preset_name["s1"] = f"{pr['name']} · {bname}"
+        st.preset_name["s2"] = f"{pr['name']} · {lname}"
+        self.project_drums(pr, kit)
+        if st.project_fx:
+            for k in projmod.FX_KEYS:
+                p.set_val(k, SPECS[k].default)
+            for k, v in pr["fx"].items():
+                p.set_val(k, v)
+            if not self.clock_live():
+                self.audio.engine.bpm = float(pr["bpm"])  # with CLOCK OUT on, the BeatStep follows this tempo
+        st.dirty = True
+        if toast:
+            self.show_toast(f"PROJECT {i + 1}: {pr['name'].upper()} · {pr['bpm']} BPM", 1.8)
+        self.request_redraw()
+
+    def project_drums(self, pr, kit):
+        """The genre kit with its pads moved into the order the genre sets play: 1 kick, 2 clap, 3 snare,
+        4 percussion, 5 hat, 6 open hat, 7 rim, 8 shaker."""
+        perc = pr["perc"]
+        if perc == projmod.COWBELL and self.state.project_kit != "samples":
+            pad11 = kits.KITS[int(kit) % len(kits.KITS)]["pads"][projmod.COWBELL][0]
+            if not any(w in pad11 for w in ("Cowbell", "Perc", "Clank", "Click")):
+                perc = projmod.CLAVE  # this kit keeps a ride on that pad
+        order = projmod.set_order(perc)
+        d = self.audio.engine.drums
+        p = self.state.params
+        name = f"{pr['name']} set kit"
+        made = False
+        if self.state.project_kit == "samples" and self.samples.entries:
+            km = self.state.km
+            km["style"] = pr["style"]
+            pads, _src = kitmaker.make_kit(self.samples, pr["style"], (), self.km_rng, km["scope"], km["one"])
+            if self.km_apply(pads, name):
+                srcs = [dict(s) for s in d.sources]
+                vals = {part: [p.val[f"dr.p{j + 1}.{part}"] for j in range(16)] for part in ("tune", "decay", "level")}
+                d.load_sources([srcs[order[t]] for t in range(16)], name)
+                for t in range(16):
+                    for part in ("tune", "decay", "level"):
+                        p.set_val(f"dr.p{t + 1}.{part}", vals[part][order[t]])
+                made = True
+        if not made:
+            d.load_sources([{"factory": int(kit), "pad": order[t]} for t in range(16)], name)
+            for t in range(16):
+                for part in ("tune", "decay", "level"):
+                    k = f"dr.p{t + 1}.{part}"
+                    p.set_val(k, SPECS[k].default)
+            for t, lvl in ((4, 0.65), (5, 0.6), (7, 0.55)):  # hats and shaker sit under the kick and snare
+                p.set_val(f"dr.p{t + 1}.level", lvl)
+        for t in range(16):
+            for part in ("pan", "chance", "cond", "choke"):
+                k = f"dr.p{t + 1}.{part}"
+                p.set_val(k, SPECS[k].default)
+        self.state.kit = {"pads": d.sources, "name": name}
+        self.state.dirty = True
+
+    def project_new_sounds(self):
+        st = self.state
+        if st.project is None:
+            self.show_toast("PICK A PROJECT FIRST")
+            return
+        self.load_project(st.project, (st.project_take + 1) % len(projmod.TAKES), toast=False)
+        (bname, _), (lname, _), _ = projmod.take(projmod.PROJECTS[st.project], st.project_take)
+        self.show_toast(f"{bname.upper()} + {lname.upper()}"[:44], 1.6)
+
+    def project_step(self, d):
+        cur = self.state.project
+        self.load_project(0 if cur is None else (cur + d) % len(projmod.PROJECTS))
+
+    def toggle_project_kit(self):
+        st = self.state
+        if st.project_kit == "samples":
+            st.project_kit = True
+        elif self.samples.entries:
+            st.project_kit = "samples"
+        else:
+            self.show_toast("NO SAMPLES YET: ADD FOLDERS IN THE KIT MAKER")
+            return
+        st.dirty = True
+        if st.project is not None:
+            pr = projmod.PROJECTS[st.project]
+            self.project_drums(pr, projmod.take(pr, st.project_take)[2])
+            self.play_pattern([[0], [4], [2], [4]], 130)
+
+    def toggle_project_fx(self):
+        self.state.project_fx = not self.state.project_fx
+        self.state.dirty = True
+
+    # voice: say "project seven", a genre name, "next project", "new sounds"
+    def toggle_voice(self):
+        v = self.voice
+        if v.state in ("starting", "listening"):
+            v.stop()
+            self.show_toast("MIC OFF")
+        else:
+            v.start()
+            if v.state == "error":
+                self.show_toast(friendly_error(v.error), 4.0)
+        self.request_redraw()
+
+    def voice_tick(self):
+        for ev in self.voice.poll():
+            if ev[0] == "ready":
+                self.show_toast("LISTENING: SAY \"PROJECT SEVEN\"", 2.0)
+            elif ev[0] == "error":
+                self.show_toast(friendly_error(ev[1]), 4.0)
+            elif ev[0] == "ended" and self.voice.state == "error":
+                self.show_toast(friendly_error(self.voice.error), 4.0)
+            elif ev[0] == "heard":
+                text, conf = ev[1], ev[2]
+                self.voice_heard = (text, time.time())
+                cmd = projmod.command(text)
+                if conf < MIN_CONFIDENCE or not cmd:
+                    continue
+                kind, arg = cmd
+                if kind == "project":
+                    self.load_project(arg)
+                elif kind == "step":
+                    self.project_step(arg)
+                elif kind == "take":
+                    self.project_new_sounds()
+                elif kind == "mic_off":
+                    self.voice.stop()
+                    self.show_toast("MIC OFF")
+                elif kind == "mutate":
+                    self.project_mutate(arg)
+                elif kind == "back":
+                    self.project_back()
+                elif kind == "amount":
+                    self.set_mut_amount(arg)
+                elif kind == "auto":
+                    self.state.mut_auto = 8 if arg else 0
+                    self.state.dirty = True
+                    self.show_toast("AUTO MUTATE EVERY 8 BARS" if arg else "AUTO MUTATE OFF")
+            self.request_redraw()
+
+    # mutate: new sounds inside the project's curated ones, landing on the next bar so the track keeps flowing
+    def set_mut_amount(self, a):
+        self.state.mut_amount = a
+        self.state.dirty = True
+        self.show_toast(f"MUTATE: {a}", 1.0)
+
+    def cycle_mut_auto(self):
+        st = self.state
+        st.mut_auto = {0: 8, 8: 16, 16: 0}[st.mut_auto]
+        st.dirty = True
+
+    def project_mutate(self, part="all", amount=None, toast=True):
+        st = self.state
+        if st.project is None:
+            self.show_toast("PICK A PROJECT FIRST")
+            return
+        eng = self.audio.engine
+        self.mut_pending = {"kind": "mutate", "part": part, "amount": amount or st.mut_amount, "bar": eng.bar(),
+                            "t": time.time()}
+        if not eng.playing:
+            self.mutate_tick()
+        elif toast:
+            self.show_toast(f"MUTATE {'' if part == 'all' else part.upper() + ' '}AT THE NEXT BAR", 1.2)
+        self.request_redraw()
+
+    def project_back(self):
+        if not self.mut_hist:
+            self.show_toast("NOTHING TO GO BACK TO")
+            return
+        self.mut_pending = {"kind": "back", "bar": self.audio.engine.bar(), "t": time.time()}
+        if not self.audio.engine.playing:
+            self.mutate_tick()
+        else:
+            self.show_toast("BACK AT THE NEXT BAR", 1.2)
+
+    def mutate_tick(self):
+        eng = self.audio.engine
+        st = self.state
+        pend = self.mut_pending
+        # land on the bar: in the last 16th of the bar (so new drums hit on the one), or once the bar has turned
+        if pend and (not eng.playing or eng.bar() != pend["bar"] or eng.tick % 96 >= 90 or time.time() - pend["t"] > 8):
+            self.mut_pending = None
+            p = st.params
+            ls, p.lock_step = p.lock_step, None  # mutations never write step locks
+            try:
+                if pend["kind"] == "back":
+                    self.mut_restore(self.mut_hist.pop())
+                else:
+                    self.run_mutation(pend["part"], pend["amount"])
+            finally:
+                p.lock_step = ls
+            self.request_redraw()
+        m = self.morph
+        if m:
+            k = min(1.0, (time.time() - m["t0"]) / m["dur"])
+            e = k * k * (3 - 2 * k)
+            p = st.params
+            ls, p.lock_step = p.lock_step, None
+            try:
+                for key, (a, b) in m["keys"].items():
+                    p.set_norm(key, a + (b - a) * e)
+            finally:
+                p.lock_step = ls
+            if k >= 1:
+                self.morph = None
+            st.dirty = True
+        # auto mutate: a MILD change to one part at the start of every 8 or 16 bars
+        n = st.mut_auto
+        if n and st.project is not None and eng.playing and not self.mut_pending:
+            b = eng.bar()
+            if b % n == n - 1 and self.auto_block != b // n:
+                self.auto_block = b // n
+                self.project_mutate(random.choice(["bass", "lead", "drums"]), "MILD", toast=False)
+
+    def mut_snapshot(self):
+        p = self.state.params
+        return {"norm": {k: p.norm[k] for k in SPECS if k.startswith(("s1.", "s2.")) and not k.endswith((".vol", ".mute", ".solo"))},
+                "drums": self.km_snapshot(), "count": dict(self.mut_count)}
+
+    def mut_restore(self, snap):
+        self.start_morph(snap["norm"])
+        self.km_restore(snap["drums"])
+        self.mut_count = dict(snap["count"])
+        self.show_toast("BACK TO THE LAST SOUNDS", 1.2)
+
+    def start_morph(self, targets):
+        """Step settings switch now; everything else glides there over a bar (a moment when stopped)."""
+        p = self.state.params
+        eng = self.audio.engine
+        glide = {}
+        for k, n in targets.items():
+            sp = SPECS[k]
+            if sp.choices or sp.step:
+                p.set_norm(k, n)
+            elif abs(p.norm[k] - n) > 1e-4:
+                glide[k] = (p.norm[k], n)
+        dur = min(max(240.0 / max(eng.bpm, 40.0), 0.4), 4.0) if eng.playing else 0.25
+        self.morph = {"keys": glide, "t0": time.time(), "dur": dur} if glide else None
+
+    def run_mutation(self, part, amount):
+        st = self.state
+        pr = projmod.PROJECTS[st.project]
+        p = st.params
+        rng = self.km_rng
+        self.mut_hist.append(self.mut_snapshot())
+        while len(self.mut_hist) > 16:
+            self.mut_hist.popleft()
+        parts = ["bass", "lead", "drums"] if part == "all" else [part]
+        targets = {}
+        for pt in parts:
+            if pt in projmod.PART_PRE:
+                targets.update(projmod.mutate_synth(SPECS, pr, pt, p.norm, amount, rng))
+                self.mut_count[pt] += 1
+        if targets:
+            self.start_morph(targets)
+        if "drums" in parts:
+            self.mutate_drums(pr, amount, rng)
+            self.mut_count["drums"] += 1
+        st.dirty = True
+        what = "EVERYTHING" if part == "all" else part.upper()
+        self.show_toast(f"{amount} MUTATE: {what}", 1.2)
+
+    def mutate_drums(self, pr, amount, rng):
+        d = self.audio.engine.drums
+        p = self.state.params
+        swap, tweak = projmod.mutate_drums_plan(amount, rng)
+        srcs = [dict(s) for s in d.sources]
+        tuned = {}
+        if swap:
+            if self.state.project_kit == "samples" and self.samples.entries:
+                order = projmod.set_order(pr["perc"])
+                keep = set(range(16)) - {order[t] for t in swap}
+                km = self.state.km
+                pads, _src = kitmaker.make_kit(self.samples, pr["style"], keep, rng, km["scope"], km["one"])
+                for t in swap:
+                    pd = pads[order[t]]
+                    if pd:
+                        srcs[t] = {"file": pd["file"], "label": pd["label"], "type": pd["type"], "src": pd["src"]}
+                        tuned[t] = (pd["tune"], pd["decay"])
+            else:
+                pool = sorted({k for q in projmod.PROJECTS for k in q["kits"]
+                               if q is pr or (amount == "WILD" and q["style"] == pr["style"])})
+                for t in swap:
+                    cur = srcs[t].get("factory")
+                    opts = [k for k in pool if k != cur] or pool
+                    srcs[t] = {"factory": rng.choice(opts), "pad": srcs[t].get("pad", t)}
+                    tuned[t] = projmod.drum_tweak(amount, t, rng)
+            d.load_sources(srcs, d.kit_name)
+        for t in tweak:
+            tuned[t] = projmod.drum_tweak(amount, t, rng)
+        for t, (tune, dec) in tuned.items():
+            p.set_val(f"dr.p{t + 1}.tune", tune)
+            p.set_val(f"dr.p{t + 1}.decay", dec)
+        self.state.kit = {"pads": d.sources, "name": d.kit_name}
+
+    def draw_projects(self):
+        st = self.state
+        eng = self.audio.engine
+        self.frame(14, 100, 1252, 632, "Projects",
+                   "YOUR 16 BEATSTEP GENRE SETS · BEATSTEP PADS HERE: 1-16 LOAD THAT PROJECT'S SOUNDS")
+        for i, key in enumerate(PAGES["Projects"]):
+            self.mini_knob(i, 14 + 39 + i * 77.5, 172, key)
+        # the 16 projects, 8 to a row, numbered like the BeatStep's project slots
+        for i, pr in enumerate(projmod.PROJECTS):
+            r, c = divmod(i, 8)
+            x0, y0 = 30 + c * 153, 240 + r * 92
+            on = i == st.project
+            self.rrect(x0, y0, 143, 84, 12, T["btn_on"] if on else T["btn_bg"])
+            self.text(x0 + 12, y0 + 18, str(i + 1), 18, T["btn_text"], True, "w")
+            self.text(x0 + 131, y0 + 18, f"{pr['bpm']} BPM", 11, T["btn_text"] if on else T["key_dim"], True, "e")
+            self.text_fit(x0 + 71, y0 + 54, pr["name"].upper(), 18, 128, T["btn_text"], True)
+            self.hit(x0, y0, 143, 84, lambda ii=i: self.load_project(ii))
+        # what's loaded
+        y = 428
+        if st.project is None:
+            self.text(640, y + 28, "TAP A PROJECT, PRESS A BEATSTEP PAD, OR TURN THE MIC ON AND SAY \"PROJECT SEVEN\"",
+                      15, T["ink_dim"], True)
+        else:
+            pr = projmod.PROJECTS[st.project]
+            (bname, _), (lname, _), kit = projmod.take(pr, st.project_take)
+            self.text(34, y + 12, f"PROJECT {st.project + 1}: {pr['name'].upper()}", 22, T["ink"], True, "w")
+            pend = self.mut_pending
+            sub = (f"{pr['bpm']} BPM · {pr['key'].upper()}  ·  SET THE BEATSTEP TO PROJECT {st.project + 1}" if not pend
+                   else ("GOING BACK" if pend["kind"] == "back" else f"{pend['amount']} MUTATE") + " AT THE NEXT BAR...")
+            self.text(34, y + 40, sub, 12, T["accent"] if pend else T["ink_dim"], True, "w")
+            kname = eng.drums.kit_name if st.project_kit == "samples" else f"{kits.NAMES[int(kit)]} (set order)"
+            rows = [("SEQ 1 → SYNTH 1", bname, "bass"), ("SEQ 2 → SYNTH 2", lname, "lead"), ("DRUM → DRUMS", kname, "drums")]
+            for j, (lab, val, part) in enumerate(rows):
+                n = self.mut_count.get(part, 0)
+                self.text(560 + j * 236, y + 8, lab + (f" · MUTATED ×{n}" if n else ""), 11, T["accent"], True, "w")
+                self.text_fit(560 + j * 236 + 112, y + 32, val.upper(), 15, 224, T["ink"], True)
+        # mutate
+        cy = 512
+        self.button(118, cy, 196, 58, "MUTATE", lambda: self.project_mutate("all"), accent=True, px=20)
+        for j, (lab, part) in enumerate((("BASS", "bass"), ("LEAD", "lead"), ("DRUMS", "drums"))):
+            self.button(276 + j * 112, cy, 104, 58, lab, lambda pt=part: self.project_mutate(pt), px=15)
+        self.seg(564, cy - 29, 96, 58, projmod.AMOUNTS, st.mut_amount, self.set_mut_amount, vertical=False)
+        self.button(924, cy, 96, 58, "BACK", self.project_back, px=15)
+        auto = {0: "AUTO MUTATE: OFF", 8: "AUTO: EVERY 8 BARS", 16: "AUTO: EVERY 16 BARS"}[st.mut_auto]
+        self.button(1138, cy, 236, 58, auto, self.cycle_mut_auto, on=bool(st.mut_auto), px=13)
+        # sounds, voice, projects
+        cy = 584
+        self.button(118, cy, 196, 56, "NEW SOUNDS", self.project_new_sounds, px=17)
+        listening = self.voice.state in ("starting", "listening")
+        mic = {"starting": "MIC STARTING...", "listening": "● LISTENING"}.get(self.voice.state, "MIC OFF: TAP TO TALK")
+        self.button(346, cy, 240, 56, mic, self.toggle_voice, on=listening, accent=not listening, px=16)
+        self.button(540, cy, 128, 56, "◀ PREVIOUS", lambda: self.project_step(-1), px=13)
+        self.button(676, cy, 128, 56, "NEXT ▶", lambda: self.project_step(1), px=13)
+        bk = st.project_kit
+        self.button(876, cy, 248, 56, "KIT: MY SAMPLES" if bk == "samples" else "KIT: BUILT-IN", self.toggle_project_kit,
+                    on=bk == "samples", px=14)
+        self.button(1138, cy, 236, 56, "PROJECT FX + TEMPO: " + ("ON" if st.project_fx else "OFF"),
+                    self.toggle_project_fx, on=st.project_fx, px=13)
+        cy2 = 656
+        live = self.clock_live()
+        self.button(42, cy2, 44, 44, "−", lambda: self.beat_tempo(-1), px=20)
+        self.readout(120, cy2, 104, 44, f"{eng.bpm:.0f} BPM")
+        self.button(198, cy2, 44, 44, "+", lambda: self.beat_tempo(1), px=20)
+        self.button(330, cy2, 190, 44, "CLOCK OUT: ON" if st.clock_master else "CLOCK OUT: OFF",
+                    self.toggle_clock_master, on=st.clock_master, px=13)
+        heard, when = self.voice_heard
+        if self.voice.state == "error":
+            vmsg = friendly_error(self.voice.error)
+        elif listening:
+            vmsg = 'SAY "PROJECT SEVEN", A GENRE, "MUTATE", "MUTATE DRUMS", "GO BACK", "NEXT PROJECT", "NEW SOUNDS"'
+            if heard and time.time() - when < 6:
+                vmsg = f'HEARD "{heard.upper()}"  ·  ' + vmsg
+        else:
+            vmsg = "MUTATE CHANGES SOUNDS ON THE NEXT BAR AND STAYS INSIDE THIS PROJECT'S CURATED SOUNDS"
+        self.text_fit(444, cy2 - 10, vmsg, 11, 810, T["accent"] if listening else T["ink_dim"], True, "w")
+        if st.clock_master:
+            tmsg = "CLOCK OUT: THE BEATSTEP FOLLOWS THIS TEMPO (BEATSTEP SYNC ON USB)"
+        elif live:
+            tmsg = "TEMPO FROM THE BEATSTEP: SET IT THERE, OR TURN CLOCK OUT ON TO SET IT FROM HERE"
+        else:
+            tmsg = "OWN TEMPO · TURN CLOCK OUT ON AND THE BEATSTEP PLAYS AT EACH PROJECT'S TEMPO"
+        self.text_fit(444, cy2 + 10, tmsg, 11, 810, T["ink_dim"], True, "w")
+        self.text(30, 714, "SYNTH 1 = BASS ON SEQ 1 · SYNTH 2 = LEAD ON SEQ 2 · DRUM TRACKS: 1 KICK 2 CLAP 3 SNARE "
+                  "4 PERC 5 HAT 6 OPEN HAT 7 RIM 8 SHAKER", 11, T["ink_dim"], True, "w")
 
     def beat_bars_step(self):
         bp = self.audio.engine.beats
@@ -4259,7 +4698,7 @@ class App:
 
     def init_kind(self, page):
         """Which INIT a synth sub-page offers: the whole synth (Main) or just that page's part."""
-        for tail, kind in (("Mod", "mod"), ("Mod 2", "mod"), ("Osc+", "osc"), ("Arp", "arp"), ("Env", "env"),
+        for tail, kind in (("Mod", "mod"), ("Mod 2", "mod"), ("Osc+", "osc"), ("Uni+FX", "unifx"), ("Arp", "arp"), ("Env", "env"),
                            ("LFO1 Steps", "steps1"), ("LFO2 Steps", "steps2")):
             if page.endswith(" " + tail):
                 return kind
@@ -4280,6 +4719,9 @@ class App:
             return [k for k in PAGES[page] if k not in main]
         if kind == "arp":
             return [k for k in SPECS if k.startswith(pre + ".arp")]
+        if kind == "unifx":
+            return [f"{pre}.{t}" for t in ("uni", "unidet", "uniwid", "supersaw", "fdrive", "dist", "distamt", "sfx", "subtype",
+                                            "sfxamt", "warp", "warpamt") if f"{pre}.{t}" in SPECS]
         if kind == "env":
             return [k for k in PAGES[page] if not k.endswith((".vol", ".glide", ".glmode", ".velamp"))]
         if kind in ("steps1", "steps2"):
@@ -4288,7 +4730,7 @@ class App:
 
     def init_label(self):
         page = self.page_name()
-        return {"mod": "INIT MODULATION", "osc": "INIT OSC+ PAGE", "arp": "INIT ARP", "env": "INIT ENVELOPES",
+        return {"mod": "INIT MODULATION", "osc": "INIT OSC+ PAGE", "unifx": "INIT UNI+FX", "arp": "INIT ARP", "env": "INIT ENVELOPES",
                 "steps1": "INIT LFO 1 STEPS", "steps2": "INIT LFO 2 STEPS"}.get(self.init_kind(page), "INIT " + page.upper())
 
     def init_page(self):
@@ -4649,6 +5091,8 @@ class App:
             self.samples_tick()
             self.loop_tick()
             self.beat_tick()
+            self.voice_tick()
+            self.mutate_tick()
             now = time.time()
             if self.redraw_wanted or now - self.last_draw > 0.1:
                 self.draw()
@@ -4663,6 +5107,7 @@ class App:
 
     def quit(self):
         try:
+            self.voice.stop()
             self.state.save()
             self.midi.close_all()
             self.audio.stop()

@@ -1,4 +1,4 @@
-POTENTIALBOX 1.10  -  BeatStep Pro groovebox for Windows
+POTENTIALBOX 1.13  -  BeatStep Pro groovebox for Windows
 ========================================================
 
 INSTALL: double-click "Install PotentialBox.bat".
@@ -87,6 +87,34 @@ SYNTH PAGES: MAIN, OSC+, MOD (new in 1.5)
     MOD page: INIT MODULATION = both LFOs, mod envelope and all 8 slots (routing + amount).
     OSC+ page: INIT OSC+ PAGE.  MAIN page: INIT SYNTH 1 / 2 = the whole synth.
   UNDO INIT shows for a few seconds afterwards if you change your mind.
+
+NEW IN 1.13: CHORDS
+  CHORD on the OSC+ page has SCALE TRIAD, SCALE 7TH and SCALE 9TH: every note becomes a chord
+  in your key (set CHORD KEY and CHORD SCALE). CHORD LANE on: BeatStep drum tracks 9-15 pick
+  the chord (9 = chord I ... 15 = chord VII) instead of playing drums. The 16 genre sets use it,
+  so every project now plays chords over a clean sub bass.
+
+NEW IN 1.12: BIGGER SYNTHS
+  New UNI+FX page on Synth 1 and Synth 2 (tap the synth tab until UNI+FX shows):
+  UNISON 1-7 voices with detune and stereo width, FILTER DRIVE, DISTORTION (tube, tape, fold,
+  crush, hard clip), SYNTH FX (chorus, ensemble, dimension, phaser, flanger) and on Synth 2
+  WARP (bend, mirror, sync, squeeze, phase FM, quantize). 28 new presets use them.
+
+NEW IN 1.12: THE PROJECTS TAB (sounds for the 16 BeatStep genre sets)
+  Each BeatStep project holds an evolving set in one genre: 1 Boom bap, 2 Lo-fi, 3 Breakbeat,
+  4 Jungle, 5 House, 6 Techno, 7 Acid, 8 Trap, 9 Trip hop, 10 UK garage, 11 Dubstep,
+  12 Electro, 13 Disco, 14 Reggaeton, 15 Synthwave, 16 Footwork.
+  Tap the same number on the PROJECTS tab and Synth 1 gets a bass, Synth 2 a lead, the drums
+  a genre kit in the sets' drum order, and the effects and tempo change to suit.
+  With the tab open, BeatStep pads 1-16 load projects 1-16.
+  TALK TO IT: tap MIC, then say "project seven", a genre ("acid", "trip hop"), "next project",
+  "new sounds" or "stop listening". Uses Windows' own offline speech recognition and your
+  default mic. Not installed? Settings > Time & language > Speech (add English).
+  NEW SOUNDS: other basses, leads and kits. KIT: MY SAMPLES builds the kit from your one-shots.
+  MUTATE (BASS / LEAD / DRUMS, MILD / MEDIUM / WILD): new sounds while it plays, on the next bar,
+  inside the project's own sounds. BACK undoes. AUTO MUTATE every 8 or 16 bars. Say "mutate".
+  PROJECT FX + TEMPO off: keep your own effects and tempo. CLOCK OUT: the BeatStep follows.
+  Set drum tracks: 1 kick 2 clap 3 snare 4 perc 5 hat 6 open hat 7 rim 8 shaker.
 
 NEW IN 1.9.0
   THREE LOOKS: Print Plate (new, the default), Night Rack and Colour Block. Setup tab > tap the LOOK key
