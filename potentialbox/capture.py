@@ -8,6 +8,7 @@ most DAWs) can read it.
 import os
 import re
 import time
+import wave
 
 import numpy as np
 
@@ -56,3 +57,38 @@ def save_bounce(parts, sr, name, root=None):
         write_wav(os.path.join(folder, fn), x, sr)
         files.append(fn)
     return folder, files
+
+
+def mix_file(folder):
+    """The bounce's mix WAV (or its first WAV if the mix is missing), or None."""
+    try:
+        wavs = sorted(f for f in os.listdir(folder) if f.lower().endswith(".wav"))
+    except OSError:
+        return None
+    mix = [f for f in wavs if f.lower().endswith(" - mix.wav")]
+    pick = (mix or wavs or [None])[0]
+    return os.path.join(folder, pick) if pick else None
+
+
+def read_wav(path, sr):
+    """v2.3: read a bounce WAV (16/24/32-bit PCM, mono or stereo) as float32 stereo at `sr`, for listening."""
+    with wave.open(path, "rb") as w:
+        ch, width, fs, n = w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()
+        raw = w.readframes(n)
+    if width == 3:
+        b = np.frombuffer(raw, np.uint8).reshape(-1, 3).astype(np.int32)
+        v = b[:, 0] | (b[:, 1] << 8) | (b[:, 2] << 16)
+        x = np.where(v >= 1 << 23, v - (1 << 24), v) / float(1 << 23)
+    elif width == 2:
+        x = np.frombuffer(raw, "<i2") / 32768.0
+    elif width == 4:
+        x = np.frombuffer(raw, "<i4") / float(1 << 31)
+    else:
+        x = (np.frombuffer(raw, np.uint8).astype(np.float64) - 128) / 128.0
+    x = x.reshape(-1, ch)
+    x = np.repeat(x, 2, axis=1) if ch == 1 else x[:, :2]
+    if fs != sr and len(x) > 1:
+        m = int(round(len(x) * sr / fs))
+        t = np.linspace(0, len(x) - 1, m)
+        x = np.stack([np.interp(t, np.arange(len(x)), x[:, c]) for c in range(2)], axis=1)
+    return np.ascontiguousarray(x, dtype=np.float32)

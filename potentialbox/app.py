@@ -68,7 +68,7 @@ except Exception:                         # pragma: no cover
     skins = None
 
 APP = "PotentialBox"
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 # v2.0: five big sections along the bottom; each has a few sub-tabs (shown in the header). A sub-tab is one of the
@@ -120,10 +120,13 @@ ACTIONS = [("rand_s1", "Random Synth 1"), ("rand_s2", "Random Synth 2"), ("rand_
            ("tab:Capture", "Capture Tab"), ("bounce", "Bounce Stems"), ("send_mpc", "Send Last Bounce to MPC"),
            ("sec:JAM", "Jam Section"), ("sec:SOUNDS", "Sounds Section"),
            # v2.2
-           ("grab", "Grab Last Bars"), ("beat_back", "Previous Beat (Back)")]
+           ("grab", "Grab Last Bars"), ("beat_back", "Previous Beat (Back)"),
+           # v2.3
+           ("bounce_send", "Bounce + Send to MPC"), ("listen_last", "Listen to Last Bounce")]
 ACTION_NAMES = dict(ACTIONS)
 CAPTURE_PADS = ["Bounce 1 bar", "Bounce 2 bars", "Bounce 4 bars", "Bounce 8 bars", "Send last bounce to MPC",
-                "Record on/off", "Cancel bounce", "Grab last bars"] + [""] * 7 + ["Back to last tab"]
+                "Record on/off", "Cancel bounce", "Grab last bars", "Listen to last bounce",
+                "Bounce + send to MPC"] + [""] * 5 + ["Back to last tab"]
 PROJECT_PADS = [f"Load project {i} ({n})" for i, n in enumerate(projmod.NAMES, 1)]  # Projects tab pads
 PAD_ACTIONS = [aid for aid, _ in ACTIONS[:16]]
 HOLD_ACTIONS = {"fill"}
@@ -1204,6 +1207,9 @@ class App:
         self.bounce_jobs = []      # v2.2: every bounce / grab still saving
         self.grab_wait = None      # v2.2: GRAB waiting for the bar to finish
         self.beat_hist = []        # v2.2: beats before NEW BEAT / MUTATE / ..., for ◀ BACK
+        self.send_queue = []       # v2.3: bounces waiting to go to the MPC
+        self.sent_folders = set()  # v2.3: bounces that made it to the MPC this session (SEND shows ✓)
+        self._listen_draw = 0.0
         self.mpc_sender = None     # v2.0: MpcSend while sending loops to the MPC
         if self.state.clock_master:
             self.root.after(1500, lambda: self.clockout.enable() or self.show_toast("CLOCK OUT: BEATSTEP NOT FOUND"))
@@ -3021,6 +3027,10 @@ class App:
             self.bounce_start()
         elif aid == "grab":
             self.grab_start()
+        elif aid == "bounce_send":
+            self.bounce_send()
+        elif aid == "listen_last":
+            self.listen_last()
         elif aid == "beat_back":
             self.beat_back()
         elif aid == "send_mpc":
@@ -3233,19 +3243,35 @@ class App:
         self.frame(650, y, 300, 250, "Capture", "")
         gb = self.state.bounce_bars
         waiting = bool(self.grab_wait)
-        self.rrect(670, y + 46, 260, 78, 12, T["btn_on"])
-        self.text(800, y + 76, "GRABBING..." if waiting else f"GRAB LAST {gb} BAR{'S' if gb > 1 else ''}", 21,
+        self.rrect(670, y + 42, 260, 64, 12, T["btn_on"])
+        self.text(800, y + 66, "GRABBING..." if waiting else f"GRAB LAST {gb} BAR{'S' if gb > 1 else ''}", 20,
                   T["btn_text"], True)
-        self.text(800, y + 104, "WHAT YOU JUST PLAYED · PAD 15", 11, T["btn_text"], True)
-        self.hit(670, y + 46, 260, 78, self.grab_start)
+        self.text(800, y + 91, "WHAT YOU JUST PLAYED · PAD 15", 11, T["btn_text"], True)
+        self.hit(670, y + 42, 260, 64, self.grab_start)
         opts = [f"{n} BAR" + ("S" if n > 1 else "") for n in self.BOUNCE_BARS]
-        self.seg(670, y + 132, 65, 32, opts, f"{gb} BAR" + ("S" if gb > 1 else ""), self.set_grab_bars, vertical=False)
+        self.seg(670, y + 112, 65, 28, opts, f"{gb} BAR" + ("S" if gb > 1 else ""), self.set_grab_bars, vertical=False)
+        # v2.3: bounce the next bars and send them to the MPC, without leaving JAM
+        b = eng.bounce
+        snd = self.mpc_sender
+        saving = any(j.get("send") and j["state"] == "saving" for j in self.bounce_jobs)
+        if b:
+            bl, busy = self.bounce_short(b), True
+        elif saving:
+            bl, busy = "SAVING...", True
+        elif snd is not None and snd.busy:
+            bl, busy = "SENDING TO THE MPC...", True
+        else:
+            bl, busy = f"● BOUNCE NEXT {gb} BAR{'S' if gb > 1 else ''} + SEND", False
+        self.button(800, y + 170, 260, 48, bl, self.bounce_send, on=busy, px=15 if gb > 1 else 16)
+        if b and b["state"] == "rec" and b.get("bar_at") is not None:
+            frac = min(1.0, max(0, b["got"] - b["bar_at"]) / max(b["need"], 1))
+            self.rect(680, y + 186, 240 * frac, 4, fill=T["accent_hi"])
         if rec:
             sec = int(rec.seconds())
-            self.button(800, y + 202, 260, 56, f"■ STOP  {sec // 60:02d}:{sec % 60:02d}", self.toggle_rec, on=True, px=17)
+            self.button(800, y + 222, 260, 44, f"■ STOP  {sec // 60:02d}:{sec % 60:02d}", self.toggle_rec, on=True, px=16)
         else:
-            self.button(734, y + 202, 126, 56, "● RECORD", self.toggle_rec, px=16)
-            self.button(866, y + 202, 126, 56, "STEMS: ON" if self.state.rec_stems else "STEMS: OFF",
+            self.button(734, y + 222, 126, 44, "● RECORD", self.toggle_rec, px=15)
+            self.button(866, y + 222, 126, 44, "STEMS: ON" if self.state.rec_stems else "STEMS: OFF",
                         lambda: self.pick_stems("MIX ONLY" if self.state.rec_stems else "MIX + STEMS"), px=13)
         # more
         self.frame(960, y, 306, 250, "More", "")
@@ -4732,7 +4758,26 @@ class App:
             return f"BOUNCING BAR {bar} OF {bars}"
         return "SAVING STEMS..."
 
-    def bounce_start(self, bars=None):
+    def bounce_short(self, b):
+        """v2.3: the bounce's progress in a few words, for the JAM key."""
+        if b["state"] == "wait":
+            return "WAITING FOR THE BAR · STOP"
+        if b["state"] == "rec" and b.get("bar_at") is not None:
+            done = max(0, b["got"] - b["bar_at"])
+            bar = min(b["bars"], 1 + int(done / max(b["need"], 1) * b["bars"]))
+            return f"BOUNCING {bar} OF {b['bars']} · STOP"
+        return "SAVING..."
+
+    def bounce_send(self):
+        """v2.3 JAM: BOUNCE + SEND. Bounces the next bars, then sends them to the MPC (whatever AUTO-SEND says).
+        Tapped again while it's bouncing, it stops."""
+        if self.audio.engine.bounce:
+            self.bounce_cancel()
+            self.show_toast("BOUNCE STOPPED")
+            return
+        self.bounce_start(send=True)
+
+    def bounce_start(self, bars=None, send=False):
         eng = self.audio.engine
         if eng.bounce:
             self.show_toast("ALREADY BOUNCING - TAP CANCEL TO STOP")
@@ -4741,7 +4786,7 @@ class App:
         need = int(bars * 4 * 60.0 / max(eng.bpm, 30.0) * eng.sr)
         sync = eng.playing
         eng.bounce = dict(bars=bars, bpm=eng.bpm, need=need, buf=[], got=0, sync=sync, t0=time.time(),
-                          state="wait" if sync else "rec", bar_at=None if sync else 0)
+                          state="wait" if sync else "rec", bar_at=None if sync else 0, send=send)
         if not sync:
             self.show_toast("NOT PLAYING: RECORDING NOW (PLAY THE BEATSTEP TO START ON A BAR)", 2.5)
 
@@ -4750,14 +4795,14 @@ class App:
             self.audio.engine.bounce = None
             self.show_toast("BOUNCE CANCELLED")
 
-    def save_capture(self, get_parts, bpm, bars, silent_msg, lead="SAVED"):
+    def save_capture(self, get_parts, bpm, bars, silent_msg, lead="SAVED", send=False):
         """Save a bounce or a grab as stems in Music > PotentialBox Loops (in the background), then list it
         under YOUR BOUNCES and auto-send it to the MPC if that's on."""
         eng = self.audio.engine
         pr = self.state.project
         what = projmod.NAMES[pr] if pr is not None else "Jam"
         name = capture.bounce_name(what, bpm, bars)
-        job = {"state": "saving", "name": name, "lead": lead}
+        job = {"state": "saving", "name": name, "lead": lead, "send": send}
         self.bounce_jobs.append(job)
         self.bounce_job = job
 
@@ -4847,7 +4892,8 @@ class App:
             self.request_redraw()   # the display at the top shows the bounce on every screen
             if b["state"] == "done":
                 eng.bounce = None
-                self.save_capture(lambda: bounce_stems(b), b["bpm"], b["bars"], "NOTHING HEARD - IS IT PLAYING?")
+                self.save_capture(lambda: bounce_stems(b), b["bpm"], b["bars"], "NOTHING HEARD - IS IT PLAYING?",
+                                  send=b.get("send", False))
         self.grab_poll()
         for job in list(self.bounce_jobs):
             if job["state"] not in ("saved", "error"):
@@ -4859,26 +4905,77 @@ class App:
                 self.state.bounces = ([job["folder"]] + [f for f in self.state.bounces if f != job["folder"]])[:12]
                 self.state.dirty = True
                 self.show_toast(job.get("lead", "SAVED") + f" {len(job['files'])} FILES: {job['name'].upper()}", 2.5)
-                if self.state.bounce_mpc:
+                if self.state.bounce_mpc or job.get("send"):
                     self.send_bounce(job["folder"])
             self.request_redraw()
         snd = self.mpc_sender
         if snd is not None and (snd.busy or snd.status != getattr(self, "_snd_seen", None)):
             self._snd_seen = snd.status
             self.request_redraw()
+        if snd is not None and not snd.busy and not getattr(snd, "announced", True):
+            snd.announced = True   # v2.3: say how it went, on whatever screen you're on
+            if snd.error:
+                self.show_toast("MPC: " + snd.error.upper()[:70], 3.5)
+            elif snd.copied:
+                self.sent_folders.add(snd.folder)
+                self.show_toast(f"ON THE MPC ✓  {os.path.basename(snd.folder).upper()}", 2.5)
+            if snd.error:
+                self.send_queue.clear()   # the MPC isn't reachable: don't keep trying
+            elif self.send_queue:
+                self.send_bounce(self.send_queue.pop(0))
+        au = self.audio.engine.audition
+        if au is not None and self.state.page == "Capture" and time.time() - self._listen_draw > 0.1:
+            self._listen_draw = time.time()   # move the playhead
+            self.request_redraw()
 
     def send_bounce(self, folder):
         if self.mpc_sender is not None and self.mpc_sender.busy:
-            self.show_toast("STILL SENDING THE LAST ONE")
+            if folder and folder != getattr(self.mpc_sender, "folder", None) and folder not in self.send_queue:
+                self.send_queue.append(folder)   # v2.3: goes when the one before it is done
+                self.show_toast("SENDS NEXT, AFTER THE ONE GOING NOW")
+            else:
+                self.show_toast("SENDING IT NOW")
             return
         if not folder or not os.path.isdir(folder):
             self.show_toast("NO BOUNCE TO SEND YET")
             return
         snd = self.mpc_sender = MpcSend(None, host=self.state.mpc_host or None)
         snd.busy = True
+        snd.announced = False
         snd.status = "Connecting to the MPC..."
         snd.folder = folder
         threading.Thread(target=snd.send, args=(folder,), daemon=True).start()
+
+    # ---------------------------------------------------------------- v2.3: ▶ listen before you send
+    def listen(self, folder):
+        """Loop a bounce's mix (tap again to stop). It's heard only: never recorded, grabbed or bounced."""
+        eng = self.audio.engine
+        au = eng.audition
+        if au is not None and not au["stop"] and au["key"] == folder:
+            eng.audition_stop()
+            self.request_redraw()
+            return
+        path = capture.mix_file(folder) if folder and os.path.isdir(folder) else None
+        if not path:
+            self.show_toast("THAT BOUNCE HAS GONE FROM ITS FOLDER")
+            return
+        try:
+            x = capture.read_wav(path, eng.sr)
+        except Exception as e:  # noqa: BLE001
+            log("listen failed", path, e)
+            self.show_toast("COULDN'T PLAY THAT ONE")
+            return
+        if not len(x):
+            self.show_toast("THAT BOUNCE IS EMPTY")
+            return
+        eng.audition_play(x, folder)
+        self.request_redraw()
+
+    def listen_last(self):
+        self.listen(next((f for f in self.state.bounces if os.path.isdir(f)), None))
+
+    def listen_stop(self):
+        self.audio.engine.audition_stop()
 
     def send_last_bounce(self):
         last = next((f for f in self.state.bounces if os.path.isdir(f)), None)
@@ -4906,6 +5003,10 @@ class App:
             self.bounce_cancel()
         elif i == 7:
             self.grab_start()
+        elif i == 8:
+            self.listen_last()
+        elif i == 9:
+            self.bounce_send()
         elif i == 15:
             self.set_page(self.state.last_tab)
         self.request_redraw()
@@ -4923,7 +5024,7 @@ class App:
         bars = self.state.bounce_bars
         secs = bars * 4 * 60.0 / max(eng.bpm, 30.0)
         # ---- bounce
-        self.frame(14, 100, 830, 400, "Bounce stems", "BEATSTEP PADS: 1-4 BOUNCE 1/2/4/8 BARS · 5 SEND TO MPC · 8 GRAB")
+        self.frame(14, 100, 830, 400, "Bounce stems", "PADS: 1-4 BOUNCE 1/2/4/8 · 5 SEND · 8 GRAB · 9 LISTEN · 10 BOUNCE + SEND")
         self.text(36, 160, "LENGTH", 12, T.get("title", T["accent"]), True, "w")
         opts = [f"{n} BAR" + ("S" if n > 1 else "") for n in self.BOUNCE_BARS]
         for i, o in enumerate(opts):
@@ -4972,18 +5073,27 @@ class App:
             self.text(872, 384 + k * 22, ln, 14, col, False, "w")
         self.text(872, 470, "Uses MPC TOOLS' SSH login and its saved MPC address.", 12, T["ink_faint"], False, "w")
         # ---- recent bounces + recording
-        self.frame(14, 510, 1252, 222, "Your bounces", "TAP A NAME TO OPEN ITS FOLDER")
+        self.frame(14, 510, 1252, 222, "Your bounces", "▶ LISTEN FIRST · TAP A NAME TO OPEN ITS FOLDER")
         recent = [f for f in self.state.bounces if os.path.isdir(f)][:4]
         if not recent:
-            self.text(36, 590, "Nothing bounced yet. Play something, then tap BOUNCE.", 16, T["ink_dim"], False, "w")
+            self.text(36, 590, "Nothing yet. Play something, then tap GRAB or BOUNCE.", 16, T["ink_dim"], False, "w")
+        au = eng.audition
         for k, f in enumerate(recent):
             y = 556 + k * 42
             nfiles = len([x for x in os.listdir(f) if x.lower().endswith(".wav")]) if os.path.isdir(f) else 0
-            self.rrect(30, y, 660, 36, 7, T["seg_inactive"])
-            self.text_fit(44, y + 18, os.path.basename(f).upper(), 15, 520, T["ink"], True, "w")
-            self.text(676, y + 18, f"{nfiles} FILES", 12, T["ink_dim"], False, "e")
-            self.hit(30, y, 660, 38, lambda p=f: self.open_folder(p))
-            self.button(760, y + 18, 120, 34, "SEND", lambda p=f: self.send_bounce(p), px=14)
+            playing = au is not None and not au["stop"] and au["key"] == f
+            self.button(60, y + 18, 60, 36, "■" if playing else "▶", lambda p=f: self.listen(p), on=playing, px=17)
+            self.rrect(98, y, 592, 36, 7, T["btn_on"] if playing else T["seg_inactive"])
+            if playing:
+                frac = au["pos"] / max(len(au["x"]), 1)
+                self.rect(104, y + 30, 580 * frac, 3, fill=T["accent_hi"])
+            ink = T["btn_text"] if playing else T["ink"]
+            self.text_fit(112, y + 18, os.path.basename(f).upper(), 15, 450, ink, True, "w")
+            self.text(676, y + 18, f"{nfiles} FILES", 12, ink if playing else T["ink_dim"], False, "e")
+            self.hit(98, y, 592, 38, lambda p=f: self.open_folder(p))
+            sending = bool(snd and snd.busy and getattr(snd, "folder", None) == f)
+            sl = "SENDING..." if sending else ("SENT ✓" if f in self.sent_folders else "SEND")
+            self.button(770, y + 18, 130, 34, sl, lambda p=f: self.send_bounce(p), on=sending, px=14)
         rec = eng.recorder is not None
         self.button(1078, 592, 340, 58, "■ STOP RECORDING" if rec else "● RECORD (ANY LENGTH)",
                     self.toggle_rec, on=rec, px=17)
@@ -5169,6 +5279,8 @@ class App:
             name, sub = OLD_PAGES[name]
         if name not in TABS:
             return
+        if name != "Capture":
+            self.listen_stop()   # v2.3: a bounce you were listening to stops when you leave CAPTURE
         if sub is not None and name in SUBPAGES:
             self.state.subpage[name] = sub
         elif name == self.state.page:

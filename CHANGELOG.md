@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.3.0
+**Bounce and send without leaving JAM, and listen before you send.**
+- **BOUNCE NEXT 4 BARS + SEND** on JAM > LIVE FX, under GRAB: records the next bars as stems, then sends them to
+  the MPC (whatever AUTO-SEND says). The key shows WAITING / BOUNCING 2 OF 4 with a progress line, then SAVING and
+  SENDING TO THE MPC. Tap it again while it's bouncing to stop. Also STEMS pad 10 and a pad action.
+- **▶ in YOUR BOUNCES** (CAPTURE > STEMS): loops that bounce's mix so you can check the take. Tap ■ (or leave
+  CAPTURE) to stop. A line shows where it's up to. You only hear it: it never ends up in a GRAB, bounce or
+  recording. STEMS pad 9 (and a pad action) listens to the newest one.
+- SEND shows **SENT ✓** once a bounce is on the MPC, and a message pops up on any screen when a send finishes or
+  fails. Sending another while one is going now queues it instead of dropping it.
+
 ## 2.2.0
 **Catch what you just played.**
 - **GRAB LAST 4 BARS** on JAM > LIVE FX (also on CAPTURE > STEMS, LIVE FX pad 15 and STEMS pad 8). PotentialBox

@@ -18,6 +18,7 @@ THE FIVE SECTIONS (big keys along the bottom; sub-tabs top left)
                      lead, kit, effects and tempo. MUTATE: new sounds on the next bar.
            LIVE FX   hold-to-play effects, 8 scenes with morph, fill, record, and
                      GRAB LAST 4 BARS: saves what you just played as stems.
+                     BOUNCE NEXT 4 BARS + SEND: bounces, then sends to the MPC.
            KNOBS     what the BeatStep knobs do on PROJECTS.   MACROS  16 performance knobs.
   SOUNDS   SYNTH 1 / SYNTH 2  a sound browser: pick a type (BASS, LEAD, KEYS, PAD, PLUCK,
                      STAB, FX, MY SOUNDS), tap a sound. EDIT SOUND opens every setting;
@@ -31,6 +32,7 @@ THE FIVE SECTIONS (big keys along the bottom; sub-tabs top left)
                      as bar-exact WAV loops in Music > PotentialBox Loops. SEND TO MPC copies
                      them to the MPC's SD card (PotentialBox Loops folder) using MPC TOOLS'
                      SSH login. AUTO-SEND does it after every bounce.
+                     YOUR BOUNCES: > to listen first, SEND to put that one on the MPC.
            LOOPER    5-track looper (mic, instruments and PotentialBox itself).
   SETUP    audio output (ASIO = lowest lag), MIDI, LEARN KNOBS, PAD ACTIONS, MY SETUPS.
   Ctrl+1 ... Ctrl+5 jump to the five sections.

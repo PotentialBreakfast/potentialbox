@@ -2922,6 +2922,7 @@ class Engine:
         self.recorder = None
         self.capture = None
         self.bounce = None   # v2.0 CAPTURE: bar-locked stems (mix + synth 1 + synth 2 + drums + fx + looper)
+        self.audition = None  # v2.3: a bounce looping for a listen (heard only, never recorded)
         self.hist = None     # v2.2 GRAB: the last HIST_SECS of the mix and every stem, always running
         self.hist_marks = collections.deque(maxlen=64)   # where bars started (absolute sample counts)
         self.cb_t = 0.0
@@ -3240,4 +3241,37 @@ class Engine:
             cap["got"] += n
             if cap.get("bar_at") is not None and cap["got"] >= cap["bar_at"] + cap["need"]:
                 cap["state"] = "done"
+        au = self.audition
+        if au is not None and n:
+            try:
+                out = self._audition(au, out, n)
+            except Exception:
+                self.audition = None
         return out.astype(np.float32)
+
+    def _audition(self, au, out, n):
+        """v2.3: loop a saved bounce on top of the output (after recording, so it never ends up in a take).
+        Fades in and out over one block so starting and stopping don't click."""
+        x = au["x"]
+        size = len(x)
+        p = au["pos"]
+        seg = x[np.arange(p, p + n) % size].astype(np.float64)
+        target = 0.0 if au["stop"] else 1.0
+        g = au["g"]
+        if g != target:
+            ramp = np.linspace(g, target, n)[:, None]
+            au["g"] = target
+        else:
+            ramp = target
+        au["pos"] = (p + n) % size
+        if au["stop"] and au["g"] == 0.0:
+            self.audition = None
+        return np.clip(out + seg * ramp, -1.0, 1.0)
+
+    def audition_play(self, x, key):
+        self.audition = {"x": x, "pos": 0, "g": 0.0, "stop": False, "key": key}
+
+    def audition_stop(self):
+        au = self.audition
+        if au is not None:
+            au["stop"] = True

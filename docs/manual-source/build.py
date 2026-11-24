@@ -170,8 +170,8 @@ p("Everything is pre-wired for the BeatStep Pro's factory settings, so you can p
   "is a big key you can tap, and everything saves by itself: there is no typing anywhere in the app.")
 note("<b>New to the layout?</b> The chapter <b>A jam, start to finish</b> walks through one whole session, from loading "
      "a project to chopping its stems on your MPC, with the screen for every step.")
-note(f"<b>New in {VERSION}:</b> <b>GRAB</b> saves the bars you just played, as stems, from JAM &gt; LIVE FX or "
-     "CAPTURE; <b>◀ BACK</b> on BEATS steps back to the beat before NEW BEAT or MUTATE.")
+note(f"<b>New in {VERSION}:</b> <b>BOUNCE NEXT + SEND</b> on JAM &gt; LIVE FX; <b>▶</b> in YOUR BOUNCES to listen "
+     "before you send. <b>2.2:</b> <b>GRAB</b> saves the bars you just played; <b>◀ BACK</b> on BEATS.")
 note("<b>New in 2.0:</b> a new layout with five sections instead of fourteen tabs; the Hi-Fi look, refreshed; "
      "a <b>sound browser</b> for each synth with sounds sorted by type; <b>77 new presets</b> made for the current synth "
      "engine, all level-matched; a new <b>PROJECTS</b> screen for jamming; and <b>CAPTURE &gt; STEMS</b>, which bounces "
@@ -359,10 +359,12 @@ WF = [
      "Keep it playing until the bar counter finishes.",
      "With STEMS open, BeatStep pad <b>3</b> bounces 4 bars (pads 1-4 = 1, 2, 4, 8 bars)."),
     ("Chop it on the MPC", "CAPTURE &gt; STEMS", "wf-09", [(854, 100, 412, 400), (26, 552, 668, 170)],
-     "With <b>AUTO-SEND: ON</b> each bounce lands on the MPC's SD card in PotentialBox Loops. Tap a bounce's name to "
-     "open its folder on the PC.",
+     "Tap <b>▶</b> beside a bounce to hear it, then <b>SEND</b> the good one: it lands on the MPC's SD card in "
+     "PotentialBox Loops. (AUTO-SEND: ON sends every bounce straight away.) Tap a bounce's name to open its folder "
+     "on the PC.",
      "On the MPC, open the browser, go to PotentialBox Loops and load the stems into a program to chop.",
-     "Pad <b>5</b> sends the last bounce if AUTO-SEND is off."),
+     "Pad <b>9</b> listens to the last bounce, pad <b>5</b> sends it. On JAM, <b>BOUNCE NEXT + SEND</b> does both "
+     "steps in one tap."),
 ]
 for n, (title, where, shot_name, boxes, screen, bsp, free) in enumerate(WF, 1):
     add(f'<div class="wfstep"><h2><span class="wfn">{n}</span>{E(title)}<span class="wfw">{where}</span></h2>')
@@ -481,6 +483,11 @@ ul(["The keys under GRAB set the length: 1, 2, 4 or 8 bars. It's the same length
     "If it hasn't heard that many bars yet (you've only just started), it saves as many as it has.",
     "Bars come from the BeatStep's clock, CLOCK OUT or the beat generator. With nothing keeping time, it saves the "
     "length up to the moment you tapped."])
+h2("Bounce and send from here")
+p(f"{b('BOUNCE NEXT 4 BARS + SEND')} is BOUNCE and SEND in one tap, so you don't have to leave JAM. It waits for the "
+  "next bar, records the bars (the key counts them and shows a line), saves the stems like any bounce, then sends "
+  "them to the MPC, even if AUTO-SEND is off. A message pops up when they're on the MPC. Tap it again while it's "
+  "bouncing to stop. The length is the same 1, 2, 4 or 8 bars as GRAB.")
 h2("Fill and record")
 ul([f"{b('HOLD FOR FILL')} (pad 9) plays the drum pads set to Fill only and silences those set to Not in fill.",
     f"{b('RECORD')} (pad 11) starts and stops recording, the same as RECORD on CAPTURE &gt; STEMS. "
@@ -1010,8 +1017,13 @@ h2("Send to MPC")
 p("PotentialBox can copy bounces to your MPC over Wi-Fi, the way MPC TOOLS does. They go to a "
   "<b>PotentialBox Loops</b> folder on the MPC's SD card (the drive with MPC TOOLS' DRUM ONE SHOTS or a MYMPC folder), "
   "one folder per bounce, so you'll find them in the MPC's browser.")
-ul([f"{b('SEND LAST BOUNCE')} sends the newest one; {b('SEND')} beside any bounce in YOUR BOUNCES sends that one.",
-    f"{b('AUTO-SEND: ON')} sends every bounce as soon as it's saved.",
+ul([f"{b('▶')} beside a bounce in YOUR BOUNCES loops its mix so you can check it's the good take; {b('■')} (or "
+    "leaving CAPTURE) stops it. You only hear it: it never ends up in a GRAB, bounce or recording. STEMS pad 9 "
+    "listens to the newest one.",
+    f"{b('SEND LAST BOUNCE')} sends the newest one; {b('SEND')} beside any bounce in YOUR BOUNCES sends that one. It "
+    "says SENT ✓ once it's on the MPC. Send another while one is going and it goes next.",
+    f"{b('AUTO-SEND: ON')} sends every bounce as soon as it's saved. Leave it OFF to listen first and send the ones you "
+    "like.",
     "It uses Windows' own SSH and the key login MPC TOOLS already set up, and the MPC's address from MPC TOOLS, so "
     "there's nothing to type. The status line says where the files went, or what went wrong."])
 h2("Record and resample")
