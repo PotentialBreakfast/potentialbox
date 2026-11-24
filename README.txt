@@ -27,7 +27,8 @@ THE FIVE SECTIONS (big keys along the bottom; sub-tabs top left)
                      and pad tune / mix / groove / choke pages.
            MIX, FX   levels, ducking, EQ, mute/solo; delay, reverb and the master chain.
   BEATS    BEATS     beat generator in 24 genres, BACK to the last beat, SEND TO BEATSTEP.
-                     ARRANGE  chain beats.
+           SONG START  one tap: a beat, a bass line and chords in one key. KEEP a part.
+           ARRANGE     chain beats.
   CAPTURE  STEMS     BOUNCE NEXT or GRAB LAST 1/2/4/8 bars: mix + drums + synth 1 + synth 2 + FX + looper
                      as bar-exact WAV loops in Music > PotentialBox Loops. SEND TO MPC copies
                      them to the MPC's SD card (PotentialBox Loops folder) using MPC TOOLS'
@@ -36,6 +37,7 @@ THE FIVE SECTIONS (big keys along the bottom; sub-tabs top left)
            LOOPER    5-track looper (mic, instruments and PotentialBox itself).
   SETUP    audio output (ASIO = lowest lag), MIDI, LEARN KNOBS, PAD ACTIONS, MY SETUPS.
   Ctrl+1 ... Ctrl+5 jump to the five sections.
+  Tap the tempo at the top of any screen for TAP TEMPO and one-tap tempos.
 
 BEATSTEP PRO SETUP
   1. Plug the BeatStep Pro into the PC with USB.

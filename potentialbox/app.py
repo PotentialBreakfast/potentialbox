@@ -51,6 +51,7 @@ from potentialbox import capture  # noqa: E402
 from potentialbox import kits as _kits  # noqa: E402
 from potentialbox.recorder import Recorder, write_wav, recordings_dir  # noqa: E402
 from potentialbox.looper import TRACKS, SOURCES, FX_TYPES, SPEEDS, LENGTHS, STATE_TEXT  # noqa: E402
+from potentialbox import parts as partsmod
 from potentialbox import beats as beatsmod  # noqa: E402
 from potentialbox.beats import (Beat, GENRES, GENRE_NAMES, ROLE_PAD, ROLE_NAME, GROUP_NAMES,  # noqa: E402
                                GROUPS as BEAT_GROUPS, BAR_CHOICES)
@@ -68,7 +69,7 @@ except Exception:                         # pragma: no cover
     skins = None
 
 APP = "PotentialBox"
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 W, H = 1280, 800
 FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 # v2.0: five big sections along the bottom; each has a few sub-tabs (shown in the header). A sub-tab is one of the
@@ -76,7 +77,7 @@ FACTORY_CCS = [10, 74, 71, 76, 77, 93, 73, 75, 114, 18, 19, 16, 17, 91, 79, 72]
 SECTIONS = [
     ("JAM", [("PROJECTS", "Projects"), ("LIVE FX", "Live"), ("KNOBS", "Perform"), ("MACROS", "Macros")]),
     ("SOUNDS", [("SYNTH 1", "Synth 1"), ("SYNTH 2", "Synth 2"), ("DRUMS", "Drums"), ("MIX", "Mix"), ("FX", "FX")]),
-    ("BEATS", [("BEATS", "Beats"), ("ARRANGE", "Arrangement")]),
+    ("BEATS", [("BEATS", "Beats"), ("SONG START", "Song"), ("ARRANGE", "Arrangement")]),
     ("CAPTURE", [("STEMS", "Capture"), ("LOOPER", "Loop")]),
     ("SETUP", [("SETUP", "Setup")]),
 ]
@@ -122,7 +123,9 @@ ACTIONS = [("rand_s1", "Random Synth 1"), ("rand_s2", "Random Synth 2"), ("rand_
            # v2.2
            ("grab", "Grab Last Bars"), ("beat_back", "Previous Beat (Back)"),
            # v2.3
-           ("bounce_send", "Bounce + Send to MPC"), ("listen_last", "Listen to Last Bounce")]
+           ("bounce_send", "Bounce + Send to MPC"), ("listen_last", "Listen to Last Bounce"),
+           # v2.4
+           ("song_start", "Song Start (same genre)"), ("song_surprise", "Song Start (surprise me)")]
 ACTION_NAMES = dict(ACTIONS)
 CAPTURE_PADS = ["Bounce 1 bar", "Bounce 2 bars", "Bounce 4 bars", "Bounce 8 bars", "Send last bounce to MPC",
                 "Record on/off", "Cancel bounce", "Grab last bars", "Listen to last bounce",
@@ -299,6 +302,9 @@ class State:
         self.bounce_bars = 4          # v2.0 CAPTURE > STEMS
         self.bounce_mpc = False       # send every bounce to the MPC as soon as it's saved
         self.bounces = []             # recent bounce folders, newest first
+        self.keep = {"dr": False, "s1": False, "s2": False}   # v2.4 KEEP: projects / mutate / random / song start leave it
+        self.song = None              # v2.4 SONG START: parts.Song.to_json()
+        self.song_mute = []           # "s1" / "s2" switched off in the song
         self.setups = [None] * SLOTS
         self.rec_stems = True
         self.loop_input = None    # list of interface input channels (0-based) or None
@@ -476,6 +482,11 @@ class State:
         self.bounce_bars = d.get("bounce_bars") if d.get("bounce_bars") in (1, 2, 4, 8) else 4
         self.bounce_mpc = bool(d.get("bounce_mpc", False))
         self.bounces = [b for b in d.get("bounces", []) if isinstance(b, str)][:12]
+        kp = d.get("keep")
+        if isinstance(kp, dict):
+            self.keep.update({k: bool(v) for k, v in kp.items() if k in self.keep})
+        self.song = d.get("song") if isinstance(d.get("song"), dict) else None
+        self.song_mute = [m for m in d.get("song_mute", []) if m in ("s1", "s2")]
         self.load_locks(d.get("locks"))
         self.load_scenes(d.get("scenes"))
         self.rec_stems = bool(d.get("rec_stems", True))
@@ -530,7 +541,7 @@ class State:
                      project_take=self.project_take, project_kit=self.project_kit, project_fx=self.project_fx,
                      mut_amount=self.mut_amount, mut_auto=self.mut_auto, sec_page=self.sec_page,
                      synth_edit=self.synth_edit, bounce_bars=self.bounce_bars, bounce_mpc=self.bounce_mpc,
-                     bounces=self.bounces)
+                     bounces=self.bounces, keep=self.keep, song=self.song, song_mute=self.song_mute)
             tmp = CFG_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(d, f, indent=1)
@@ -1206,8 +1217,12 @@ class App:
         self.bounce_job = None     # v2.0: the last stem bounce being saved
         self.bounce_jobs = []      # v2.2: every bounce / grab still saving
         self.grab_wait = None      # v2.2: GRAB waiting for the bar to finish
+        self.taps = []             # v2.4: TAP TEMPO times
+        self.tap_flash = 0.0
+        self.tap_bpm = None
         self.beat_hist = []        # v2.2: beats before NEW BEAT / MUTATE / ..., for ◀ BACK
         self.send_queue = []       # v2.3: bounces waiting to go to the MPC
+        self.song_hist = []        # v2.4: songs before SONG START / NEW BASS LINE / ..., for ◀ BACK
         self.sent_folders = set()  # v2.3: bounces that made it to the MPC this session (SEND shows ✓)
         self._listen_draw = 0.0
         self.mpc_sender = None     # v2.0: MpcSend while sending loops to the MPC
@@ -1596,6 +1611,8 @@ class App:
             self.draw_projects()
         elif self.state.page == "Arrangement":
             self.draw_arrangement()
+        elif self.state.page == "Song":
+            self.draw_song()
         elif self.state.page == "Capture":
             self.draw_capture()
         elif self.state.page in ("Synth 1", "Synth 2") and not self.state.synth_edit["s" + self.state.page[-1]]:
@@ -1617,6 +1634,7 @@ class App:
             "actions": self.draw_actions,
             "route": lambda: self.draw_route(self.overlay[1], self.overlay[2]),
             "resample": self.draw_resample,
+            "tempo": self.draw_tempo,
             "setups": self.draw_setups,
             "loopinput": self.draw_loop_input,
             "myloops": self.draw_my_loops,
@@ -1758,11 +1776,8 @@ class App:
             return
         self.save_midi(self.state.arrangement, "Song")
 
-    def save_midi(self, beats, what):
-        """Beats -> a .mid file in Music > PotentialBox Recordings. Pad n plays note 36 + n, like the BeatStep."""
-        if mido is None:
-            self.show_toast("MIDI FILES NEED MIDO - RUN THE INSTALLER AGAIN")
-            return
+    def _beat_midi_track(self, beats, tempo=False):
+        """Beats -> one MIDI track on the drum channel. Pad n plays note 36 + n, like the BeatStep."""
         vel = {"X": 120, "x": 96, "g": 48, "?": 90, ";": 48, "r": 96, "t": 96}
         hits = {"r": 2, "t": 3}
         q = 120  # ticks per 16th at 480 per beat
@@ -1784,15 +1799,24 @@ class App:
                         events.append((at + max(20, q // k // 2), 0, note, 0))
             t0 += steps * q
         events.sort(key=lambda e: (e[0], e[1]))
-        mid = mido.MidiFile(ticks_per_beat=480)
         tr = mido.MidiTrack()
-        mid.tracks.append(tr)
-        tr.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(self.audio.engine.bpm), time=0))
+        tr.append(mido.MetaMessage("track_name", name="Drums", time=0))
+        if tempo:
+            tr.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(self.audio.engine.bpm), time=0))
         ch = max(0, min(15, self.state.ch["dr"] - 1))
         last = 0
         for at, kind, note, v in events:
             tr.append(mido.Message("note_on" if kind else "note_off", channel=ch, note=note, velocity=v, time=at - last))
             last = at
+        return tr
+
+    def save_midi(self, beats, what):
+        """Beats -> a .mid file in Music > PotentialBox Recordings."""
+        if mido is None:
+            self.show_toast("MIDI FILES NEED MIDO - RUN THE INSTALLER AGAIN")
+            return
+        mid = mido.MidiFile(ticks_per_beat=480)
+        mid.tracks.append(self._beat_midi_track(beats, tempo=True))
         try:
             folder = recordings_dir()
             os.makedirs(folder, exist_ok=True)
@@ -1900,6 +1924,7 @@ class App:
         self.text_fit(x0 + 16, y0 + dh / 2, line, 17, dw - 32, col, True, "w", minpx=11)
         # tempo + level
         self.readout(1010, 28, 112, 40, f"{eng.bpm:.0f} BPM")
+        self.hit(954, 8, 112, 40, self.toggle_tempo)   # v2.4: tap the tempo for TAP TEMPO and presets
         pk = min(eng.peak, 1.0)
         self.rect(1078, 8, 180, 40, fill=T["well"], outline=T["line"])
         for i in range(18):   # LED ladder
@@ -1946,11 +1971,15 @@ class App:
         elif any(j.get("state") == "saving" for j in self.bounce_jobs):
             parts.append("SAVING STEMS...")
         pr = self.state.project
-        if pr is not None:
+        song = eng.beats.parts
+        if song is not None:   # v2.4
+            parts.append(f"SONG {song.genre.upper()} IN {partsmod.key_name(song.root, song.minor)}")
+        elif pr is not None:
             parts.append(f"P{pr + 1:02d} {projmod.NAMES[pr].upper()}")
         parts.append("S1 " + self.state.preset_name["s1"].upper())
         parts.append("S2 " + self.state.preset_name["s2"].upper())
-        parts.append("KIT " + eng.drums.kit_name.upper()[:22])
+        kn = eng.drums.kit_name.upper()[:22]
+        parts.append(kn if "KIT" in kn.split() else "KIT " + kn)   # "ACID SET KIT", not "KIT ACID SET KIT"
         return "  ·  ".join(parts)
 
     def draw_knobs(self):
@@ -2992,7 +3021,10 @@ class App:
     def run_action(self, aid):
         self.action_flash[aid] = time.time()
         tabs = [t for t in TABS if t != "Setup"]
-        if aid in ("rand_s1", "rand_s2"):
+        if aid in ("rand_s1", "rand_s2", "rand_kit", "next_kit", "prev_kit") and self.kept_block(
+                "dr" if "kit" in aid else aid[-2:]):
+            pass
+        elif aid in ("rand_s1", "rand_s2"):
             pre = aid[-2:]
             self.random_sound(pre)
             self.show_toast(f"SYNTH {pre[1]}: {self.state.preset_name[pre].upper()}", 1.2)
@@ -3033,6 +3065,10 @@ class App:
             self.listen_last()
         elif aid == "beat_back":
             self.beat_back()
+        elif aid == "song_start":
+            self.song_start()
+        elif aid == "song_surprise":
+            self.song_start("surprise")
         elif aid == "send_mpc":
             self.send_last_bounce()
         elif aid == "panic":
@@ -3322,6 +3358,12 @@ class App:
                 pass
         bp.mutes = set(self.state.beat_mutes)
         self.arr_sync(bp)
+        if self.state.song:
+            try:
+                bp.parts = partsmod.Song.from_json(self.state.song)
+            except Exception as e:  # noqa: BLE001
+                log("song restore failed", e)
+        bp.parts_mute = set(self.state.song_mute)
 
     def clock_live(self):
         """True when the tempo comes from the BeatStep (it's sending clock and we're not the master)."""
@@ -3397,6 +3439,87 @@ class App:
         elif i == 15:
             self.action_q.append("tab:" + self.state.last_tab)
         self.request_redraw()
+
+    # ---------------------------------------------------------------- v2.4: tempo panel (tap + presets)
+    TEMPO_PRESETS = (70, 80, 90, 100, 110, 120, 128, 140, 174)
+
+    def toggle_tempo(self):
+        if self.overlay and self.overlay[0] == "tempo":
+            self.close_overlay()
+        else:
+            self.taps = []
+            self.tap_bpm = None
+            self.open_overlay(("tempo",))
+        self.request_redraw()
+
+    def set_bpm(self, bpm):
+        eng = self.audio.engine
+        if self.clock_live():
+            self.show_toast("TEMPO COMES FROM THE BEATSTEP · TURN ON CLOCK OUT TO SET IT HERE", 2.5)
+            return False
+        eng.bpm = float(min(max(round(bpm), 40), 220))
+        self.state.dirty = True
+        return True
+
+    def tap_tempo(self):
+        """Tap in time: the tempo follows from the second tap, using the middle of the last 8 gaps (so one
+        late tap doesn't throw it). A pause of 2 seconds starts again."""
+        now = time.perf_counter()
+        t = self.taps
+        if t and now - t[-1] > 2.0:
+            t.clear()
+        t.append(now)
+        del t[:-9]
+        self.tap_flash = time.time()
+        self.root.after(140, self.request_redraw)
+        if len(t) < 2:
+            return
+        gap = float(np.median(np.diff(t)))
+        bpm = 60.0 / max(gap, 1e-3)
+        while bpm > 220:
+            bpm /= 2
+        while bpm < 40:
+            bpm *= 2
+        self.tap_bpm = int(round(bpm))
+        if not self.clock_live():
+            self.audio.engine.bpm = float(self.tap_bpm)
+            self.state.dirty = True
+
+    def draw_tempo(self):
+        eng = self.audio.engine
+        live = self.clock_live()
+        self.overlay_base("Tempo", "TAP THE BIG KEY IN TIME · OR PICK ONE")
+        self.button(1150, 172, 160, 56, "CLOSE", self.close_overlay, px=17)
+        # what it is now
+        self.rrect(40, 210, 580, 120, 14, T.get("screen", T["well"]))
+        self.text(330, 262, f"{eng.bpm:.0f}", 64, T.get("lcd_ink", T["accent"]), True)
+        self.text(330, 310, "BPM" + ("  ·  FROM THE BEATSTEP" if live else ""), 15, T.get("lcd_ink", T["accent"]), True)
+        # the tap key (fires on press, so the timing is yours)
+        lit = time.time() - self.tap_flash < 0.12
+        self.rrect(40, 352, 580, 300, 18, T["btn_on"] if lit else T["btn_bg"])
+        self.text(330, 470, "TAP", 64, T["btn_text"], True)
+        n = len(self.taps)
+        if self.tap_bpm and n >= 2:
+            sub = f"YOU TAPPED {self.tap_bpm} BPM" + (" · SET IT ON THE BEATSTEP" if live else "") + " · KEEP GOING TO FINE-TUNE"
+        else:
+            sub = "TAP 4 TIMES, ON THE BEAT"
+        self.text(330, 560, sub, 14, T["btn_text"], True)
+        self.hit(40, 352, 580, 300, self.tap_tempo)
+        # presets and nudges
+        self.text(680, 222, "PICK ONE", 12, T["accent"], True, "w")
+        for i, b in enumerate(self.TEMPO_PRESETS):
+            r, c = divmod(i, 3)
+            on = abs(eng.bpm - b) < 0.5
+            self.button(772 + c * 186, 278 + r * 84, 174, 72, str(b), lambda v=b: self.set_bpm(v), on=on, px=26)
+        self.text(680, 538, "NUDGE", 12, T["accent"], True, "w")
+        for i, (lab, fn) in enumerate((("−5", lambda: self.set_bpm(eng.bpm - 5)), ("−1", lambda: self.set_bpm(eng.bpm - 1)),
+                                       ("+1", lambda: self.set_bpm(eng.bpm + 1)), ("+5", lambda: self.set_bpm(eng.bpm + 5)))):
+            self.button(749 + i * 140, 590, 128, 64, lab, fn, px=24)
+        self.button(819, 670, 268, 52, "HALF TIME  ½", lambda: self.set_bpm(eng.bpm / 2), px=16)
+        self.button(1099, 670, 268, 52, "DOUBLE  ×2", lambda: self.set_bpm(eng.bpm * 2), px=16)
+        if live:
+            self.text(330, 690, "The BeatStep sets the tempo now. Turn CLOCK OUT on (BEATS) to set it here.",
+                      13, T["ink_dim"], True)
 
     def beat_tempo(self, d):
         eng = self.audio.engine
@@ -3643,6 +3766,7 @@ class App:
         live = self.clock_live()
         self.button(456, cy2, 44, 44, "−", lambda: self.beat_tempo(-1), px=20)
         self.readout(534, cy2, 104, 44, f"{eng.bpm:.0f} BPM")
+        self.hit(482, cy2 - 22, 104, 44, self.toggle_tempo)
         self.button(612, cy2, 44, 44, "+", lambda: self.beat_tempo(1), px=20)
         self.button(732, cy2, 176, 44, f"LENGTH: {b.steps // 16} BAR{'S' if b.steps > 16 else ''}", self.beat_bars_step,
                     on=b.steps > 16, px=13)
@@ -3678,6 +3802,13 @@ class App:
         i %= len(projmod.PROJECTS)
         pr = projmod.PROJECTS[i]
         st = self.state
+        bp = self.audio.engine.beats
+        if bp.parts is not None and hasattr(self, "song_hist"):   # v2.4: the BeatStep plays the project's parts now (◀ BACK on SONG START undoes)
+            self.song_hist.append(self.song_snapshot())
+            del self.song_hist[:-20]
+            bp.parts = None
+            bp.part_release = True
+            st.song = None
         if take is None:
             take = st.project_take if st.project == i else 0
         st.project, st.project_take = i, take
@@ -3685,22 +3816,31 @@ class App:
         self.mut_count = {"bass": 0, "lead": 0, "drums": 0}
         (bname, bass), (lname, lead), kit = projmod.take(pr, take)
         p = st.params
-        p.apply_preset("s1", bass)
-        p.apply_preset("s2", lead)
-        st.preset_name["s1"] = f"{pr['name']} · {bname}"
-        st.preset_name["s2"] = f"{pr['name']} · {lname}"
-        self.project_drums(pr, kit)
+        keep = st.keep
+        if not keep["s1"]:
+            p.apply_preset("s1", bass)
+            st.preset_name["s1"] = f"{pr['name']} · {bname}"
+        if not keep["s2"]:
+            p.apply_preset("s2", lead)
+            st.preset_name["s2"] = f"{pr['name']} · {lname}"
+        if not keep["dr"]:
+            self.project_drums(pr, kit)
         if st.project_fx:
+            bus = {k: p.norm[k] for k in beatsmod.DRUM_BUS_KEYS if k in p.norm}
             for k in projmod.FX_KEYS:
                 p.set_val(k, SPECS[k].default)
             beatsmod.drum_bus(p, pr.get("drums", ""))     # v2.1: the genre's drum bus, then the project's own fx
             for k, v in pr["fx"].items():
                 p.set_val(k, v)
+            if keep["dr"]:                                # v2.4 KEEP DRUMS: their bus stays as it was
+                for k, n in bus.items():
+                    p.set_norm(k, n)
             if not self.clock_live():
                 self.audio.engine.bpm = float(pr["bpm"])  # with CLOCK OUT on, the BeatStep follows this tempo
         st.dirty = True
         if toast:
-            self.show_toast(f"PROJECT {i + 1}: {pr['name'].upper()} · {pr['bpm']} BPM", 1.8)
+            kept = self.kept_text()
+            self.show_toast(f"PROJECT {i + 1}: {pr['name'].upper()} · {pr['bpm']} BPM" + (f" · KEPT {kept}" if kept else ""), 1.8)
         self.request_redraw()
 
     def project_drums(self, pr, kit):
@@ -3837,6 +3977,10 @@ class App:
         if st.project is None:
             self.show_toast("PICK A PROJECT FIRST")
             return
+        kp = {"bass": "s1", "lead": "s2", "drums": "dr"}
+        if all(st.keep[kp[pt]] for pt in (kp if part == "all" else [part])):
+            self.show_toast(("THAT PART IS" if part != "all" else "EVERYTHING IS") + " KEPT · TAP KEEP TO LET IT CHANGE", 2.0)
+            return
         eng = self.audio.engine
         self.mut_pending = {"kind": "mutate", "part": part, "amount": amount or st.mut_amount, "bar": eng.bar(),
                             "t": time.time()}
@@ -3893,7 +4037,9 @@ class App:
             b = eng.bar()
             if b % n == n - 1 and self.auto_block != b // n:
                 self.auto_block = b // n
-                self.project_mutate(random.choice(["bass", "lead", "drums"]), "MILD", toast=False)
+                free = [pt for pt, k in (("bass", "s1"), ("lead", "s2"), ("drums", "dr")) if not st.keep[k]]
+                if free:
+                    self.project_mutate(random.choice(free), "MILD", toast=False)
 
     def mut_snapshot(self):
         p = self.state.params
@@ -3929,6 +4075,8 @@ class App:
         while len(self.mut_hist) > 16:
             self.mut_hist.popleft()
         parts = ["bass", "lead", "drums"] if part == "all" else [part]
+        kp = {"bass": "s1", "lead": "s2", "drums": "dr"}
+        parts = [pt for pt in parts if not st.keep[kp[pt]]]   # v2.4 KEEP
         targets = {}
         for pt in parts:
             if pt in projmod.PART_PRE:
@@ -4013,16 +4161,19 @@ class App:
                    + " AT THE NEXT BAR...")
             self.text(36, 434, sub, 12, T["accent"] if pend else T["ink_dim"], True, "w")
             kname = eng.drums.kit_name if st.project_kit == "samples" else f"{kits.NAMES[int(kit)]} (set order)"
-            rows = [("SYNTH 1 · BASS", bname, "bass"), ("SYNTH 2 · LEAD", lname, "lead"),
-                    ("DRUMS", kname, "drums")]
-            for j, (lab, val, part) in enumerate(rows):
+            kp = st.keep   # v2.4: a KEPT part shows what's really playing
+            rows = [("SYNTH 1 · BASS", st.preset_name["s1"] if kp["s1"] else bname, "bass", "s1"),
+                    ("SYNTH 2 · LEAD", st.preset_name["s2"] if kp["s2"] else lname, "lead", "s2"),
+                    ("DRUMS", eng.drums.kit_name if kp["dr"] else kname, "drums", "dr")]
+            for j, (lab, val, part, kk) in enumerate(rows):
                 y = 452 + j * 38
-                self.rrect(30, y, 600, 34, 7, T["seg_inactive"])
+                self.rrect(30, y, 508, 34, 7, T["seg_inactive"])
                 n = self.mut_count.get(part, 0)
                 self.text(44, y + 17, lab, 12, T.get("title", T["accent"]), True, "w")
-                self.text_fit(190, y + 17, val.upper() + (f"   · MUTATED ×{n}" if n else ""), 15, 430,
+                self.text_fit(190, y + 17, val.upper() + (f"   · MUTATED ×{n}" if n else ""), 15, 340,
                               T["ink"], True, "w")
-                self.button(698, y + 17, 120, 34, "MUTATE", lambda pt=part: self.project_mutate(pt), px=13)
+                self.keep_button(590, y + 17, 96, 34, kk, px=12)
+                self.button(698, y + 17, 112, 34, "MUTATE", lambda pt=part: self.project_mutate(pt), px=13)
         # ---- mutate
         self.frame(784, 342, 482, 226, "Mutate", "NEW SOUNDS ON THE NEXT BAR")
         self.button(1025, 418, 450, 66, "MUTATE ALL", lambda: self.project_mutate("all"), accent=True, px=24)
@@ -4035,6 +4186,7 @@ class App:
         cy = 650
         self.button(52, cy, 52, 52, "−", lambda: self.beat_tempo(-1), px=22)
         self.readout(140, cy, 112, 52, f"{eng.bpm:.0f} BPM")
+        self.hit(84, cy - 26, 112, 52, self.toggle_tempo)
         self.button(228, cy, 52, 52, "+", lambda: self.beat_tempo(1), px=22)
         self.button(390, cy, 210, 52, "CLOCK OUT: ON" if st.clock_master else "CLOCK OUT: OFF",
                     self.toggle_clock_master, on=st.clock_master, px=15)
@@ -4078,6 +4230,271 @@ class App:
         bp.beat.new_ending()
         self.beat_save()
         self.show_toast("NEW ENDING: " + bp.beat.turn_text().upper())
+
+    # ---------------------------------------------------------------- v2.4: KEEP and SONG START
+    KEEP_NAMES = {"dr": "DRUMS", "s1": "SYNTH 1", "s2": "SYNTH 2"}
+
+    def toggle_keep(self, part):
+        k = self.state.keep
+        k[part] = not k[part]
+        self.state.dirty = True
+        self.show_toast(f"KEEP {self.KEEP_NAMES[part]}: " + ("ON · NOTHING CHANGES IT FOR YOU" if k[part] else "OFF"), 1.6)
+        self.request_redraw()
+
+    def kept_text(self):
+        return " + ".join(self.KEEP_NAMES[p] for p in ("dr", "s1", "s2") if self.state.keep[p])
+
+    def kept_block(self, part):
+        """True (with a message) when KEEP stops something from changing this part."""
+        if self.state.keep.get(part):
+            self.show_toast(f"{self.KEEP_NAMES[part]} IS KEPT · TAP KEEP TO LET IT CHANGE", 1.8)
+            return True
+        return False
+
+    def keep_button(self, cx, cy, w, h, part, px=13):
+        on = self.state.keep[part]
+        self.button(cx, cy, w, h, ("✓ KEPT" if on else "KEEP"), lambda: self.toggle_keep(part), on=on, px=px)
+
+    def song_snapshot(self):
+        eng = self.audio.engine
+        bp = eng.beats
+        p = self.state.params
+        return {"song": bp.parts.to_json() if bp.parts else None, "mute": sorted(bp.parts_mute),
+                "beat": bp.beat.to_json(), "bars": self.state.beat_bars, "bpm": eng.bpm,
+                "kit": copy.deepcopy(self.state.kit),
+                "bus": {k: p.norm[k] for k in beatsmod.DRUM_BUS_KEYS if k in p.norm},
+                "synth": {k: p.norm[k] for k in SPECS if k.startswith(("s1.", "s2.")) and not k.endswith((".vol", ".mute", ".solo"))},
+                "names": dict(self.state.preset_name)}
+
+    def song_back(self):
+        if not self.song_hist:
+            self.show_toast("NOTHING TO GO BACK TO")
+            return
+        snap = self.song_hist.pop()
+        eng = self.audio.engine
+        bp = eng.beats
+        st = self.state
+        p = st.params
+        bp.parts = partsmod.Song.from_json(snap["song"]) if snap["song"] else None
+        bp.parts_mute = set(snap["mute"])
+        bp.part_release = True
+        st.song, st.song_mute = snap["song"], list(snap["mute"])
+        bp.beat = Beat.from_json(snap["beat"])
+        st.beat_bars = snap["bars"]
+        if snap["kit"] != st.kit:
+            st.kit = snap["kit"]
+            try:
+                self.audio.apply_kit(eng)
+            except Exception as e:  # noqa: BLE001
+                log("song back kit failed", e)
+        for k, n in snap["bus"].items():
+            p.set_norm(k, n)
+        for k, n in snap["synth"].items():
+            p.set_norm(k, n)
+        st.preset_name.update(snap["names"])
+        if not self.clock_live():
+            eng.bpm = float(snap["bpm"])
+        self.beat_save()
+        self.show_toast("BACK TO THE LAST SONG" + (f" · {len(self.song_hist)} MORE" if self.song_hist else ""), 1.4)
+        self.request_redraw()
+
+    def song_sound(self, pre, names):
+        """Put one of these presets on a synth (the parts play their own chords, so no chord / arp modes)."""
+        lst = PRESETS[pre]
+        pick = [(n, v) for n, v in lst if n in names] or [lst[0]]
+        name, vals = random.choice(pick)
+        p = self.state.params
+        p.apply_preset(pre, vals)
+        for k, v in (("chord", 0), ("arp", 0), ("glmode", 0)):
+            if f"{pre}.{k}" in SPECS and (k != "glmode" or pre == "s2"):
+                p.set_val(f"{pre}.{k}", v)
+        self.state.preset_name[pre] = name
+
+    def song_start(self, g=None):
+        """One tap: a new beat in the genre, a bass line on Synth 1 and chords on Synth 2, all in one key, at the
+        genre's tempo, playing. KEEP leaves a part as it is."""
+        eng = self.audio.engine
+        bp = eng.beats
+        st = self.state
+        if g is None:
+            g = bp.beat.genre
+        elif g == "surprise":
+            g = random.choice([i for i in range(len(GENRES)) if i != bp.beat.genre])
+        g %= len(GENRES)
+        gname = GENRES[g][0]
+        self.song_hist.append(self.song_snapshot())
+        del self.song_hist[:-20]
+        st.project = None   # the synths now play the song, not a BeatStep project
+        self.mut_pending = None
+        if not st.keep["dr"]:
+            self.beat_genre(g)
+        song = partsmod.Song(gname)
+        bp.parts = song
+        st.song = song.to_json()
+        if not st.keep["s1"]:
+            self.song_sound("s1", song.bass_sounds)
+        if not st.keep["s2"]:
+            self.song_sound("s2", song.pad_sounds)
+        st.dirty = True
+        running = self.clockout.playing if st.clock_master else bp.on
+        if not running:
+            if st.clock_master:
+                self.beat_transport()
+            else:
+                bp.on = True
+                bp.auto = False
+                if not eng.playing:
+                    bp.pos = 0.0
+        self.show_toast(f"{gname.upper()} · {partsmod.key_name(song.root, song.minor)} · {song.chords_text()}", 2.5)
+        self.request_redraw()
+
+    def song_edit(self, what):
+        bp = self.audio.engine.beats
+        if bp.parts is None:
+            self.song_start()
+            return
+        self.song_hist.append(self.song_snapshot())
+        del self.song_hist[:-20]
+        s = partsmod.Song.from_json(bp.parts.to_json())   # a copy: the audio thread keeps reading the old one
+        if what == "bass":
+            if self.kept_block("s1"):
+                self.song_hist.pop()
+                return
+            s.new_bass()
+            msg = "NEW BASS LINE"
+        elif what == "chords":
+            if self.kept_block("s2"):
+                self.song_hist.pop()
+                return
+            s.new_chords()
+            msg = "NEW CHORDS: " + s.chords_text()
+        else:
+            s.transpose(what)
+            msg = "KEY: " + partsmod.key_name(s.root, s.minor)
+        bp.parts = s
+        self.state.song = s.to_json()
+        self.state.dirty = True
+        self.show_toast(msg, 1.6)
+        self.request_redraw()
+
+    def song_mute_toggle(self, part):
+        bp = self.audio.engine.beats
+        m = set(bp.parts_mute)
+        m ^= {part}
+        bp.parts_mute = m
+        if part in m:
+            bp.part_release = True
+        self.state.song_mute = sorted(m)
+        self.state.dirty = True
+
+    def song_key(self):
+        """The key of the song that's playing (for bounce names, e.g. "Am"), or ""."""
+        bp = self.audio.engine.beats
+        s = bp.parts
+        if s is None or not bp.on or len(bp.parts_mute) == 2:
+            return ""
+        return partsmod.short_key(s.root, s.minor)
+
+    def export_song_midi(self):
+        """The song as a .mid file: bass, chords and drums on their own tracks (4 bars), for the MPC or a DAW."""
+        if mido is None:
+            self.show_toast("MIDI FILES NEED MIDO - RUN THE INSTALLER AGAIN")
+            return
+        bp = self.audio.engine.beats
+        s = bp.parts
+        if s is None:
+            self.show_toast("TAP SONG START FIRST")
+            return
+        q = 120
+        mid = mido.MidiFile(ticks_per_beat=480)
+        names = {"s1": "Bass", "s2": "Chords"}
+        for part in ("s1", "s2"):
+            tr = mido.MidiTrack()
+            mid.tracks.append(tr)
+            tr.append(mido.MetaMessage("track_name", name=names[part], time=0))
+            if part == "s1":
+                tr.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(self.audio.engine.bpm), time=0))
+            ch = max(0, min(15, self.state.ch[part] - 1))
+            ev = []
+            for st_, pt, nt, vel, ln in s.notes():
+                if pt == part:
+                    ev.append((st_ * q, 1, nt, vel))
+                    ev.append((st_ * q + int(ln * q * 0.88), 0, nt, 0))
+            ev.sort(key=lambda e: (e[0], e[1]))
+            last = 0
+            for at, kind, nt, vel in ev:
+                tr.append(mido.Message("note_on" if kind else "note_off", channel=ch, note=nt, velocity=vel, time=at - last))
+                last = at
+        reps = max(1, s.STEPS // max(bp.beat.steps, 1))
+        dmid = self._beat_midi_track([bp.beat.to_json()] * reps)
+        if dmid is not None:
+            mid.tracks.append(dmid)
+        try:
+            folder = recordings_dir()
+            os.makedirs(folder, exist_ok=True)
+            key = partsmod.key_name(s.root, s.minor).replace(" MINOR", "m").replace(" MAJOR", "")
+            path = os.path.join(folder, f"PotentialBox Song {s.genre} {self.audio.engine.bpm:.0f}bpm {key} "
+                                        f"{time.strftime('%Y-%m-%d %H%M%S')}.mid")
+            mid.save(path)
+            self.show_toast("SONG MIDI SAVED IN POTENTIALBOX RECORDINGS (BASS, CHORDS, DRUMS)", 2.5)
+        except Exception as e:  # noqa: BLE001
+            log("song midi failed", e)
+            self.show_toast("COULDN'T SAVE THE MIDI FILE")
+
+    def draw_song(self):
+        eng = self.audio.engine
+        bp = eng.beats
+        st = self.state
+        s = bp.parts
+        self.frame(14, 100, 1252, 632, "Song start", "ONE TAP: A BEAT, A BASS LINE AND CHORDS IN ONE KEY")
+        cur = s.genre if s else None
+        self.text(30, 150, "TAP A GENRE TO START A SONG IN IT", 12, T["accent"], True, "w")
+        for i, gdef in enumerate(GENRES):
+            r, c = divmod(i, 12)
+            nm = {"Reggae One Drop": "ONE DROP"}.get(gdef[0], gdef[0].upper())
+            self.button(81 + c * 102, 186 + r * 52, 96, 46, nm, lambda gi=i: self.song_start(gi), on=gdef[0] == cur,
+                        px=11 if len(nm) > 10 else 12)
+        cy = 302
+        running = self.clockout.playing if st.clock_master else bp.on
+        gnow = GENRES[bp.beat.genre][0].upper()
+        self.button(250, cy, 440, 64, f"SONG START · {cur.upper() if cur else gnow}", lambda: self.song_start(
+            GENRES.index(next(gd for gd in GENRES if gd[0] == cur)) if cur else None), accent=True, px=20)
+        self.button(600, cy, 240, 64, "SURPRISE ME", lambda: self.song_start("surprise"), accent=True, px=18)
+        self.button(810, cy, 160, 64, "◀ BACK", self.song_back, px=17)
+        self.button(1000, cy, 200, 64, "STOP" if running else "▶ PLAY", lambda: self.beat_pad(0, True),
+                    accent=not running, px=20)
+        self.button(1180, cy, 140, 64, "MIDI FILE", self.export_song_midi, px=14)
+        # ---- what's playing
+        self.frame(14, 344, 1252, 388, "Now", "KEEP: PROJECTS, MUTATE, RANDOM AND SONG START LEAVE THAT PART ALONE")
+        if s is None:
+            self.text(30, 430, "No song yet. Tap a genre, or SONG START.", 18, T["ink_dim"], False, "w")
+        else:
+            self.text(30, 404, partsmod.key_name(s.root, s.minor), 26, T["ink"], True, "w")
+            self.button(300, 404, 60, 40, "−", lambda: self.song_edit(-1), px=20)
+            self.text(355, 404, "KEY", 12, T["ink_dim"], True)
+            self.button(410, 404, 60, 40, "+", lambda: self.song_edit(1), px=20)
+            pos = (bp.part_step // 16) % 4 if (running and bp.part_step is not None) else None
+            for b_, deg in enumerate(s.prog):
+                x0 = 470 + b_ * 196
+                on = pos == b_
+                self.rrect(x0, 382, 186, 44, 8, T["btn_on"] if on else T["seg_inactive"])
+                self.text(x0 + 93, 404, s.chord_name(deg), 18, T["btn_text"] if on else T["ink"], True)
+        rows = (("s1", "BASS · SYNTH 1", st.preset_name.get("s1", ""), "NEW BASS LINE", lambda: self.song_edit("bass")),
+                ("s2", "CHORDS · SYNTH 2", st.preset_name.get("s2", ""), "NEW CHORDS", lambda: self.song_edit("chords")),
+                ("dr", "DRUMS", f"{GENRES[bp.beat.genre][0]} · {eng.drums.kit_name}", "NEW BEAT", lambda: self.beat_pad(1, True)))
+        for k, (part, label, what, newl, fn) in enumerate(rows):
+            y = 452 + k * 64
+            self.rrect(30, y, 640, 54, 8, T["seg_inactive"])
+            self.text(46, y + 27, label, 13, T["ink_dim"], True, "w")
+            self.text_fit(232, y + 27, what.upper(), 16, 430, T["ink"], True, "w")
+            self.button(770, y + 27, 180, 52, newl, fn, px=14)
+            if part != "dr":
+                muted = part in bp.parts_mute
+                self.button(960, y + 27, 160, 52, ("BASS" if part == "s1" else "CHORDS") + (": OFF" if muted else ": ON"),
+                            lambda pp=part: self.song_mute_toggle(pp), on=not muted and s is not None, px=14)
+            self.keep_button(1150, y + 27, 180, 52, part, px=15)
+        self.text(30, 712, "The bass and chords play from here with the beat. If the BeatStep also plays Synth 1 or 2, "
+                  "turn BASS or CHORDS off.", 12, T["ink_dim"], False, "w")
 
     def export_beat_midi(self):
         self.save_midi([self.audio.engine.beats.beat.to_json()], "Beat")
@@ -4795,13 +5212,19 @@ class App:
             self.audio.engine.bounce = None
             self.show_toast("BOUNCE CANCELLED")
 
-    def save_capture(self, get_parts, bpm, bars, silent_msg, lead="SAVED", send=False):
+    def save_capture(self, get_parts, bpm, bars, silent_msg, lead="SAVED", send=False, key=""):
         """Save a bounce or a grab as stems in Music > PotentialBox Loops (in the background), then list it
         under YOUR BOUNCES and auto-send it to the MPC if that's on."""
         eng = self.audio.engine
         pr = self.state.project
         what = projmod.NAMES[pr] if pr is not None else "Jam"
-        name = capture.bounce_name(what, bpm, bars)
+        if self.song_key():   # v2.4: a SONG START is playing: name it after its genre
+            what = self.audio.engine.beats.parts.genre
+        taken = {j["name"] for j in self.bounce_jobs}
+        name = capture.bounce_name(what, bpm, bars, key)
+        while name in taken:   # two saving at once: the take number isn't on disk yet
+            n = int(name.rsplit(" ", 1)[1]) + 1
+            name = f"{name.rsplit(' ', 1)[0]} {n:02d}"
         job = {"state": "saving", "name": name, "lead": lead, "send": send}
         self.bounce_jobs.append(job)
         self.bounce_job = job
@@ -4876,7 +5299,8 @@ class App:
             self.show_toast("PLAY A WHOLE BAR FIRST")
             return
         lead = "GRABBED" if got == bars else f"ONLY {got} BAR{'S' if got > 1 else ''} SO FAR · GRABBED"
-        self.save_capture(lambda: parts, bpm, got, f"NOTHING PLAYED IN THE LAST {got} BAR{'S' if got > 1 else ''}", lead)
+        self.save_capture(lambda: parts, bpm, got, f"NOTHING PLAYED IN THE LAST {got} BAR{'S' if got > 1 else ''}", lead,
+                          key=self.song_key() or eng.key_between(end - need, end))
         self.show_toast(f"GRABBING THE LAST {got} BAR{'S' if got > 1 else ''}...", 1.2)
 
     def set_grab_bars(self, label):
@@ -4893,7 +5317,8 @@ class App:
             if b["state"] == "done":
                 eng.bounce = None
                 self.save_capture(lambda: bounce_stems(b), b["bpm"], b["bars"], "NOTHING HEARD - IS IT PLAYING?",
-                                  send=b.get("send", False))
+                                  send=b.get("send", False),
+                                  key=self.song_key() or eng.key_between(eng.samples - b["need"], eng.samples))
         self.grab_poll()
         for job in list(self.bounce_jobs):
             if job["state"] not in ("saved", "error"):
@@ -5057,7 +5482,7 @@ class App:
                   "exactly that long, so they loop.", 14, T["ink_dim"], False, "w")
         self.text(36, 446, "BOUNCE records the next bars (from the next bar line). GRAB saves the bars you just played.",
                   14, T["ink_dim"], False, "w")
-        self.text(36, 474, "Saved in Music > PotentialBox Loops, named with the tempo.", 14, T["ink_dim"], False, "w")
+        self.text(36, 474, "Saved in Music > PotentialBox Loops, named with the tempo, key and a take number.", 14, T["ink_dim"], False, "w")
         # ---- MPC
         self.frame(854, 100, 412, 400, "Send to MPC", "OVER WI-FI, LIKE MPC TOOLS")
         snd = self.mpc_sender

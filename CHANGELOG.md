@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.4.0
+**Song start, KEEP, tap tempo, better names.**
+- **BEATS > SONG START** (new tab): tap a genre and you get a new beat, a bass line on Synth 1 and chords on Synth 2,
+  all in one key, at the genre's tempo, playing. Each genre has its own bass and chord style and its own sounds. NEW
+  BASS LINE, NEW CHORDS, NEW BEAT, KEY − / +, BASS / CHORDS on-off, SURPRISE ME, ◀ BACK and MIDI FILE (bass, chords
+  and drums). The song is saved with your settings. Loading a project hands the synths back to the BeatStep.
+- **KEEP** on JAM > PROJECTS (each NOW PLAYING row) and on SONG START: a kept part stays as it is when you load a
+  project, NEW SOUNDS, MUTATE / AUTO, the random pads or SONG START.
+- **Tempo panel**: tap the tempo in the top bar (or on BEATS / PROJECTS) for a big TAP key (tap in time), one-tap
+  presets (70-174), ±1 / ±5, half time and double.
+- **Bounce names** have the key and a take number: `Acid 126bpm Am 4bar 03` instead of a time. The key comes from
+  SONG START, or is worked out from the notes the synths played; it's left out when it can't tell.
+- The top line no longer says KIT twice ("ACID SET KIT", not "KIT ACID SET KIT").
+
 ## 2.3.0
 **Bounce and send without leaving JAM, and listen before you send.**
 - **BOUNCE NEXT 4 BARS + SEND** on JAM > LIVE FX, under GRAB: records the next bars as stems, then sends them to

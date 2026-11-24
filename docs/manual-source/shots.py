@@ -230,4 +230,23 @@ def wf9():
                                     "status": "On the MPC: MPC-SD > PotentialBox Loops > Acid 126bpm 4bar 204655"})()
 shot("wf-09", page="Capture", setup=wf9)
 app.mpc_sender = None
+# --- v2.4: song start, tempo panel, keep
+import random as _rnd
+from potentialbox import parts as _parts
+def song():
+    _rnd.seed(11)
+    app.clock_live = lambda: False
+    app.song_start([g[0] for g in A.GENRES].index("Deep House"))
+    eng.beats.parts = _parts.Song("Deep House", root=9, minor=True, seed=3, prog=(0, 5, 2, 6))
+    app.state.song = eng.beats.parts.to_json()
+    eng.beats.part_step = 21
+    app.state.keep["s2"] = True
+shot("song", page="Song", setup=song)
+app.state.keep["s2"] = False
+eng.beats.on = False
+def tempo():
+    eng.bpm = 92.0
+    app.taps = [0, 0.65, 1.3, 1.95]; app.tap_bpm = 92
+shot("tempo", page="Beats", setup=tempo, overlay=("tempo",))
+app.overlay = None
 r.destroy()

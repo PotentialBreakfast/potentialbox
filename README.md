@@ -28,7 +28,7 @@ Everything lives under five big keys along the bottom; each has a few sub-tabs.
 |---|---|
 | **JAM** | **PROJECTS**: sounds for the 16 BeatStep genre sets, MUTATE (new sounds on the next bar), talk to it · **LIVE FX**: punch-in effects, 8 morphing scenes, fill, **GRAB** the last bars you played, **BOUNCE + SEND** · **KNOBS** · **MACROS** |
 | **SOUNDS** | **SYNTH 1 / SYNTH 2**: a sound browser (77 presets by type) with every setting under EDIT SOUND · **DRUMS**: kits, Kit Maker, pad tune / mix / groove / choke · **MIX** · **FX** |
-| **BEATS** | Beat generator in 24 genres, ◀ BACK to the beat before, Send to BeatStep, Clock out · **ARRANGE**: chain beats into a song |
+| **BEATS** | Beat generator in 24 genres, ◀ BACK to the beat before, Send to BeatStep, Clock out · **SONG START**: a beat, bass line and chords in one key, in one tap · **ARRANGE**: chain beats into a song |
 | **CAPTURE** | **STEMS**: one tap bounces the next (or grabs the last) 1, 2, 4 or 8 bar-exact loops (mix + drums + each synth + FX + looper) and can send them straight to your MPC · **LOOPER**: 5-track RC-505-style looper |
 | **SETUP** | Audio (ASIO), MIDI, knobs, pad actions, My Setups |
 
@@ -36,9 +36,9 @@ Everything lives under five big keys along the bottom; each has a few sub-tabs.
 |---|---|---|
 | ![Synth 1 sound browser](docs/images/browser-s1.png) | ![Capture stems](docs/images/capture.png) | ![Live FX](docs/images/live.png) |
 
-| Beats | Looper | Kit Maker |
+| Beats | Song start | Looper |
 |---|---|---|
-| ![Beats](docs/images/beats.png) | ![Looper](docs/images/loop.png) | ![Kit Maker](docs/images/kitmaker.png) |
+| ![Beats](docs/images/beats.png) | ![Song start](docs/images/song.png) | ![Looper](docs/images/loop.png) |
 
 ## Features
 
@@ -46,6 +46,8 @@ Everything lives under five big keys along the bottom; each has a few sub-tabs.
 - **77 presets** made for the current engine, sorted into Bass, Lead, Keys, Pad, Pluck, Stab and FX, and level-matched so switching never jumps in volume
 - **Modulation**: 2 tempo-syncable LFOs with a 16-step mode, a mod envelope and 12 mod slots per synth; scale chords and a chord lane driven by the BeatStep's drum tracks; an arpeggiator on each synth
 - **Projects**: one tap (or a pad, or your voice) loads a genre's bass, lead, kit, effects and tempo to match your BeatStep genre sets; MUTATE changes them on the next bar, manually or every 8 / 16 bars
+- **Song start**: one tap gives you drums, a bass line and chords in the same key, in any of 24 genres
+- **Keep** a part (bass, lead or drums) while projects, mutate and random change the rest; **tap tempo**
 - **Bounce + send from JAM**, and **▶ listen** to any bounce before it goes to the MPC
 - **Grab what you just played**: it's always listening, so one tap saves the last 1-8 bars as stems, snapped to the bar
 - **Bounce stems**: bar-exact loops of the mix and each part, 24-bit WAV, named with the tempo, and sent to the MPC's SD card over SSH using MPC TOOLS' login

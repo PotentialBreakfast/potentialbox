@@ -170,8 +170,9 @@ p("Everything is pre-wired for the BeatStep Pro's factory settings, so you can p
   "is a big key you can tap, and everything saves by itself: there is no typing anywhere in the app.")
 note("<b>New to the layout?</b> The chapter <b>A jam, start to finish</b> walks through one whole session, from loading "
      "a project to chopping its stems on your MPC, with the screen for every step.")
-note(f"<b>New in {VERSION}:</b> <b>BOUNCE NEXT + SEND</b> on JAM &gt; LIVE FX; <b>▶</b> in YOUR BOUNCES to listen "
-     "before you send. <b>2.2:</b> <b>GRAB</b> saves the bars you just played; <b>◀ BACK</b> on BEATS.")
+note(f"<b>New in {VERSION}:</b> <b>SONG START</b> (BEATS): a beat, a bass line and chords in one key, in one tap; "
+     "<b>KEEP</b> a part while everything else changes; tap the tempo for <b>TAP TEMPO</b> and presets; bounces named "
+     "with their key. <b>2.3:</b> BOUNCE NEXT + SEND on JAM, ▶ listen to bounces. <b>2.2:</b> GRAB, ◀ BACK on BEATS.")
 note("<b>New in 2.0:</b> a new layout with five sections instead of fourteen tabs; the Hi-Fi look, refreshed; "
      "a <b>sound browser</b> for each synth with sounds sorted by type; <b>77 new presets</b> made for the current synth "
      "engine, all level-matched; a new <b>PROJECTS</b> screen for jamming; and <b>CAPTURE &gt; STEMS</b>, which bounces "
@@ -287,11 +288,19 @@ table(["Section", "Sub-tabs"], [(b(sec), " · ".join(lab for lab, _ in subs)) fo
 h2("The display and the lights")
 ul([f"The {b('display')} at the top says what's loaded: the project, Synth 1's and Synth 2's sounds and the kit. While "
     "you record or bounce it shows that first, and messages pop up in it for a moment.",
-    f"{b('BPM')}: the tempo PotentialBox is playing at. The {b('level meter')} beside it turns red when you push the "
-    "limiter or soft clip.",
+    f"{b('BPM')}: the tempo PotentialBox is playing at. Tap it (or the tempo on BEATS or PROJECTS) for the "
+    f"{b('Tempo')} panel. The {b('level meter')} beside it turns red when you push the limiter or soft clip.",
     f"The {b('AUDIO')} and {b('MIDI')} lights (under the meter) are green when the audio output and the BeatStep are "
     "working; the MIDI light flickers when MIDI arrives. Tap either to go to Setup. If the audio has a problem, the "
     "display says so in red."])
+h2("Tempo: tap it in or pick one")
+img("tempo", "The Tempo panel: tap the big key in time, or pick a tempo.")
+ul([f"Tap {b('TAP')} in time with the music, 4 times or more. The tempo follows from the second tap and settles as you "
+    "keep going; one late tap doesn't throw it. Stop for 2 seconds and it starts again.",
+    f"{b('PICK ONE')}: 70, 80, 90, 100, 110, 120, 128, 140 or 174 in one tap. {b('NUDGE')} moves it 1 or 5, and "
+    f"{b('HALF TIME')} and {b('DOUBLE')} halve or double it.",
+    "When the BeatStep is the clock, the tempo comes from it: TAP still tells you what you tapped, so you can set the "
+    "BeatStep to it. Turn CLOCK OUT on (BEATS) to set the tempo from PotentialBox."])
 h2("Pages inside a sub-tab")
 p("Some sub-tabs have pages of knobs: the synths' edit pages, Drums, Mix and FX. The page keys sit at the top of the "
   "knob area. The knobs are laid out like the BeatStep's: top row 1-8, bottom row 9-16, in labelled groups.")
@@ -399,6 +408,11 @@ for i, pr in enumerate(projmod.PROJECTS):
                  E(" / ".join(n for n, _ in pr["bass"])), E(" / ".join(n for n, _ in pr["lead"])),
                  E(" / ".join(kits.NAMES[k] for k in pr["kits"]))))
 table(["#", "Genre", "BPM", "Key", "Synth 1 (Seq 1)", "Synth 2 (Seq 2)", "Kit"], rows, "compact")
+h2("KEEP a part")
+p(f"{b('KEEP')} on a NOW PLAYING row holds on to that part: Synth 1, Synth 2 or the drums. Loading another project, "
+  "NEW SOUNDS, MUTATE (and AUTO), the random pads and SONG START then leave it as it is and change only the rest. So "
+  "you can keep a bass you love and try every project's drums under it. Tap KEPT to let it change again. Picking a "
+  "sound or kit yourself still works. The same KEEP keys are on BEATS &gt; SONG START.")
 h2("New sounds")
 ul([f"{b('NEW SOUNDS')} steps through pairings of each project's two basses, two leads and two kits.",
     f"{b('KIT: MY SAMPLES')} makes the kit with the Kit Maker from your own one-shots, in a style that suits the genre. "
@@ -968,6 +982,29 @@ h2("The BeatStep's pads on BEATS")
 pads_table(BEAT_PADS, "Pad", "Beats pad")
 end()
 
+# ============================================================================ v2.4 song start
+chapter("BEATS: Song start", "BEATS &gt; SONG START gives you a whole groove in one tap: a beat in the genre, a bass "
+        "line on Synth 1 and chords on Synth 2, all in one key, at the genre's tempo, playing.")
+img("song", "BEATS &gt; SONG START: a Deep House song in A minor, on its second chord. Synth 2 is KEPT.")
+steps(["Tap a genre. You get a new beat, a fitting bass sound playing a bass line, and a pad, keys or stab sound "
+       "playing chords, in a key it picks. It starts playing.",
+       "Like it? Jam on it, GRAB it (JAM &gt; LIVE FX), or tap <b>MIDI FILE</b> for the bass, chords and drums as MIDI.",
+       "Not quite? <b>NEW BASS LINE</b>, <b>NEW CHORDS</b> or <b>NEW BEAT</b> change one part, in the same key. "
+       "<b>KEY − / +</b> moves the whole song. <b>◀ BACK</b> goes back to the song before."])
+ul([f"{b('SONG START')} makes another song in the same genre; {b('SURPRISE ME')} picks a genre for you.",
+    "NOW shows the key and the 4 chords, one per bar; the one playing lights up.",
+    f"{b('BASS: ON / OFF')} and {b('CHORDS: ON / OFF')} silence a part. If the BeatStep plays Synth 1 or Synth 2 at the "
+    "same time, turn that part off here.",
+    f"{b('KEEP')} holds on to a part: SONG START, projects, mutate and the random pads leave it alone (see JAM: "
+    "Projects). Keep the drums and tap genres to try different bass lines and chords over them.",
+    "Each genre has its own style: offbeat house basses and chord stabs, long 808s under trap, reggae skanks on 2 and 4, "
+    "funk and disco octaves, lo-fi 7th chords.",
+    "Loading a project hands the synths back to the BeatStep and stops the song's bass and chords; ◀ BACK here brings "
+    "the song back.",
+    "The song is saved, so it's still there next time. The BeatStep's knobs on this tab set the levels, filters and "
+    "sends of the parts."])
+end()
+
 # ============================================================================ 16 arrangement
 chapter("BEATS: Arrange", "BEATS &gt; ARRANGE chains beats into a song: they play in order, each for its own "
         "length (1, 2 or 4 bars), then round again.")
@@ -997,8 +1034,10 @@ steps(["Play something: the BeatStep, a project, BEATS or the looper.",
        "Tap <b>BOUNCE NEXT</b>. While the BeatStep (or CLOCK OUT) is playing it waits for the next bar, then records exactly "
        "that many bars. The display and the progress bar show which bar it's on. CANCEL stops it.",
        "It says SAVED and the bounce appears under YOUR BOUNCES. Tap its name to open its folder."])
-p("Each bounce is a folder in <b>Music &gt; PotentialBox Loops</b>, named with the project, tempo, length and time, "
-  "for example <code>Acid 126bpm 4bar 211405</code>. Inside are 24-bit WAV files:")
+p("Each bounce is a folder in <b>Music &gt; PotentialBox Loops</b>, named with the project (or the song's genre), the "
+  "tempo, the key, the length and a take number that counts up, for example <code>Acid 126bpm Am 4bar 03</code>. "
+  "The key is the SONG START's key, or worked out from the notes the synths played in that loop; if it can't tell "
+  "(a drum loop, a single note), the name leaves it out. Inside are 24-bit WAV files:")
 table(["File", "What's in it"], [
     (b("… - Mix.wav"), "Everything you hear, after the master effects."),
     (b("… - Drums.wav"), "The drum sampler, with its EQ and ducking."),

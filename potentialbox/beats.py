@@ -576,6 +576,24 @@ class BeatPlayer:
         self.chain_on = False
         self.chain_i = 0
         self.chain_pos = 0
+        # v2.4 SONG START: a bass line on Synth 1 and chords on Synth 2 (parts.Song), played with the beat
+        self.parts = None
+        self.parts_mute = set()    # "s1" / "s2" switched off
+        self.part_q = []           # [abs sample, part, note, vel (0 = off)]
+        self.part_held = set()     # (part, note) sounding now
+        self.part_release = False  # GUI / stop: let go of every part note
+        self.part_step = None      # where the song is (0-63), for the screen
+
+    @property
+    def on(self):
+        return self._on
+
+    @on.setter
+    def on(self, v):
+        """Stopping the beat also lets go of the SONG START notes (v2.4)."""
+        if getattr(self, "_on", False) and not v:
+            self.part_release = True
+        self._on = bool(v)
 
     # transport hooks (audio thread)
     def chain_restart(self):
@@ -596,6 +614,7 @@ class BeatPlayer:
         if self.send == "sending":
             self.send = None
         self.pending = []
+        self.part_release = True
 
     def on_tick(self, t, offset=0):
         """Clock tick while the transport plays; step k starts at tick 6k."""
@@ -666,11 +685,51 @@ class BeatPlayer:
                         self.midi_out(pad, vel)
                     except Exception:
                         pass
+        song = self.parts
+        if song is not None and not sending and self.on:
+            self.part_step = k % song.STEPS
+            for part, notes, vel, ln in song.events.get(k % song.STEPS, ()):
+                if part in self.parts_mute:
+                    continue
+                at = now + delay
+                for nt in notes:
+                    self.part_q.append((at, part, nt, vel))
+                    self.part_q.append((at + ln * L - 0.12 * L, part, nt, 0))
         if sending:
             self.sent += 1
             if self.sent >= b.steps:
                 self.send = None
                 self.send_done = True
+
+    def render_parts(self, n):
+        """v2.4: play the SONG START notes that fall in this block (called before the synths render)."""
+        eng = self.eng
+        if self.part_release:
+            self.part_release = False
+            self.part_q = []
+            for part, nt in list(self.part_held):
+                eng.part_note(part, nt, 0)
+            self.part_held.clear()
+            return
+        q = self.part_q
+        if not q:
+            return
+        end = eng.samples + n
+        due = [e for e in q if e[0] < end]
+        if not due:
+            return
+        self.part_q = [e for e in q if e[0] >= end]
+        due.sort(key=lambda e: (e[0], e[3] > 0))
+        for _at, part, nt, vel in due:
+            if vel:
+                if (part, nt) in self.part_held:
+                    eng.part_note(part, nt, 0)
+                self.part_held.add((part, nt))
+            else:
+                if (part, nt) not in self.part_held:
+                    continue
+                self.part_held.discard((part, nt))
+            eng.part_note(part, nt, vel)
 
     def render_hits(self, n):
         """Called before the drums render: start the hits that fall in this block."""

@@ -560,6 +560,9 @@ PAGES = collections.OrderedDict([
     # v2.0: CAPTURE > STEMS. While you bounce, the BeatStep knobs ride the levels and sends
     ("Capture", ["s1.vol", "s2.vol", "dr.vol", "lp.vol", "fx.s1", "fx.s2", "fx.dr", "m.master",
                  "s1.cutoff", "s2.cutoff", "dr.filter", "m.filter", "rv.s1", "rv.s2", "rv.dr", "m.crush"]),
+    # v2.4 SONG START: the parts' levels, tone and space
+    ("Song", ["s1.vol", "s2.vol", "dr.vol", "m.master", "s1.cutoff", "s2.cutoff", "dr.filter", "m.filter",
+              "fx.s1", "fx.s2", "rv.s1", "rv.s2", "dk.s1", "dk.s2", "dr.drive", "bt.swing"]),
     ("Mix", ["s1.vol", "s2.vol", "dr.vol", "m.master", "dr.filter", "dr.drive", "m.drive", "m.filter",
              "dk.s1", "dk.s2", "dk.fx", "dk.src", "dk.rel", "m.glue", "m.gluespd", "m.width"]),
     ("Mix EQ", ["eq.s1.lo", "eq.s1.mid", "eq.s1.hi", "eq.s2.lo", "eq.s2.mid", "eq.s2.hi", "eq.lof", "eq.hif",
@@ -2925,6 +2928,7 @@ class Engine:
         self.audition = None  # v2.3: a bounce looping for a listen (heard only, never recorded)
         self.hist = None     # v2.2 GRAB: the last HIST_SECS of the mix and every stem, always running
         self.hist_marks = collections.deque(maxlen=64)   # where bars started (absolute sample counts)
+        self.note_log = collections.deque(maxlen=1024)  # v2.4: synth notes [on, off, note, part], for the key
         self.cb_t = 0.0
         self.cb_prev = 0.0
         self.blk_n = 256
@@ -3014,6 +3018,27 @@ class Engine:
         idx = np.arange(start, end) % h["size"]
         return {k: h["buf"][k][idx].astype(np.float64) for k in HIST_KEYS}
 
+    def part_note(self, part, note, vel):
+        """v2.4: a SONG START note straight to a synth (audio thread), logged for the key like any other."""
+        syn = self.s1 if part == "s1" else self.s2
+        if vel:
+            syn.note_on(note, vel)
+            self.note_log.append([self.samples, None, note, part])
+        else:
+            syn.note_off(note)
+            for e in reversed(self.note_log):
+                if e[1] is None and e[2] == note and e[3] == part:
+                    e[1] = self.samples
+                    break
+
+    def key_between(self, start, end):
+        """v2.4: the key the synths played in [start, end) (absolute samples), e.g. "Am", or "" if unclear."""
+        try:
+            from potentialbox import keys
+            return keys.key_of([(a, b, n) for a, b, n, _ in list(self.note_log)], start, end)
+        except Exception:
+            return ""
+
     def tick_offset(self, ts):
         """Where in this block a tick that arrived at `ts` belongs: events from the last block period are
         spread over this block in the same spacing, so timing jitter becomes a small fixed delay."""
@@ -3069,6 +3094,9 @@ class Engine:
                 self.s1.all_off()
                 self.s2.all_off()
                 self.drums.voices = []
+                for e in self.note_log:
+                    if e[1] is None:
+                        e[1] = self.samples
                 continue
             if target == "clk":
                 self._clock(kind, vel)
@@ -3088,8 +3116,13 @@ class Engine:
             syn = self.s1 if target == "s1" else self.s2
             if kind == "on" and vel > 0:
                 syn.note_on(note, vel)
+                self.note_log.append([self.samples, None, note, target])
             else:
                 syn.note_off(note)
+                for e in reversed(self.note_log):   # v2.4: close the note, for the key in bounce names
+                    if e[1] is None and e[2] == note and e[3] == target:
+                        e[1] = self.samples
+                        break
 
     def duck_env(self, n):
         """Side-chain envelope (0..1): jumps up when the chosen pad plays (or on every beat), then falls."""
@@ -3145,6 +3178,7 @@ class Engine:
             if solo_active:
                 return solo >= 0.5
             return mute < 0.5
+        self.beats.render_parts(n)   # v2.4 SONG START notes, before the synths render
         for key, syn in (("s1", self.s1), ("s2", self.s2)):
             a = syn.render_block(n)  # muted tracks still run, so notes, arp and envelopes stay in time
             if a is None or not track_plays(v[f"{key}.mute"], v[f"{key}.solo"]):

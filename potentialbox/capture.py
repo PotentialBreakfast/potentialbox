@@ -29,10 +29,20 @@ def clean(s):
     return re.sub(r"\s+", " ", s).strip(" .") or "Loop"
 
 
-def bounce_name(what, bpm, bars, when=None):
-    """e.g. "Acid 126bpm 4bar 1830" (short enough for the MPC's screen, unique to the minute)."""
-    t = time.localtime(when or time.time())
-    return clean(f"{what} {int(round(bpm))}bpm {bars}bar {t.tm_hour:02d}{t.tm_min:02d}{t.tm_sec:02d}")
+def bounce_name(what, bpm, bars, key="", root=None):
+    """v2.4: e.g. "Acid 126bpm Am 4bar 03": what, tempo, key (when it could tell), length and a take number
+    that counts up for each loop with the same name, so they sort in the order you made them."""
+    base = clean(" ".join(x for x in (what, f"{int(round(bpm))}bpm", key, f"{bars}bar") if x))
+    take = 0
+    pat = re.compile(re.escape(base) + r" (\d+)$", re.I)
+    try:
+        for f in os.listdir(root or loops_dir()):
+            m = pat.match(f)
+            if m:
+                take = max(take, int(m.group(1)))
+    except OSError:
+        pass
+    return f"{base} {take + 1:02d}"
 
 
 def save_bounce(parts, sr, name, root=None):
